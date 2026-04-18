@@ -156,14 +156,10 @@ class ConfigScreen extends StatelessWidget {
         return;
       }
 
-      // Intentar abrir con el navegador del sistema
+      // Intentar abrir con el navegador del sistema (forzar externo para evitar que la app capture la URL)
       final launched = await launchUrl(
         uri,
-        mode: LaunchMode.platformDefault,
-        webViewConfiguration: const WebViewConfiguration(
-          enableJavaScript: true,
-          enableDomStorage: true,
-        ),
+        mode: LaunchMode.externalApplication,
       );
 
       if (!launched && context.mounted) {

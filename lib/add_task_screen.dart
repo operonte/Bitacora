@@ -6,6 +6,7 @@ import 'task_model.dart';
 import 'subject_model.dart';
 import 'notification_service.dart';
 import 'colors.dart';
+import 'subjects_screen.dart';
 import 'utils/error_handler.dart';
 
 class AddTaskScreen extends StatefulWidget {
@@ -242,13 +243,14 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                           labelText: 'Asignatura',
                           border: OutlineInputBorder(),
                           prefixIcon: Icon(Icons.book),
-                          suffixIcon: _subjects.isEmpty
-                              ? IconButton(
-                                  icon: Icon(Icons.add_circle, color: AppColors.primary),
-                                  onPressed: () => Navigator.pushNamed(context, '/subjects'),
-                                  tooltip: 'Agregar materia',
-                                )
-                              : null,
+                          suffixIcon: IconButton(
+                            icon: Icon(Icons.add_circle, color: AppColors.primary),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const SubjectsScreen()),
+                            ),
+                            tooltip: 'Agregar materia',
+                          ),
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
