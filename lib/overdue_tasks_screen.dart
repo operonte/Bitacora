@@ -177,85 +177,126 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(task.title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: urgencyColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(_getUrgencyIcon(urgency), color: urgencyColor, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    urgencyText,
-                    style: TextStyle(
-                      color: urgencyColor,
-                      fontWeight: FontWeight.bold,
+        content: StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: urgencyColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(_getUrgencyIcon(urgency), color: urgencyColor, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        urgencyText,
+                        style: TextStyle(
+                          color: urgencyColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text('Asignatura: ${task.subject}'),
+                Text('Profesor: ${task.professor}'),
+                Text('Tipo: ${task.type}'),
+                Text(
+                  'Entrega: ${DateFormat('dd/MM/yyyy HH:mm').format(task.dueDate)}',
+                ),
+                const SizedBox(height: 8),
+                Text('Descripción: ${task.description}'),
+                const SizedBox(height: 16),
+                const Text(
+                  'Estado:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  title: const Text('Realizada'),
+                  value: task.isCompleted,
+                  onChanged: (value) async {
+                    if (value != null) {
+                      setDialogState(() {
+                        task.isCompleted = value;
+                      });
+                      await _firebaseService.updateTaskStatus(
+                        task.id!,
+                        task.isCompleted,
+                        task.isSubmitted,
+                      );
+                      // Si marca ambos, la tarea se mueve a Entregadas
+                      if (task.isCompleted && task.isSubmitted) {
+                        Navigator.pop(context);
+                        _loadData();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('✓ Tarea movida a Entregadas'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  activeColor: Colors.green,
+                ),
+                CheckboxListTile(
+                  title: const Text('Enviada'),
+                  value: task.isSubmitted,
+                  onChanged: (value) async {
+                    if (value != null) {
+                      setDialogState(() {
+                        task.isSubmitted = value;
+                      });
+                      await _firebaseService.updateTaskStatus(
+                        task.id!,
+                        task.isCompleted,
+                        task.isSubmitted,
+                      );
+                      // Si marca ambos, la tarea se mueve a Entregadas
+                      if (task.isCompleted && task.isSubmitted) {
+                        Navigator.pop(context);
+                        _loadData();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('✓ Tarea movida a Entregadas'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  activeColor: Colors.green,
+                ),
+                if (task.isCompleted && !task.isSubmitted)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange, size: 16),
+                        SizedBox(width: 8),
+                        Text(
+                          'Realizada pero no enviada',
+                          style: TextStyle(color: Colors.orange),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('Asignatura: ${task.subject}'),
-            Text('Profesor: ${task.professor}'),
-            Text('Tipo: ${task.type}'),
-            Text(
-              'Entrega: ${DateFormat('dd/MM/yyyy HH:mm').format(task.dueDate)}',
-            ),
-            const SizedBox(height: 8),
-            Text('Descripción: ${task.description}'),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(
-                  task.isCompleted
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
-                  color: task.isCompleted ? Colors.green : Colors.grey,
-                ),
-                const SizedBox(width: 8),
-                Text(task.isCompleted ? 'Realizada' : 'No realizada'),
               ],
-            ),
-            Row(
-              children: [
-                Icon(
-                  task.isSubmitted
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
-                  color: task.isSubmitted ? Colors.green : Colors.grey,
-                ),
-                const SizedBox(width: 8),
-                Text(task.isSubmitted ? 'Enviada' : 'No enviada'),
-              ],
-            ),
-            if (task.needsSubmittedMarker())
-              Container(
-                margin: const EdgeInsets.only(top: 8),
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.warning, color: Colors.orange, size: 16),
-                    SizedBox(width: 8),
-                    Text(
-                      'Falta marcar como enviada',
-                      style: TextStyle(color: Colors.orange),
-                    ),
-                  ],
-                ),
-              ),
-          ],
+            );
+          },
         ),
         actions: [
           TextButton(

@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'pending_tasks_screen.dart';
 import 'overdue_tasks_screen.dart';
+import 'delivered_tasks_screen.dart';
 import 'notification_service.dart';
 import 'colors.dart';
 import 'auth_service.dart';
@@ -102,6 +103,7 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _screens = [
     const PendingTasksScreen(),
     const OverdueTasksScreen(),
+    const DeliveredTasksScreen(),
   ];
 
   @override
@@ -167,6 +169,10 @@ class _MainScreenState extends State<MainScreen> {
               BottomNavigationBarItem(
                 icon: Icon(Icons.history),
                 label: 'Vencidas',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.check_circle_outline),
+                label: 'Entregadas',
               ),
             ],
             selectedItemColor: AppColors.primary,

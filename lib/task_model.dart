@@ -100,12 +100,13 @@ class Task {
     final now = DateTime.now();
     final difference = dueDate.difference(now);
 
+    // Si está completada y enviada, siempre es "completed" (gris)
+    if (isCompleted && isSubmitted) {
+      return TaskUrgency.completed;
+    }
+
     if (now.isAfter(dueDate)) {
-      if (isCompleted && isSubmitted) {
-        return TaskUrgency.completed;
-      } else {
-        return TaskUrgency.overdue;
-      }
+      return TaskUrgency.overdue;
     } else if (difference.inDays >= 7) {
       return TaskUrgency.low;
     } else if (difference.inDays >= 3) {

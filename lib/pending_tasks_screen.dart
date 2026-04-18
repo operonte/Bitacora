@@ -229,44 +229,110 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(task.title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Asignatura: ${task.subject}'),
-            Text('Profesor: ${task.professor}'),
-            Text('Tipo: ${task.type}'),
-            Text(
-              'Entrega: ${DateFormat('dd/MM/yyyy HH:mm').format(task.dueDate)}',
-            ),
-            const SizedBox(height: 8),
-            Text('Descripción: ${task.description}'),
-            const SizedBox(height: 8),
-            Row(
+        content: StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  task.isCompleted
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
-                  color: task.isCompleted ? Colors.green : Colors.grey,
+                Text('Asignatura: ${task.subject}'),
+                Text('Profesor: ${task.professor}'),
+                Text('Tipo: ${task.type}'),
+                Text(
+                  'Entrega: ${DateFormat('dd/MM/yyyy HH:mm').format(task.dueDate)}',
                 ),
-                const SizedBox(width: 8),
-                Text(task.isCompleted ? 'Realizada' : 'No realizada'),
-              ],
-            ),
-            Row(
-              children: [
-                Icon(
-                  task.isSubmitted
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
-                  color: task.isSubmitted ? Colors.green : Colors.grey,
+                const SizedBox(height: 8),
+                Text('Descripción: ${task.description}'),
+                const SizedBox(height: 16),
+                const Text(
+                  'Estado:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(width: 8),
-                Text(task.isSubmitted ? 'Enviada' : 'No enviada'),
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  title: const Text('Realizada'),
+                  value: task.isCompleted,
+                  onChanged: (value) async {
+                    if (value != null) {
+                      setDialogState(() {
+                        task.isCompleted = value;
+                      });
+                      await _firebaseService.updateTaskStatus(
+                        task.id!,
+                        task.isCompleted,
+                        task.isSubmitted,
+                      );
+                      // Si marca ambos, la tarea se mueve a Entregadas
+                      if (task.isCompleted && task.isSubmitted) {
+                        Navigator.pop(context);
+                        _loadData();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('✓ Tarea movida a Entregadas'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  activeColor: Colors.green,
+                ),
+                CheckboxListTile(
+                  title: const Text('Enviada'),
+                  value: task.isSubmitted,
+                  onChanged: (value) async {
+                    if (value != null) {
+                      setDialogState(() {
+                        task.isSubmitted = value;
+                      });
+                      await _firebaseService.updateTaskStatus(
+                        task.id!,
+                        task.isCompleted,
+                        task.isSubmitted,
+                      );
+                      // Si marca ambos, la tarea se mueve a Entregadas
+                      if (task.isCompleted && task.isSubmitted) {
+                        Navigator.pop(context);
+                        _loadData();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('✓ Tarea movida a Entregadas'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  activeColor: Colors.green,
+                ),
+                if (task.isCompleted && !task.isSubmitted)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.orange),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Realizada pero no enviada',
+                            style: TextStyle(
+                              color: Colors.orange,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
-            ),
-          ],
+            );
+          },
         ),
         actions: [
           TextButton(

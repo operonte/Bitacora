@@ -58,24 +58,51 @@ class FirebaseService {
 
   Future<List<Task>> getPendingTasks() async {
     final snapshot = await tasksCollection
-        .where('isCompleted', isEqualTo: false)
-        .where('dueDate', isGreaterThan: DateTime.now().millisecondsSinceEpoch)
         .orderBy('dueDate')
         .get();
-    return snapshot.docs
+    final tasks = snapshot.docs
         .map((doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id))
         .toList();
+    // Filtrar: no entregadas (ambos true) Y fecha futura
+    return tasks.where((task) {
+      final isDelivered = task.isCompleted && task.isSubmitted;
+      final isFuture = task.dueDate.isAfter(DateTime.now());
+      return !isDelivered && isFuture;
+    }).toList();
   }
 
   Future<List<Task>> getOverdueTasks() async {
     final snapshot = await tasksCollection
-        .where('isCompleted', isEqualTo: false)
-        .where('dueDate', isLessThan: DateTime.now().millisecondsSinceEpoch)
         .orderBy('dueDate', descending: true)
         .get();
-    return snapshot.docs
+    final tasks = snapshot.docs
         .map((doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id))
         .toList();
+    // Filtrar: no entregadas (ambos true) Y fecha pasada
+    return tasks.where((task) {
+      final isDelivered = task.isCompleted && task.isSubmitted;
+      final isPast = task.dueDate.isBefore(DateTime.now());
+      return !isDelivered && isPast;
+    }).toList();
+  }
+
+  Future<List<Task>> getDeliveredTasks() async {
+    final snapshot = await tasksCollection
+        .orderBy('dueDate', descending: true)
+        .get();
+    final tasks = snapshot.docs
+        .map((doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id))
+        .toList();
+    // Filtrar: entregadas (ambos true)
+    return tasks.where((task) => task.isCompleted && task.isSubmitted).toList();
+  }
+
+  Future<void> updateTaskStatus(String taskId, bool isCompleted, bool isSubmitted) async {
+    await tasksCollection.doc(taskId).update({
+      'isCompleted': isCompleted,
+      'isSubmitted': isSubmitted,
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    });
   }
 
   Future<void> toggleTaskCompletion(Task task) async {
