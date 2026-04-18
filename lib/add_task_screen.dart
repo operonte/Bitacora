@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_service.dart';
 import 'task_model.dart';
+import 'subject_model.dart';
 import 'notification_service.dart';
 import 'colors.dart';
 
@@ -29,9 +30,10 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   bool _isCompleted = false;
   bool _isSubmitted = false;
 
-  List<Map<String, dynamic>> _subjects = [];
-  List<Map<String, dynamic>> _filteredSubjects = [];
+  List<Subject> _subjects = [];
+  List<Subject> _filteredSubjects = [];
   bool _isLoading = false;
+  final FirebaseService _firebaseService = FirebaseService();
 
   final List<String> _taskTypes = [
     'trabajo',
@@ -70,35 +72,19 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   }
 
   Future<void> _loadSubjects() async {
-    // Materias predefinidas de la carrera de Teología
-    final subjects = [
-      {
-        'name': 'Contexto Literario del Antiguo Testamento',
-        'professor': 'Dr. Daniel Godoy',
-      },
-      {
-        'name': 'Hermenéutica Bíblica',
-        'professor': 'Lic. Carlos Caamaño Espinoza',
-      },
-      {
-        'name': 'Metodología del Estudio Bíblico',
-        'professor': 'Lic. Carlos Caamaño Espinoza',
-      },
-      {
-        'name': 'Introducción a la Historia de la Iglesia I',
-        'professor': 'Mg. Cecilia Castillo N.',
-      },
-      {'name': 'Historia de Israel I', 'professor': 'Mg. Jaime Alarcón'},
-      {
-        'name': 'Comunicaciones y Redacción',
-        'professor': 'Dr. Patricio Abarca Castro',
-      },
-      {'name': 'Hebreo Bíblico I', 'professor': 'Lic. Hemir Ochoa'},
-    ];
-    setState(() {
-      _subjects = subjects;
-      _filteredSubjects = subjects;
-    });
+    try {
+      final subjects = await _firebaseService.getSubjects();
+      setState(() {
+        _subjects = subjects;
+        _filteredSubjects = subjects;
+      });
+    } catch (e) {
+      // Si hay error, mantener lista vacía
+      setState(() {
+        _subjects = [];
+        _filteredSubjects = [];
+      });
+    }
   }
 
   void _filterSubjects(String query) {
@@ -108,7 +94,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       } else {
         _filteredSubjects = _subjects
             .where(
-              (subject) => subject['name'].toString().toLowerCase().contains(
+              (subject) => subject.name.toLowerCase().contains(
                 query.toLowerCase(),
               ),
             )
@@ -161,23 +147,22 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                 maxLines: 3,
               ),
               const SizedBox(height: 16),
-              Autocomplete<Map<String, dynamic>>(
+              Autocomplete<Subject>(
                 initialValue: TextEditingValue(text: _selectedSubject),
                 optionsBuilder: (TextEditingValue textEditingValue) {
                   _filterSubjects(textEditingValue.text);
                   return _filteredSubjects.where(
-                    (subject) => subject['name']
-                        .toString()
+                    (subject) => subject.name
                         .toLowerCase()
                         .contains(textEditingValue.text.toLowerCase()),
                   );
                 },
-                displayStringForOption: (option) => option['name'] as String,
-                onSelected: (Map<String, dynamic>? selection) {
+                displayStringForOption: (option) => option.name,
+                onSelected: (Subject? selection) {
                   if (selection != null) {
                     setState(() {
-                      _selectedSubject = selection['name'] as String;
-                      _selectedProfessor = selection['professor'] as String;
+                      _selectedSubject = selection.name;
+                      _selectedProfessor = selection.professor;
                     });
                   }
                 },
@@ -186,10 +171,17 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                       return TextFormField(
                         controller: controller,
                         focusNode: focusNode,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Asignatura',
                           border: OutlineInputBorder(),
                           prefixIcon: Icon(Icons.book),
+                          suffixIcon: _subjects.isEmpty
+                              ? IconButton(
+                                  icon: Icon(Icons.add_circle, color: AppColors.primary),
+                                  onPressed: () => Navigator.pushNamed(context, '/subjects'),
+                                  tooltip: 'Agregar materia',
+                                )
+                              : null,
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {

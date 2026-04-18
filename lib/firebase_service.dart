@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'task_model.dart';
+import 'subject_model.dart';
 
 class FirebaseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
@@ -30,6 +31,12 @@ class FirebaseService {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Usuario no autenticado');
     return _firestore.collection('dtbitacora').doc(user.uid).collection('tasks');
+  }
+
+  CollectionReference get subjectsCollection {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Usuario no autenticado');
+    return _firestore.collection('dtbitacora').doc(user.uid).collection('subjects');
   }
 
   Future<String> addTask(Task task) async {
@@ -111,5 +118,41 @@ class FirebaseService {
       'isCompleted': !task.isCompleted,
       'updatedAt': DateTime.now().millisecondsSinceEpoch,
     });
+  }
+
+  // ==================== SUBJECTS METHODS ====================
+
+  Future<String> addSubject(Subject subject) async {
+    final subjectData = subject.toMap();
+    final docRef = await subjectsCollection.add(subjectData);
+    return docRef.id;
+  }
+
+  Future<void> updateSubject(Subject subject) async {
+    if (subject.id == null) throw Exception('Subject ID is required for update');
+    await subjectsCollection.doc(subject.id).update(subject.toMap());
+  }
+
+  Future<void> deleteSubject(String subjectId) async {
+    await subjectsCollection.doc(subjectId).delete();
+  }
+
+  Future<List<Subject>> getSubjects() async {
+    final snapshot = await subjectsCollection
+        .orderBy('name')
+        .get();
+    return snapshot.docs
+        .map((doc) => Subject.fromMap(doc.data() as Map<String, dynamic>, doc.id))
+        .toList();
+  }
+
+  Future<List<Subject>> getPublicSubjects() async {
+    final snapshot = await subjectsCollection
+        .where('isPublic', isEqualTo: true)
+        .orderBy('name')
+        .get();
+    return snapshot.docs
+        .map((doc) => Subject.fromMap(doc.data() as Map<String, dynamic>, doc.id))
+        .toList();
   }
 }

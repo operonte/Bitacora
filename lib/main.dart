@@ -7,6 +7,7 @@ import 'firebase_options.dart';
 import 'pending_tasks_screen.dart';
 import 'overdue_tasks_screen.dart';
 import 'delivered_tasks_screen.dart';
+import 'subjects_screen.dart';
 import 'notification_service.dart';
 import 'colors.dart';
 import 'auth_service.dart';
@@ -150,6 +151,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ],
           ),
+          drawer: _buildDrawer(context),
           body: IndexedStack(
             index: _currentIndex,
             children: _screens,
@@ -186,5 +188,114 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _signOut() async {
     await _authService.signOut();
     // El StreamBuilder automáticamente redirigirá al AuthScreen cuando el usuario sea null
+  }
+
+  Widget _buildDrawer(BuildContext context) {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.school,
+                  size: 48,
+                  color: Colors.white,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Bitácora',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  _authService.currentUser?.displayName ?? 'Usuario',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.task),
+            title: const Text('Tareas Pendientes'),
+            selected: _currentIndex == 0,
+            onTap: () {
+              Navigator.pop(context);
+              setState(() {
+                _currentIndex = 0;
+              });
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.history),
+            title: const Text('Tareas Vencidas'),
+            selected: _currentIndex == 1,
+            onTap: () {
+              Navigator.pop(context);
+              setState(() {
+                _currentIndex = 1;
+              });
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.check_circle_outline),
+            title: const Text('Tareas Entregadas'),
+            selected: _currentIndex == 2,
+            onTap: () {
+              Navigator.pop(context);
+              setState(() {
+                _currentIndex = 2;
+              });
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.school, color: AppColors.primary),
+            title: const Text(
+              'Mis Materias',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SubjectsScreen()),
+              );
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.settings),
+            title: const Text('Configuración'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ConfigScreen()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text('Cerrar sesión', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.pop(context);
+              _signOut();
+            },
+          ),
+        ],
+      ),
+    );
   }
 }
