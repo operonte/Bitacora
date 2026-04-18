@@ -72,17 +72,83 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   }
 
   Future<void> _loadSubjects() async {
+    // Materias predefinidas de la carrera de Teología
+    final predefinedSubjects = [
+      Subject(
+        id: 'predef_1',
+        name: 'Contexto Literario del Antiguo Testamento',
+        professor: 'Dr. Daniel Godoy',
+        visibility: SubjectVisibility.soloYo,
+        userId: 'system',
+        userName: 'Sistema',
+        createdAt: DateTime.now(),
+      ),
+      Subject(
+        id: 'predef_2',
+        name: 'Hermenéutica Bíblica',
+        professor: 'Lic. Carlos Caamaño Espinoza',
+        visibility: SubjectVisibility.soloYo,
+        userId: 'system',
+        userName: 'Sistema',
+        createdAt: DateTime.now(),
+      ),
+      Subject(
+        id: 'predef_3',
+        name: 'Metodología del Estudio Bíblico',
+        professor: 'Lic. Carlos Caamaño Espinoza',
+        visibility: SubjectVisibility.soloYo,
+        userId: 'system',
+        userName: 'Sistema',
+        createdAt: DateTime.now(),
+      ),
+      Subject(
+        id: 'predef_4',
+        name: 'Introducción a la Historia de la Iglesia I',
+        professor: 'Mg. Cecilia Castillo N.',
+        visibility: SubjectVisibility.soloYo,
+        userId: 'system',
+        userName: 'Sistema',
+        createdAt: DateTime.now(),
+      ),
+      Subject(
+        id: 'predef_5',
+        name: 'Historia de Israel I',
+        professor: 'Mg. Jaime Alarcón',
+        visibility: SubjectVisibility.soloYo,
+        userId: 'system',
+        userName: 'Sistema',
+        createdAt: DateTime.now(),
+      ),
+      Subject(
+        id: 'predef_6',
+        name: 'Comunicaciones y Redacción',
+        professor: 'Dr. Patricio Abarca Castro',
+        visibility: SubjectVisibility.soloYo,
+        userId: 'system',
+        userName: 'Sistema',
+        createdAt: DateTime.now(),
+      ),
+      Subject(
+        id: 'predef_7',
+        name: 'Hebreo Bíblico I',
+        professor: 'Lic. Hemir Ochoa',
+        visibility: SubjectVisibility.soloYo,
+        userId: 'system',
+        userName: 'Sistema',
+        createdAt: DateTime.now(),
+      ),
+    ];
+
     try {
-      final subjects = await _firebaseService.getSubjects();
+      final userSubjects = await _firebaseService.getSubjects();
       setState(() {
-        _subjects = subjects;
-        _filteredSubjects = subjects;
+        _subjects = [...predefinedSubjects, ...userSubjects];
+        _filteredSubjects = _subjects;
       });
     } catch (e) {
-      // Si hay error, mantener lista vacía
       setState(() {
-        _subjects = [];
-        _filteredSubjects = [];
+        _subjects = predefinedSubjects;
+        _filteredSubjects = predefinedSubjects;
       });
     }
   }

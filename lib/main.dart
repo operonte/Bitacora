@@ -7,7 +7,6 @@ import 'firebase_options.dart';
 import 'pending_tasks_screen.dart';
 import 'overdue_tasks_screen.dart';
 import 'delivered_tasks_screen.dart';
-import 'subjects_screen.dart';
 import 'notification_service.dart';
 import 'colors.dart';
 import 'auth_service.dart';
@@ -257,21 +256,6 @@ class _MainScreenState extends State<MainScreen> {
               setState(() {
                 _currentIndex = 2;
               });
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.school, color: AppColors.primary),
-            title: const Text(
-              'Mis Materias',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SubjectsScreen()),
-              );
             },
           ),
           const Divider(),

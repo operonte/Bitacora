@@ -148,7 +148,7 @@ class FirebaseService {
 
   Future<List<Subject>> getPublicSubjects() async {
     final snapshot = await subjectsCollection
-        .where('isPublic', isEqualTo: true)
+        .where('visibility', isEqualTo: SubjectVisibility.cursoCompleto.index)
         .orderBy('name')
         .get();
     return snapshot.docs

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'colors.dart';
+import 'subjects_screen.dart';
 
 class ConfigScreen extends StatelessWidget {
   const ConfigScreen({Key? key}) : super(key: key);
@@ -34,6 +35,35 @@ class ConfigScreen extends StatelessWidget {
                 color: AppColors.primary,
               ),
             ),
+            const SizedBox(height: 48),
+            const Text(
+              'Gestión Académica',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            
+            // Mis Materias
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ListTile(
+                leading: const Icon(Icons.school, color: AppColors.primary),
+                title: const Text('Mis Materias'),
+                subtitle: const Text('Crear, editar y eliminar materias'),
+                trailing: const Icon(Icons.arrow_forward_ios),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SubjectsScreen()),
+                ),
+              ),
+            ),
+            
             const SizedBox(height: 48),
             const Text(
               'Información Legal',

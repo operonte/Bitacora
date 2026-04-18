@@ -1,9 +1,18 @@
+import 'package:flutter/material.dart';
+
+enum SubjectVisibility {
+  soloYo,        // Solo el creador puede verla
+  cursoCompleto, // Todos pueden verla
+  seleccionar,   // Elegir usuarios específicos
+}
+
 class Subject {
   String? id;
   String name;
   String professor;
   String? description;
-  bool isPublic;
+  SubjectVisibility visibility;
+  List<String> allowedUsers; // IDs de usuarios permitidos si visibility = seleccionar
   String userId;
   String userName;
   DateTime createdAt;
@@ -13,7 +22,8 @@ class Subject {
     required this.name,
     required this.professor,
     this.description,
-    this.isPublic = false,
+    this.visibility = SubjectVisibility.soloYo,
+    this.allowedUsers = const [],
     required this.userId,
     required this.userName,
     required this.createdAt,
@@ -24,7 +34,8 @@ class Subject {
       'name': name,
       'professor': professor,
       'description': description,
-      'isPublic': isPublic,
+      'visibility': visibility.index,
+      'allowedUsers': allowedUsers,
       'userId': userId,
       'userName': userName,
       'createdAt': createdAt.millisecondsSinceEpoch,
@@ -37,7 +48,8 @@ class Subject {
       name: map['name'] ?? '',
       professor: map['professor'] ?? '',
       description: map['description'],
-      isPublic: map['isPublic'] ?? false,
+      visibility: SubjectVisibility.values[map['visibility'] ?? 0],
+      allowedUsers: List<String>.from(map['allowedUsers'] ?? []),
       userId: map['userId'] ?? '',
       userName: map['userName'] ?? 'Usuario',
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt'] ?? DateTime.now().millisecondsSinceEpoch),
@@ -49,7 +61,8 @@ class Subject {
     String? name,
     String? professor,
     String? description,
-    bool? isPublic,
+    SubjectVisibility? visibility,
+    List<String>? allowedUsers,
     String? userId,
     String? userName,
     DateTime? createdAt,
@@ -59,10 +72,33 @@ class Subject {
       name: name ?? this.name,
       professor: professor ?? this.professor,
       description: description ?? this.description,
-      isPublic: isPublic ?? this.isPublic,
+      visibility: visibility ?? this.visibility,
+      allowedUsers: allowedUsers ?? this.allowedUsers,
       userId: userId ?? this.userId,
       userName: userName ?? this.userName,
       createdAt: createdAt ?? this.createdAt,
     );
+  }
+
+  String get visibilityText {
+    switch (visibility) {
+      case SubjectVisibility.soloYo:
+        return 'Solo yo';
+      case SubjectVisibility.cursoCompleto:
+        return 'Curso completo';
+      case SubjectVisibility.seleccionar:
+        return 'Elegir usuarios';
+    }
+  }
+
+  IconData get visibilityIcon {
+    switch (visibility) {
+      case SubjectVisibility.soloYo:
+        return Icons.lock;
+      case SubjectVisibility.cursoCompleto:
+        return Icons.public;
+      case SubjectVisibility.seleccionar:
+        return Icons.people;
+    }
   }
 }

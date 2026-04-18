@@ -134,16 +134,24 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
             Row(
               children: [
                 Icon(
-                  subject.isPublic ? Icons.public : Icons.lock,
+                  subject.visibilityIcon,
                   size: 14,
-                  color: subject.isPublic ? Colors.green : Colors.orange,
+                  color: subject.visibility == SubjectVisibility.soloYo
+                      ? Colors.orange
+                      : subject.visibility == SubjectVisibility.cursoCompleto
+                          ? Colors.green
+                          : Colors.blue,
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  subject.isPublic ? 'Pública' : 'Privada',
+                  subject.visibilityText,
                   style: TextStyle(
                     fontSize: 12,
-                    color: subject.isPublic ? Colors.green : Colors.orange,
+                    color: subject.visibility == SubjectVisibility.soloYo
+                        ? Colors.orange
+                        : subject.visibility == SubjectVisibility.cursoCompleto
+                            ? Colors.green
+                            : Colors.blue,
                   ),
                 ),
               ],
@@ -198,7 +206,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
     final nameController = TextEditingController(text: subject?.name ?? '');
     final professorController = TextEditingController(text: subject?.professor ?? '');
     final descriptionController = TextEditingController(text: subject?.description ?? '');
-    bool isPublic = subject?.isPublic ?? false;
+    SubjectVisibility visibility = subject?.visibility ?? SubjectVisibility.soloYo;
 
     showDialog(
       context: context,
@@ -238,22 +246,63 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                     maxLines: 2,
                   ),
                   const SizedBox(height: 16),
-                  SwitchListTile(
-                    title: const Text('Visibilidad'),
-                    subtitle: Text(
-                      isPublic
-                          ? 'Pública: otros pueden ver esta materia'
-                          : 'Privada: solo tú puedes ver esta materia',
+                  DropdownButtonFormField<SubjectVisibility>(
+                    value: visibility,
+                    decoration: const InputDecoration(
+                      labelText: 'Visibilidad *',
+                      prefixIcon: Icon(Icons.visibility),
+                      border: OutlineInputBorder(),
                     ),
-                    value: isPublic,
+                    items: SubjectVisibility.values.map((v) {
+                      return DropdownMenuItem(
+                        value: v,
+                        child: Row(
+                          children: [
+                            Icon(
+                              v == SubjectVisibility.soloYo
+                                  ? Icons.lock
+                                  : v == SubjectVisibility.cursoCompleto
+                                      ? Icons.public
+                                      : Icons.people,
+                              size: 20,
+                              color: v == SubjectVisibility.soloYo
+                                  ? Colors.orange
+                                  : v == SubjectVisibility.cursoCompleto
+                                      ? Colors.green
+                                      : Colors.blue,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(v == SubjectVisibility.soloYo
+                                ? 'Solo yo'
+                                : v == SubjectVisibility.cursoCompleto
+                                    ? 'Curso completo'
+                                    : 'Elegir usuarios'),
+                          ],
+                        ),
+                      );
+                    }).toList(),
                     onChanged: (value) {
-                      setDialogState(() {
-                        isPublic = value;
-                      });
+                      if (value != null) {
+                        setDialogState(() {
+                          visibility = value;
+                        });
+                      }
                     },
-                    secondary: Icon(
-                      isPublic ? Icons.public : Icons.lock,
-                      color: isPublic ? Colors.green : Colors.orange,
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      visibility == SubjectVisibility.soloYo
+                          ? 'Solo tú podrás ver esta materia y usarla en tus tareas.'
+                          : visibility == SubjectVisibility.cursoCompleto
+                              ? 'Todos los usuarios podrán ver esta materia.'
+                              : 'Podrás elegir qué usuarios específicos verán esta materia.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                   ),
                 ],
@@ -290,7 +339,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                       description: descriptionController.text.trim().isEmpty
                           ? null
                           : descriptionController.text.trim(),
-                      isPublic: isPublic,
+                      visibility: visibility,
                       userId: user.uid,
                       userName: user.displayName ?? 'Usuario',
                       createdAt: subject?.createdAt ?? DateTime.now(),
