@@ -5,6 +5,7 @@ import 'task_model.dart';
 import 'task_card.dart';
 import 'add_task_screen.dart';
 import 'colors.dart';
+import 'utils/error_handler.dart';
 
 class PendingTasksScreen extends StatefulWidget {
   const PendingTasksScreen({Key? key}) : super(key: key);
@@ -80,9 +81,10 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error al cargar tareas: $e')));
+      if (mounted) {
+        final appException = ErrorMessages.fromFirebaseError(e);
+        ErrorHandler.showErrorSnackBar(context, appException);
+      }
     }
   }
 
@@ -389,9 +391,10 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
                   const SnackBar(content: Text('Tarea eliminada')),
                 );
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error al eliminar: $e')),
-                );
+                if (mounted) {
+                  final appException = ErrorMessages.fromFirebaseError(e);
+                  ErrorHandler.showErrorSnackBar(context, appException);
+                }
               }
             },
             child: const Text('Eliminar', style: TextStyle(color: Colors.red)),

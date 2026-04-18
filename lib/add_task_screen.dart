@@ -6,6 +6,7 @@ import 'task_model.dart';
 import 'subject_model.dart';
 import 'notification_service.dart';
 import 'colors.dart';
+import 'utils/error_handler.dart';
 
 class AddTaskScreen extends StatefulWidget {
   final Task? task;
@@ -490,13 +491,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al guardar: $e'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      final appException = ErrorMessages.fromFirebaseError(e);
+      ErrorHandler.showErrorSnackBar(context, appException);
       setState(() => _isLoading = false);
     }
   }
@@ -530,9 +526,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                   const SnackBar(content: Text('Tarea eliminada')),
                 );
               } catch (e) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('Error: $e')));
+                final appException = ErrorMessages.fromFirebaseError(e);
+                ErrorHandler.showErrorSnackBar(context, appException);
               }
             },
             child: const Text('Eliminar', style: TextStyle(color: Colors.red)),

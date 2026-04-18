@@ -5,6 +5,7 @@ import 'task_model.dart';
 import 'task_card.dart';
 import 'add_task_screen.dart';
 import 'colors.dart';
+import 'utils/error_handler.dart';
 
 class DeliveredTasksScreen extends StatefulWidget {
   const DeliveredTasksScreen({Key? key}) : super(key: key);
@@ -36,9 +37,10 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error al cargar tareas: $e')));
+      if (mounted) {
+        final appException = ErrorMessages.fromFirebaseError(e);
+        ErrorHandler.showErrorSnackBar(context, appException);
+      }
     }
   }
 
@@ -253,9 +255,10 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
                   const SnackBar(content: Text('Tarea eliminada')),
                 );
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error al eliminar: $e')),
-                );
+                if (mounted) {
+                  final appException = ErrorMessages.fromFirebaseError(e);
+                  ErrorHandler.showErrorSnackBar(context, appException);
+                }
               }
             },
             child: const Text('Eliminar', style: TextStyle(color: Colors.red)),

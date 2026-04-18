@@ -5,6 +5,7 @@ import 'task_model.dart';
 import 'task_card.dart';
 import 'colors.dart';
 import 'app_icon_widget.dart';
+import 'utils/error_handler.dart';
 
 class OverdueTasksScreen extends StatefulWidget {
   const OverdueTasksScreen({Key? key}) : super(key: key);
@@ -36,9 +37,10 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error al cargar tareas: $e')));
+      if (mounted) {
+        final appException = ErrorMessages.fromFirebaseError(e);
+        ErrorHandler.showErrorSnackBar(context, appException);
+      }
     }
   }
 
@@ -434,9 +436,10 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
                   ),
                 );
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error al actualizar: $e')),
-                );
+                if (mounted) {
+                  final appException = ErrorMessages.fromFirebaseError(e);
+                  ErrorHandler.showErrorSnackBar(context, appException);
+                }
               }
             },
             child: const Text('Confirmar'),

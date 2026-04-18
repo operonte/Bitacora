@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'firebase_service.dart';
 import 'subject_model.dart';
 import 'colors.dart';
+import 'utils/error_handler.dart';
 
 class SubjectsScreen extends StatefulWidget {
   const SubjectsScreen({Key? key}) : super(key: key);
@@ -31,9 +32,10 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar materias: $e')),
-      );
+      if (mounted) {
+        final appException = ErrorMessages.fromFirebaseError(e);
+        ErrorHandler.showErrorSnackBar(context, appException);
+      }
     }
   }
 
@@ -359,9 +361,8 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
 
                     _loadData();
                   } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: $e')),
-                    );
+                    final appException = ErrorMessages.fromFirebaseError(e);
+                    ErrorHandler.showErrorSnackBar(context, appException);
                   }
                 },
                 child: Text(isEditing ? 'Guardar' : 'Agregar'),
@@ -394,9 +395,8 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                   const SnackBar(content: Text('Materia eliminada')),
                 );
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error al eliminar: $e')),
-                );
+                final appException = ErrorMessages.fromFirebaseError(e);
+                ErrorHandler.showErrorSnackBar(context, appException);
               }
             },
             child: const Text('Eliminar', style: TextStyle(color: Colors.red)),

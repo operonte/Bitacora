@@ -130,30 +130,68 @@ class ConfigScreen extends StatelessWidget {
   }
 
   Future<void> _launchPrivacyPolicy(BuildContext context) async {
-    // URL de Firebase Hosting (funciona inmediatamente)
     const url = 'https://bitacora-2d643.web.app/policies/privacy_policy.html';
-    final uri = Uri.parse(url);
-    
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo abrir: $e')),
-      );
-    }
+    await _launchUrl(context, url, 'Política de Privacidad');
   }
 
   Future<void> _launchTermsOfUse(BuildContext context) async {
-    // URL de Firebase Hosting (funciona inmediatamente)
     const url = 'https://bitacora-2d643.web.app/policies/terms_of_use.html';
+    await _launchUrl(context, url, 'Términos de Uso');
+  }
+
+  Future<void> _launchUrl(BuildContext context, String url, String title) async {
     final uri = Uri.parse(url);
-    
+
     try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo abrir: $e')),
+      // Verificar si se puede abrir la URL
+      if (!await canLaunchUrl(uri)) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('No se puede abrir $title. Verifica tu conexión a internet.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Intentar abrir con el navegador del sistema
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.platformDefault,
+        webViewConfiguration: const WebViewConfiguration(
+          enableJavaScript: true,
+          enableDomStorage: true,
+        ),
       );
+
+      if (!launched && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo abrir $title'),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Copiar URL',
+              onPressed: () {
+                // Aquí podríamos copiar al portapapeles
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('URL copiada al portapapeles')),
+                );
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al abrir $title. Intenta nuevamente.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
