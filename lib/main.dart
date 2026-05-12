@@ -3,8 +3,11 @@ import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'pending_tasks_screen.dart';
+import 'screens/pending_tasks_screen_provider.dart';
 import 'overdue_tasks_screen.dart';
 import 'delivered_tasks_screen.dart';
 import 'notification_service.dart';
@@ -12,14 +15,33 @@ import 'colors.dart';
 import 'auth_service.dart';
 import 'auth_screen.dart';
 import 'config_screen.dart';
+import 'services/local_cache_service.dart';
+import 'services/sync_service.dart';
+import 'services/career_service.dart';
+import 'providers/app_state.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicializar Hive (caché local) antes que Firebase
+  await Hive.initFlutter();
+  
+  // Inicializar servicio de caché local
+  final cacheService = LocalCacheService();
+  await cacheService.initialize();
+  
+  // Inicializar servicio de carreras
+  final careerService = CareerService();
+  await careerService.initialize();
   
   // Inicializar Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // Inicializar sincronización automática (offline → online)
+  final syncService = SyncService();
+  syncService.initialize();
   
   // Solicitar permisos solo en móvil (no en web)
   if (!kIsWeb) {
@@ -33,7 +55,12 @@ void main() async {
     await notificationService.scheduleDailyReminder();
   }
   
-  runApp(const BitacoraApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => AppState(),
+      child: const BitacoraApp(),
+    ),
+  );
 }
 
 Future<void> _requestPermissions() async {
@@ -100,8 +127,9 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   final AuthService _authService = AuthService();
+  final SyncService _syncService = SyncService();
   final List<Widget> _screens = [
-    const PendingTasksScreen(),
+    const PendingTasksScreenProvider(),
     const OverdueTasksScreen(),
     const DeliveredTasksScreen(),
   ];
@@ -139,6 +167,56 @@ class _MainScreenState extends State<MainScreen> {
                 icon: const Icon(Icons.logout),
                 onPressed: _signOut,
                 tooltip: 'Cerrar sesión',
+              ),
+              // Indicador de sincronización
+              StreamBuilder<SyncStatus>(
+                stream: _syncService.statusStream,
+                initialData: SyncStatus.idle,
+                builder: (context, snapshot) {
+                  final status = snapshot.data ?? SyncStatus.idle;
+                  
+                  if (status == SyncStatus.syncing) {
+                    return const Padding(
+                      padding: EdgeInsets.all(8.0),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      ),
+                    );
+                  } else if (_syncService.hasPendingChanges()) {
+                    return IconButton(
+                      icon: const Icon(Icons.cloud_off, color: Colors.orange),
+                      onPressed: () async {
+                        final result = await _syncService.forceSync();
+                        if (mounted) {
+                          String message;
+                          switch (result) {
+                            case SyncResult.success:
+                              message = '✅ Datos sincronizados';
+                              break;
+                            case SyncResult.noConnection:
+                              message = '⚠️ Sin conexión a internet';
+                              break;
+                            case SyncResult.nothingToSync:
+                              message = 'ℹ️ No hay cambios pendientes';
+                              break;
+                            default:
+                              message = '❌ Error en sincronización';
+                          }
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(message)),
+                          );
+                        }
+                      },
+                      tooltip: 'Sincronizar cambios',
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
               ),
               IconButton(
                 icon: const Icon(Icons.settings),

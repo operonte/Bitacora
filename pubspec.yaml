@@ -46,17 +46,25 @@ dependencies:
   firebase_auth: ^4.17.9
   google_sign_in: ^6.2.1
   url_launcher: ^6.2.6
+  
+  # Local caching for offline support
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  connectivity_plus: ^5.0.2
+  
+  # State management
+  provider: ^6.1.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
-  flutter_lints: ^6.0.0
+  flutter_lints: ^3.0.0
+  # Testing
+  mockito: ^5.4.4
+  build_runner: ^2.4.8
+  fake_cloud_firestore: ^2.4.9
+  firebase_auth_mocks: ^0.13.0
+  hive_test: ^1.0.1
   flutter_launcher_icons: ^0.13.1
 
 # For information on the generic Dart part of this file, see the

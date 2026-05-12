@@ -8,6 +8,8 @@ import 'notification_service.dart';
 import 'colors.dart';
 import 'subjects_screen.dart';
 import 'utils/error_handler.dart';
+import 'models/career_model.dart';
+import 'services/career_service.dart';
 
 class AddTaskScreen extends StatefulWidget {
   final Task? task;
@@ -36,6 +38,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   List<Subject> _filteredSubjects = [];
   bool _isLoading = false;
   final FirebaseService _firebaseService = FirebaseService();
+  final CareerService _careerService = CareerService();
+  Career? _selectedCareer;
 
   final List<String> _taskTypes = [
     'trabajo',
@@ -52,8 +56,18 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   @override
   void initState() {
     super.initState();
+    _loadCareer();
     _loadSubjects();
     _initializeData();
+  }
+
+  Future<void> _loadCareer() async {
+    final career = _careerService.getSelectedCareer();
+    if (career != null) {
+      setState(() {
+        _selectedCareer = career;
+      });
+    }
   }
 
   void _initializeData() {
@@ -74,83 +88,62 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   }
 
   Future<void> _loadSubjects() async {
-    // Materias predefinidas de la carrera de Teología
-    final predefinedSubjects = [
-      Subject(
-        id: 'predef_1',
-        name: 'Contexto Literario del Antiguo Testamento',
-        professor: 'Dr. Daniel Godoy',
-        visibility: SubjectVisibility.soloYo,
-        userId: 'system',
-        userName: 'Sistema',
-        createdAt: DateTime.now(),
-      ),
-      Subject(
-        id: 'predef_2',
-        name: 'Hermenéutica Bíblica',
-        professor: 'Lic. Carlos Caamaño Espinoza',
-        visibility: SubjectVisibility.soloYo,
-        userId: 'system',
-        userName: 'Sistema',
-        createdAt: DateTime.now(),
-      ),
-      Subject(
-        id: 'predef_3',
-        name: 'Metodología del Estudio Bíblico',
-        professor: 'Lic. Carlos Caamaño Espinoza',
-        visibility: SubjectVisibility.soloYo,
-        userId: 'system',
-        userName: 'Sistema',
-        createdAt: DateTime.now(),
-      ),
-      Subject(
-        id: 'predef_4',
-        name: 'Introducción a la Historia de la Iglesia I',
-        professor: 'Mg. Cecilia Castillo N.',
-        visibility: SubjectVisibility.soloYo,
-        userId: 'system',
-        userName: 'Sistema',
-        createdAt: DateTime.now(),
-      ),
-      Subject(
-        id: 'predef_5',
-        name: 'Historia de Israel I',
-        professor: 'Mg. Jaime Alarcón',
-        visibility: SubjectVisibility.soloYo,
-        userId: 'system',
-        userName: 'Sistema',
-        createdAt: DateTime.now(),
-      ),
-      Subject(
-        id: 'predef_6',
-        name: 'Comunicaciones y Redacción',
-        professor: 'Dr. Patricio Abarca Castro',
-        visibility: SubjectVisibility.soloYo,
-        userId: 'system',
-        userName: 'Sistema',
-        createdAt: DateTime.now(),
-      ),
-      Subject(
-        id: 'predef_7',
-        name: 'Hebreo Bíblico I',
-        professor: 'Lic. Hemir Ochoa',
-        visibility: SubjectVisibility.soloYo,
-        userId: 'system',
-        userName: 'Sistema',
-        createdAt: DateTime.now(),
-      ),
-    ];
+    // Materias predefinidas según carrera seleccionada
+    List<Subject> predefinedSubjects = [];
+    
+    if (_selectedCareer != null) {
+      predefinedSubjects = _selectedCareer!.predefinedSubjects.asMap().entries.map((entry) {
+        final index = entry.key;
+        final subjectName = entry.value;
+        
+        // Extraer profesor si está en paréntesis
+        String professor = 'Profesor';
+        String cleanName = subjectName;
+        
+        if (subjectName.contains('(')) {
+          final parts = subjectName.split('(');
+          cleanName = parts[0].trim();
+          professor = parts[1].replaceAll(')', '').trim();
+        }
+        
+        return Subject(
+          id: 'predef_${_selectedCareer!.id}_$index',
+          name: cleanName,
+          professor: professor,
+          visibility: SubjectVisibility.soloYo,
+          userId: 'system',
+          userName: 'Sistema',
+          createdAt: DateTime.now(),
+        );
+      }).toList();
+    }
 
-    try {
-      final userSubjects = await _firebaseService.getSubjects();
+    // Cargar primero desde caché local para respuesta inmediata
+    final cachedSubjects = _firebaseService.getSubjectsFromCache();
+    if (cachedSubjects.isNotEmpty) {
       setState(() {
-        _subjects = [...predefinedSubjects, ...userSubjects];
+        _subjects = [...predefinedSubjects, ...cachedSubjects];
+        _filteredSubjects = _subjects;
+      });
+    }
+
+    // Luego actualizar desde Firebase
+    try {
+      final firebaseSubjects = await _firebaseService.getSubjects();
+      setState(() {
+        _subjects = [...predefinedSubjects, ...firebaseSubjects];
         _filteredSubjects = _subjects;
       });
     } catch (e) {
+      print('Error cargando materias desde Firebase: $e');
+      // Si falla, mantener las materias predefinidas y cache
+    }
+
+    // Si no hay materias en cache y falla Firebase, usar predefinidas
+    if (_subjects.isEmpty) {
       setState(() {
         _subjects = predefinedSubjects;
-        _filteredSubjects = predefinedSubjects;
+        _filteredSubjects = _subjects;
       });
     }
   }

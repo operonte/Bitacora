@@ -31,6 +31,20 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
+    // Cargar primero desde caché local para respuesta inmediata (offline-first)
+    final cachedTasks = _firebaseService.getTasksFromCache();
+    if (cachedTasks.isNotEmpty) {
+      setState(() {
+        _tasks = cachedTasks.where((task) {
+          final isDelivered = task.isCompleted && task.isSubmitted;
+          final isFuture = task.dueDate.isAfter(DateTime.now());
+          return !isDelivered && isFuture;
+        }).toList();
+        _filteredTasks = _tasks;
+        _isLoading = false;
+      });
+    }
+
     try {
       final tasks = await _firebaseService.getPendingTasks();
       // Materias de la carrera de Teología con sus profesores

@@ -16,6 +16,7 @@ class OverdueTasksScreen extends StatefulWidget {
 
 class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
   List<Task> _tasks = [];
+  List<Task> _filteredTasks = [];
   bool _isLoading = true;
   final FirebaseService _firebaseService = FirebaseService();
 
@@ -27,6 +28,20 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
+
+    // Cargar primero desde caché local para respuesta inmediata (offline-first)
+    final cachedTasks = _firebaseService.getTasksFromCache();
+    if (cachedTasks.isNotEmpty) {
+      setState(() {
+        _tasks = cachedTasks.where((task) {
+          final isDelivered = task.isCompleted && task.isSubmitted;
+          final isPast = task.dueDate.isBefore(DateTime.now());
+          return !isDelivered && isPast;
+        }).toList();
+        _filteredTasks = _tasks; // Update this line
+        _isLoading = false;
+      });
+    }
 
     try {
       final tasks = await _firebaseService.getOverdueTasks();

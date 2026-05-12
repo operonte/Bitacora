@@ -28,6 +28,15 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
+    // Cargar primero desde caché local para respuesta inmediata (offline-first)
+    final cachedTasks = _firebaseService.getTasksFromCache();
+    if (cachedTasks.isNotEmpty) {
+      setState(() {
+        _tasks = cachedTasks.where((task) => task.isCompleted && task.isSubmitted).toList();
+        _isLoading = false;
+      });
+    }
+
     try {
       final tasks = await _firebaseService.getDeliveredTasks();
 

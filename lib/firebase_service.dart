@@ -3,13 +3,34 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'task_model.dart';
 import 'subject_model.dart';
+import 'services/local_cache_service.dart';
 
 class FirebaseService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
-    app: Firebase.app(),
-    databaseId: 'dtbitacora',
-  );
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore;
+  final FirebaseAuth _auth;
+  final LocalCacheService _cache;
+  
+  /// Constructor principal
+  FirebaseService._internal()
+      : _firestore = FirebaseFirestore.instanceFor(
+          app: Firebase.app(),
+          databaseId: 'dtbitacora',
+        ),
+        _auth = FirebaseAuth.instance,
+        _cache = LocalCacheService();
+  
+  /// Constructor para testing (inyección de dependencias)
+  FirebaseService.test({
+    required FirebaseFirestore firestore,
+    required FirebaseAuth auth,
+    LocalCacheService? cache,
+  })  : _firestore = firestore,
+        _auth = auth,
+        _cache = cache ?? LocalCacheService();
+  
+  /// Singleton instance
+  static final FirebaseService _instance = FirebaseService._internal();
+  factory FirebaseService() => _instance;
 
   User? get currentUser => _auth.currentUser;
 
@@ -41,26 +62,77 @@ class FirebaseService {
 
   Future<String> addTask(Task task) async {
     final taskData = task.toMap();
-    final docRef = await tasksCollection.add(taskData);
-    return docRef.id;
+    
+    try {
+      final docRef = await tasksCollection.add(taskData);
+      final newTask = task.copyWith(id: docRef.id);
+      
+      // Guardar en caché local
+      await _cache.cacheTask(newTask);
+      
+      return docRef.id;
+    } catch (e) {
+      // Si falla Firebase (sin internet), guardar en caché para sync posterior
+      print('⚠️ Error guardando en Firebase, guardando en caché: $e');
+      final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+      final newTask = task.copyWith(id: tempId);
+      await _cache.cacheTask(newTask);
+      await _cache.markPendingSync('task', tempId, 'create');
+      return tempId;
+    }
   }
 
   Future<void> updateTask(Task task) async {
     if (task.id == null) throw Exception('Task ID is required for update');
-    await tasksCollection.doc(task.id).update(task.toMap());
+    
+    try {
+      await tasksCollection.doc(task.id).update(task.toMap());
+      // Actualizar caché
+      await _cache.cacheTask(task);
+    } catch (e) {
+      print('⚠️ Error actualizando en Firebase, guardando en caché: $e');
+      await _cache.cacheTask(task);
+      await _cache.markPendingSync('task', task.id!, 'update');
+    }
   }
 
   Future<void> deleteTask(String taskId) async {
-    await tasksCollection.doc(taskId).delete();
+    try {
+      await tasksCollection.doc(taskId).delete();
+      // Eliminar del caché
+      await _cache.removeCachedTask(taskId);
+    } catch (e) {
+      print('⚠️ Error eliminando en Firebase, marcando para sync: $e');
+      await _cache.removeCachedTask(taskId);
+      await _cache.markPendingSync('task', taskId, 'delete');
+    }
   }
 
   Future<List<Task>> getTasks() async {
-    final snapshot = await tasksCollection
-        .orderBy('createdAt', descending: true)
-        .get();
-    return snapshot.docs
-        .map((doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-        .toList();
+    try {
+      // Intentar obtener de Firebase primero
+      final snapshot = await tasksCollection
+          .orderBy('createdAt', descending: true)
+          .get();
+      
+      final tasks = snapshot.docs
+          .map((doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id))
+          .toList();
+      
+      // Guardar en caché para uso offline
+      await _cache.cacheTasks(tasks);
+      
+      return tasks;
+    } catch (e) {
+      print('⚠️ Error cargando desde Firebase, usando caché local: $e');
+      // Si falla Firebase, retornar desde caché
+      return _cache.getCachedTasks();
+    }
+  }
+  
+  /// Obtiene tareas solo del caché local (útil para mostrar datos inmediatamente)
+  List<Task> getTasksFromCache() {
+    return _cache.getCachedTasks();
   }
 
   Future<List<Task>> getPendingTasks() async {
@@ -124,35 +196,88 @@ class FirebaseService {
 
   Future<String> addSubject(Subject subject) async {
     final subjectData = subject.toMap();
-    final docRef = await subjectsCollection.add(subjectData);
-    return docRef.id;
+    
+    try {
+      final docRef = await subjectsCollection.add(subjectData);
+      final newSubject = subject.copyWith(id: docRef.id);
+      
+      // Guardar en caché local
+      await _cache.cacheSubject(newSubject);
+      
+      return docRef.id;
+    } catch (e) {
+      print('⚠️ Error guardando materia en Firebase, guardando en caché: $e');
+      final tempId = 'temp_subject_${DateTime.now().millisecondsSinceEpoch}';
+      final newSubject = subject.copyWith(id: tempId);
+      await _cache.cacheSubject(newSubject);
+      await _cache.markPendingSync('subject', tempId, 'create');
+      return tempId;
+    }
   }
 
   Future<void> updateSubject(Subject subject) async {
     if (subject.id == null) throw Exception('Subject ID is required for update');
-    await subjectsCollection.doc(subject.id).update(subject.toMap());
+    
+    try {
+      await subjectsCollection.doc(subject.id).update(subject.toMap());
+      await _cache.cacheSubject(subject);
+    } catch (e) {
+      print('⚠️ Error actualizando materia en Firebase, guardando en caché: $e');
+      await _cache.cacheSubject(subject);
+      await _cache.markPendingSync('subject', subject.id!, 'update');
+    }
   }
 
   Future<void> deleteSubject(String subjectId) async {
-    await subjectsCollection.doc(subjectId).delete();
+    try {
+      await subjectsCollection.doc(subjectId).delete();
+      await _cache.removeCachedSubject(subjectId);
+    } catch (e) {
+      print('⚠️ Error eliminando materia en Firebase, marcando para sync: $e');
+      await _cache.removeCachedSubject(subjectId);
+      await _cache.markPendingSync('subject', subjectId, 'delete');
+    }
   }
 
   Future<List<Subject>> getSubjects() async {
-    final snapshot = await subjectsCollection
-        .orderBy('name')
-        .get();
-    return snapshot.docs
-        .map((doc) => Subject.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-        .toList();
+    try {
+      final snapshot = await subjectsCollection
+          .orderBy('name')
+          .get();
+      
+      final subjects = snapshot.docs
+          .map((doc) => Subject.fromMap(doc.data() as Map<String, dynamic>, doc.id))
+          .toList();
+      
+      // Guardar en caché para uso offline
+      await _cache.cacheSubjects(subjects);
+      
+      return subjects;
+    } catch (e) {
+      print('⚠️ Error cargando materias desde Firebase, usando caché local: $e');
+      // Si falla Firebase, retornar desde caché
+      return _cache.getCachedSubjects();
+    }
+  }
+  
+  /// Obtiene materias solo del caché local
+  List<Subject> getSubjectsFromCache() {
+    return _cache.getCachedSubjects();
   }
 
   Future<List<Subject>> getPublicSubjects() async {
-    final snapshot = await subjectsCollection
-        .where('visibility', isEqualTo: SubjectVisibility.cursoCompleto.index)
-        .orderBy('name')
-        .get();
-    return snapshot.docs
-        .map((doc) => Subject.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-        .toList();
+    try {
+      final snapshot = await subjectsCollection
+          .where('visibility', isEqualTo: SubjectVisibility.cursoCompleto.index)
+          .orderBy('name')
+          .get();
+      return snapshot.docs
+          .map((doc) => Subject.fromMap(doc.data() as Map<String, dynamic>, doc.id))
+          .toList();
+    } catch (e) {
+      print('⚠️ Error cargando materias públicas: $e');
+      // Retornar vacío si falla - no usar caché para datos públicos
+      return [];
+    }
   }
 }
