@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import 'firebase_service.dart';
 import 'task_model.dart';
 import 'subject_model.dart';
@@ -10,6 +11,7 @@ import 'subjects_screen.dart';
 import 'utils/error_handler.dart';
 import 'models/career_model.dart';
 import 'services/career_service.dart';
+import 'providers/app_state.dart';
 
 class AddTaskScreen extends StatefulWidget {
   final Task? task;
@@ -410,82 +412,84 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   Future<void> _saveTask() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Validar que se haya seleccionado asignatura y profesor
-    if (_selectedSubject.isEmpty || _selectedProfessor.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Por favor selecciona una asignatura y profesor'),
-        ),
-      );
-      return;
-    }
-
     setState(() => _isLoading = true);
 
     try {
-      final firebaseService = FirebaseService();
-
-      print('DEBUG: Intentando guardar tarea...');
-      print('DEBUG: Asignatura: $_selectedSubject');
-      print('DEBUG: Profesor: $_selectedProfessor');
+      final appState = Provider.of<AppState>(context, listen: false);
       final notificationService = NotificationService();
+      final user = FirebaseAuth.instance.currentUser;
 
-      final dueDateTime = DateTime(
-        _dueDate.year,
-        _dueDate.month,
-        _dueDate.day,
-        _dueTime.hour,
-        _dueTime.minute,
-      );
+      if (user == null) {
+        throw Exception('Usuario no autenticado');
+      }
+
+      // Validar que se haya seleccionado asignatura y profesor
+      if (_selectedSubject.isEmpty || _selectedProfessor.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Por favor selecciona una asignatura y profesor'),
+          ),
+        );
+        return;
+      }
 
       final task = Task(
         id: widget.task?.id,
-        title: _titleController.text,
-        description: _descriptionController.text,
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
         subject: _selectedSubject,
         professor: _selectedProfessor,
-        dueDate: dueDateTime,
+        dueDate: DateTime(
+          _dueDate.year,
+          _dueDate.month,
+          _dueDate.day,
+          _dueTime.hour,
+          _dueTime.minute,
+        ),
+        type: _selectedType,
         isCompleted: _isCompleted,
         isSubmitted: _isSubmitted,
-        type: _selectedType,
+        userId: user.uid,
+        userName: user.displayName ?? 'Usuario',
+        tag: _tagController.text.trim().isEmpty ? null : _tagController.text.trim(),
         createdAt: widget.task?.createdAt ?? DateTime.now(),
-        tag: _tagController.text.isNotEmpty ? _tagController.text : null,
-        userId: FirebaseAuth.instance.currentUser?.uid ?? '',
-        userName: FirebaseAuth.instance.currentUser?.displayName ?? 'Usuario',
       );
 
-      if (widget.task == null) {
-        final taskId = await firebaseService.addTask(task);
-        notificationService.scheduleProximityReminder(
-          taskId.hashCode,
+    if (widget.task == null) {
+      // Crear nueva tarea usando AppState
+      await appState.addTask(task);
+      
+      // Programar notificación
+      await notificationService.scheduleProximityReminder(
+        task.id.hashCode,
+        task.title,
+        task.description,
+        task.dueDate,
+      );
+    } else {
+      await appState.updateTask(task);
+      if (widget.task!.dueDate != task.dueDate) {
+        await notificationService.cancelNotification(task.id.hashCode);
+        await notificationService.scheduleProximityReminder(
+          task.id.hashCode,
           task.title,
           task.description,
           task.dueDate,
         );
-      } else {
-        await firebaseService.updateTask(task);
-        if (widget.task!.dueDate != task.dueDate) {
-          await notificationService.cancelNotification(task.id.hashCode);
-          await notificationService.scheduleProximityReminder(
-            task.id.hashCode,
-            task.title,
-            task.description,
-            task.dueDate,
-          );
-        }
       }
+    }
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.task == null ? '✓ Tarea creada' : '✓ Tarea actualizada',
-          ),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          widget.task == null ? '✓ Tarea creada' : '✓ Tarea actualizada',
         ),
-      );
-      Navigator.pop(context, true);
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       final appException = ErrorMessages.fromFirebaseError(e);
