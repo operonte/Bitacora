@@ -43,7 +43,10 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
     }
 
     try {
-      final tasks = await _firebaseService.getTasks(careerId: selectedCareer?.id);
+      // Solo filtrar por careerId si hay una carrera seleccionada
+      final tasks = await _firebaseService.getTasks(
+        careerId: selectedCareer?.id?.isNotEmpty == true ? selectedCareer!.id : null
+      );
       // Filtrar solo tareas entregadas
       final deliveredTasks = tasks.where((task) => task.isCompleted && task.isSubmitted).toList();
       

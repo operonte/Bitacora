@@ -49,7 +49,10 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
     }
 
     try {
-      final tasks = await _firebaseService.getTasks(careerId: selectedCareer?.id);
+      // Solo filtrar por careerId si hay una carrera seleccionada
+      final tasks = await _firebaseService.getTasks(
+        careerId: selectedCareer?.id?.isNotEmpty == true ? selectedCareer!.id : null
+      );
       // Filtrar solo tareas vencidas
       final overdueTasks = tasks.where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;

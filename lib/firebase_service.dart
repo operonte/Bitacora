@@ -113,8 +113,9 @@ class FirebaseService {
       // Intentar obtener de Firebase primero
       Query query = tasksCollection.orderBy('createdAt', descending: true);
       
-      // Filtrar por careerId si se proporciona
-      if (careerId != null) {
+      // Filtrar por careerId solo si se proporciona
+      // Si careerId es null, no filtrar (mostrar todas las tareas)
+      if (careerId != null && careerId.isNotEmpty) {
         query = query.where('careerId', isEqualTo: careerId);
       }
       
