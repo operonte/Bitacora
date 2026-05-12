@@ -108,12 +108,17 @@ class FirebaseService {
     }
   }
 
-  Future<List<Task>> getTasks() async {
+  Future<List<Task>> getTasks({String? careerId}) async {
     try {
       // Intentar obtener de Firebase primero
-      final snapshot = await tasksCollection
-          .orderBy('createdAt', descending: true)
-          .get();
+      Query query = tasksCollection.orderBy('createdAt', descending: true);
+      
+      // Filtrar por careerId si se proporciona
+      if (careerId != null) {
+        query = query.where('careerId', isEqualTo: careerId);
+      }
+      
+      final snapshot = await query.get();
       
       final tasks = snapshot.docs
           .map((doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id))

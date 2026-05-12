@@ -3,9 +3,10 @@ import 'package:intl/intl.dart';
 import 'firebase_service.dart';
 import 'task_model.dart';
 import 'task_card.dart';
+import 'add_task_screen.dart';
 import 'colors.dart';
-import 'app_icon_widget.dart';
 import 'utils/error_handler.dart';
+import 'services/career_service.dart';
 
 class OverdueTasksScreen extends StatefulWidget {
   const OverdueTasksScreen({Key? key}) : super(key: key);
@@ -29,6 +30,10 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
+    // Obtener carrera seleccionada
+    final careerService = CareerService();
+    final selectedCareer = careerService.getSelectedCareer();
+
     // Cargar primero desde caché local para respuesta inmediata (offline-first)
     final cachedTasks = _firebaseService.getTasksFromCache();
     if (cachedTasks.isNotEmpty) {
@@ -38,24 +43,27 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
           final isPast = task.dueDate.isBefore(DateTime.now());
           return !isDelivered && isPast;
         }).toList();
-        _filteredTasks = _tasks; // Update this line
+        _filteredTasks = _tasks;
         _isLoading = false;
       });
     }
 
     try {
-      final tasks = await _firebaseService.getOverdueTasks();
+      final tasks = await _firebaseService.getTasks(careerId: selectedCareer?.id);
+      // Filtrar solo tareas vencidas
+      final overdueTasks = tasks.where((task) {
+        final isDelivered = task.isCompleted && task.isSubmitted;
+        final isPast = task.dueDate.isBefore(DateTime.now());
+        return !isDelivered && isPast;
+      }).toList();
 
       setState(() {
-        _tasks = tasks;
+        _tasks = overdueTasks;
         _isLoading = false;
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      if (mounted) {
-        final appException = ErrorMessages.fromFirebaseError(e);
-        ErrorHandler.showErrorSnackBar(context, appException);
-      }
+      ErrorHandler.showErrorSnackBar(context, ErrorMessages.fromFirebaseError(e));
     }
   }
 
@@ -87,7 +95,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: const AppIconWidget(size: 24),
+            icon: const Icon(Icons.info),
             onPressed: () => _showAppInfo(),
             tooltip: 'Acerca de',
           ),
@@ -393,7 +401,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
       builder: (context) => AlertDialog(
         title: Row(
           children: [
-            const AppIconWidget(size: 32),
+            const Icon(Icons.school),
             const SizedBox(width: 8),
             const Text('Bitácora'),
           ],

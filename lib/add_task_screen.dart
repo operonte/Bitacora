@@ -415,7 +415,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final appState = Provider.of<AppState>(context, listen: false);
+      final firebaseService = FirebaseService();
       final notificationService = NotificationService();
       final user = FirebaseAuth.instance.currentUser;
 
@@ -453,43 +453,44 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         userName: user.displayName ?? 'Usuario',
         tag: _tagController.text.trim().isEmpty ? null : _tagController.text.trim(),
         createdAt: widget.task?.createdAt ?? DateTime.now(),
+        careerId: _selectedCareer?.id,
       );
 
-    if (widget.task == null) {
-      // Crear nueva tarea usando AppState
-      await appState.addTask(task);
-      
-      // Programar notificación
-      await notificationService.scheduleProximityReminder(
-        task.id.hashCode,
-        task.title,
-        task.description,
-        task.dueDate,
-      );
-    } else {
-      await appState.updateTask(task);
-      if (widget.task!.dueDate != task.dueDate) {
-        await notificationService.cancelNotification(task.id.hashCode);
+      if (widget.task == null) {
+        // Crear nueva tarea
+        final taskId = await firebaseService.addTask(task);
+        
+        // Programar notificación
         await notificationService.scheduleProximityReminder(
-          task.id.hashCode,
+          taskId.hashCode,
           task.title,
           task.description,
           task.dueDate,
         );
+      } else {
+        await firebaseService.updateTask(task);
+        if (widget.task!.dueDate != task.dueDate) {
+          await notificationService.cancelNotification(task.id.hashCode);
+          await notificationService.scheduleProximityReminder(
+            task.id.hashCode,
+            task.title,
+            task.description,
+            task.dueDate,
+          );
+        }
       }
-    }
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          widget.task == null ? '✓ Tarea creada' : '✓ Tarea actualizada',
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            widget.task == null ? '✓ Tarea creada' : '✓ Tarea actualizada',
+          ),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
         ),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-    Navigator.pop(context, true);
+      );
+      Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       final appException = ErrorMessages.fromFirebaseError(e);

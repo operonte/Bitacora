@@ -6,6 +6,7 @@ import 'task_card.dart';
 import 'add_task_screen.dart';
 import 'colors.dart';
 import 'utils/error_handler.dart';
+import 'services/career_service.dart';
 
 class DeliveredTasksScreen extends StatefulWidget {
   const DeliveredTasksScreen({Key? key}) : super(key: key);
@@ -28,6 +29,10 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
+    // Obtener carrera seleccionada
+    final careerService = CareerService();
+    final selectedCareer = careerService.getSelectedCareer();
+
     // Cargar primero desde caché local para respuesta inmediata (offline-first)
     final cachedTasks = _firebaseService.getTasksFromCache();
     if (cachedTasks.isNotEmpty) {
@@ -38,18 +43,17 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
     }
 
     try {
-      final tasks = await _firebaseService.getDeliveredTasks();
-
+      final tasks = await _firebaseService.getTasks(careerId: selectedCareer?.id);
+      // Filtrar solo tareas entregadas
+      final deliveredTasks = tasks.where((task) => task.isCompleted && task.isSubmitted).toList();
+      
       setState(() {
-        _tasks = tasks;
+        _tasks = deliveredTasks;
         _isLoading = false;
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      if (mounted) {
-        final appException = ErrorMessages.fromFirebaseError(e);
-        ErrorHandler.showErrorSnackBar(context, appException);
-      }
+      ErrorHandler.showErrorSnackBar(context, ErrorMessages.fromFirebaseError(e));
     }
   }
 

@@ -12,6 +12,7 @@ class Task {
   String? tag;
   String userId;
   String userName;
+  String? careerId; // Nuevo campo para filtrar por carrera
 
   Task({
     this.id,
@@ -27,6 +28,7 @@ class Task {
     this.tag,
     required this.userId,
     required this.userName,
+    this.careerId,
   });
 
   Map<String, dynamic> toMap() {
@@ -43,6 +45,7 @@ class Task {
       'tag': tag,
       'userId': userId,
       'userName': userName,
+      'careerId': careerId,
     };
   }
 
@@ -59,8 +62,9 @@ class Task {
       type: map['type'] ?? 'trabajo',
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
       tag: map['tag'],
-      userId: map['userId'] ?? '',
-      userName: map['userName'] ?? 'Usuario',
+      userId: map['userId'],
+      userName: map['userName'],
+      careerId: map['careerId'],
     );
   }
 
@@ -78,6 +82,7 @@ class Task {
     String? tag,
     String? userId,
     String? userName,
+    String? careerId,
   }) {
     return Task(
       id: id ?? this.id,
@@ -93,6 +98,7 @@ class Task {
       tag: tag ?? this.tag,
       userId: userId ?? this.userId,
       userName: userName ?? this.userName,
+      careerId: careerId ?? this.careerId,
     );
   }
 

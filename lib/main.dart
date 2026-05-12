@@ -133,22 +133,12 @@ class _MainScreenState extends State<MainScreen> {
   final SyncService _syncService = SyncService();
   final CareerService _careerService = CareerService();
   final List<Widget> _screens = [
-    const PendingTasksScreenProvider(),
+    const PendingTasksScreen(),
     const OverdueTasksScreen(),
     const DeliveredTasksScreen(),
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    // Cargar datos iniciales
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final appState = Provider.of<AppState>(context, listen: false);
-      appState.loadTasks();
-      appState.loadSubjects();
-    });
-  }
-
+  
   @override
   Widget build(BuildContext context) {
     // Usar StreamBuilder para escuchar cambios en el estado de autenticación

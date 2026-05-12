@@ -6,6 +6,7 @@ import 'task_card.dart';
 import 'add_task_screen.dart';
 import 'colors.dart';
 import 'utils/error_handler.dart';
+import 'services/career_service.dart';
 
 class PendingTasksScreen extends StatefulWidget {
   const PendingTasksScreen({Key? key}) : super(key: key);
@@ -18,7 +19,6 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
   List<Task> _tasks = [];
   List<Task> _filteredTasks = [];
   String _selectedSubject = 'Todos';
-  List<Map<String, dynamic>> _subjects = [];
   bool _isLoading = true;
   final FirebaseService _firebaseService = FirebaseService();
 
@@ -31,74 +31,35 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
+    // Obtener carrera seleccionada
+    final careerService = CareerService();
+    final selectedCareer = careerService.getSelectedCareer();
+
     // Cargar primero desde caché local para respuesta inmediata (offline-first)
     final cachedTasks = _firebaseService.getTasksFromCache();
     if (cachedTasks.isNotEmpty) {
       setState(() {
-        _tasks = cachedTasks.where((task) {
-          final isDelivered = task.isCompleted && task.isSubmitted;
-          final isFuture = task.dueDate.isAfter(DateTime.now());
-          return !isDelivered && isFuture;
-        }).toList();
-        _filteredTasks = _tasks;
+        _tasks = cachedTasks;
         _isLoading = false;
       });
     }
 
     try {
-      final tasks = await _firebaseService.getPendingTasks();
-      // Materias de la carrera de Teología con sus profesores
-      final subjects = [
-        {'name': 'Todos', 'color': Colors.grey},
-        {
-          'name': 'Contexto Literario del Antiguo Testamento',
-          'professor': 'Dr. Daniel Godoy',
-          'color': Colors.blue,
-        },
-        {
-          'name': 'Hermenéutica Bíblica',
-          'professor': 'Lic. Carlos Caamaño Espinoza',
-          'color': Colors.green,
-        },
-        {
-          'name': 'Metodología del Estudio Bíblico',
-          'professor': 'Lic. Carlos Caamaño Espinoza',
-          'color': Colors.orange,
-        },
-        {
-          'name': 'Historia de la Iglesia I',
-          'professor': 'Mg. Cecilia Castillo N.',
-          'color': Colors.purple,
-        },
-        {
-          'name': 'Historia de Israel I',
-          'professor': 'Mg. Jaime Alarcón',
-          'color': Colors.red,
-        },
-        {
-          'name': 'Comunicaciones y Redacción',
-          'professor': 'Dr. Patricio Abarca Castro',
-          'color': Colors.teal,
-        },
-        {
-          'name': 'Hebreo Bíblico I',
-          'professor': 'Lic. Hemir Ochoa',
-          'color': Colors.indigo,
-        },
-      ];
-
+      final tasks = await _firebaseService.getTasks(careerId: selectedCareer?.id);
+      // Filtrar solo tareas pendientes
+      final pendingTasks = tasks.where((task) {
+        final isDelivered = task.isCompleted && task.isSubmitted;
+        final isFuture = task.dueDate.isAfter(DateTime.now());
+        return !isDelivered && isFuture;
+      }).toList();
+      
       setState(() {
-        _tasks = tasks;
-        _filteredTasks = tasks;
-        _subjects = subjects;
+        _tasks = pendingTasks;
         _isLoading = false;
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      if (mounted) {
-        final appException = ErrorMessages.fromFirebaseError(e);
-        ErrorHandler.showErrorSnackBar(context, appException);
-      }
+      ErrorHandler.showErrorSnackBar(context, ErrorMessages.fromFirebaseError(e));
     }
   }
 
@@ -169,8 +130,10 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
   }
 
   Widget _buildSubjectFilter() {
-    // _subjects ya incluye 'Todos' al inicio, no necesitamos agregarlo de nuevo
-    final subjectNames = _subjects.map((s) => s['name'] as String).toList();
+    // Obtener materias únicas de las tareas
+    final subjectNames = _tasks.map((task) => task.subject).toSet().toList();
+    subjectNames.sort();
+    subjectNames.insert(0, 'Todos');
 
     return Container(
       height: 60,
