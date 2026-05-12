@@ -56,8 +56,11 @@ void main() async {
   }
   
   runApp(
-    ChangeNotifierProvider(
-      create: (context) => AppState(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => AppState()),
+        ChangeNotifierProvider(create: (context) => CareerService()),
+      ],
       child: const BitacoraApp(),
     ),
   );
@@ -134,6 +137,17 @@ class _MainScreenState extends State<MainScreen> {
     const OverdueTasksScreen(),
     const DeliveredTasksScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Cargar datos iniciales
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final appState = Provider.of<AppState>(context, listen: false);
+      appState.loadTasks();
+      appState.loadSubjects();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

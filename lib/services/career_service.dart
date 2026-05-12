@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:bitacora/models/career_model.dart';
 
 /// Servicio para gestión de carreras académicas
-class CareerService {
+class CareerService extends ChangeNotifier {
   static final CareerService _instance = CareerService._internal();
   factory CareerService() => _instance;
   CareerService._internal();
@@ -18,6 +19,7 @@ class CareerService {
   Future<void> saveSelectedCareer(Career career) async {
     await _careerBox?.put('selected_career', career.toMap());
     print('✅ Carrera guardada: ${career.name}');
+    notifyListeners();
   }
   
   /// Obtiene la carrera seleccionada
@@ -42,6 +44,7 @@ class CareerService {
   Future<void> clearSelectedCareer() async {
     await _careerBox?.delete('selected_career');
     print('🧹 Carrera seleccionada limpiada');
+    notifyListeners();
   }
   
   /// Cierra recursos
