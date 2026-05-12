@@ -128,6 +128,7 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   final AuthService _authService = AuthService();
   final SyncService _syncService = SyncService();
+  final CareerService _careerService = CareerService();
   final List<Widget> _screens = [
     const PendingTasksScreenProvider(),
     const OverdueTasksScreen(),
@@ -159,7 +160,13 @@ class _MainScreenState extends State<MainScreen> {
         // Usuario autenticado - mostrar pantalla principal
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Bitácora'),
+            title: Consumer<CareerService>(
+              builder: (context, careerService, child) {
+                final career = careerService.getSelectedCareer();
+                final careerText = career != null ? ' - ${career.name}' : '';
+                return Text('Bitácora$careerText');
+              },
+            ),
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
             actions: [

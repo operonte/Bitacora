@@ -39,7 +39,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Configuración'),
+        title: Text(_selectedCareer != null 
+            ? 'Configuración - ${_selectedCareer!.name}' 
+            : 'Configuración'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),

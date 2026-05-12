@@ -168,7 +168,9 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.task == null ? 'Nueva Tarea' : 'Editar Tarea'),
+        title: Text(_selectedCareer != null 
+            ? 'Agregar Tarea - ${_selectedCareer!.name}' 
+            : (widget.task == null ? 'Nueva Tarea' : 'Editar Tarea')),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         actions: [
