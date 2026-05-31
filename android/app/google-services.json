@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "651071616802",
+    "project_id": "bitacora-2d643",
+    "storage_bucket": "bitacora-2d643.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:651071616802:android:ed6cf25b1ae2cb5f2b177b",
+        "android_client_info": {
+          "package_name": "com.operonte.bitacora"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "651071616802-hm1jdouu9je6omlhjmg8hff1ci2jm7qj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.operonte.bitacora",
+            "certificate_hash": "9eb2a54fcc67af29aece16c140d3b9097d6be237"
+          }
+        },
+        {
+          "client_id": "651071616802-jh3f4tpj01q6p5l4rfcdscakgjo8dh6a.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCkEeyGhg8e5dkP5VKfQks58c-EEUQwGl8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "651071616802-jh3f4tpj01q6p5l4rfcdscakgjo8dh6a.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

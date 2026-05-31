@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Regla para permitir lectura/escritura solo al usuario autenticado en su propia subcolección
+    match /dtbitacora/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Regla para colección careers - lectura para todos autenticados, escritura solo para admins
+    match /careers/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Regla para colección admins - solo lectura para verificar admin status
+    match /admins/{userId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Solo se puede crear manualmente desde Firebase Console
+    }
+  }
+}

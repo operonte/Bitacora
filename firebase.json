@@ -1,0 +1,50 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "database": "dtbitacora"
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/policies/**",
+        "destination": "/policies/**"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "bitacora-2d643",
+          "appId": "1:651071616802:android:ed6cf25b1ae2cb5f2b177b",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "web": {
+        "default": {
+          "projectId": "bitacora-2d643",
+          "appId": "1:651071616802:web:92aaf37bb790083d2b177b"
+        }
+      }
+    },
+    "dart": {
+      "lib/firebase_options.dart": {
+        "projectId": "bitacora-2d643",
+        "configurations": {
+          "android": "1:651071616802:android:ed6cf25b1ae2cb5f2b177b",
+          "web": "1:651071616802:web:92aaf37bb790083d2b177b"
+        }
+      }
+    }
+  }
+}
