@@ -44,7 +44,7 @@ class Careers {
         Subject(
           id: 'griego',
           name: 'Griego',
-          professor: 'Profesor',
+          professor: 'Dr. Daniel Godoy',
           userId: 'system',
           userName: 'Sistema',
           createdAt: DateTime.now(),
@@ -52,7 +52,7 @@ class Careers {
         Subject(
           id: 'hebreo',
           name: 'Hebreo',
-          professor: 'Profesor',
+          professor: 'Lic. Hemir Ochoa',
           userId: 'system',
           userName: 'Sistema',
           createdAt: DateTime.now(),
@@ -60,7 +60,7 @@ class Careers {
         Subject(
           id: 'contexto_at',
           name: 'Contexto literario del antiguo testamento',
-          professor: 'Profesor',
+          professor: 'Dr. Daniel Godoy',
           userId: 'system',
           userName: 'Sistema',
           createdAt: DateTime.now(),
@@ -68,7 +68,7 @@ class Careers {
         Subject(
           id: 'hermeneutica',
           name: 'Hermenéutica bíblica',
-          professor: 'Profesor',
+          professor: 'Lic. Carlos Camaño',
           userId: 'system',
           userName: 'Sistema',
           createdAt: DateTime.now(),
@@ -76,7 +76,7 @@ class Careers {
         Subject(
           id: 'metodologia',
           name: 'Metodología de estudio bíblico',
-          professor: 'Profesor',
+          professor: 'Lic. Carlos Camaño',
           userId: 'system',
           userName: 'Sistema',
           createdAt: DateTime.now(),
@@ -84,7 +84,7 @@ class Careers {
         Subject(
           id: 'historia_iglesia',
           name: 'Introducción a la historia de la iglesia',
-          professor: 'Profesor',
+          professor: 'Mg. Cecilia Castillo',
           userId: 'system',
           userName: 'Sistema',
           createdAt: DateTime.now(),
@@ -92,7 +92,7 @@ class Careers {
         Subject(
           id: 'historia_israel',
           name: 'Historia de Israel',
-          professor: 'Profesor',
+          professor: 'Mg. Jaime Alarcon',
           userId: 'system',
           userName: 'Sistema',
           createdAt: DateTime.now(),
@@ -100,7 +100,7 @@ class Careers {
         Subject(
           id: 'comunicacion',
           name: 'Comunicación y redacción',
-          professor: 'Profesor',
+          professor: 'Dr. Patricio Abarca',
           userId: 'system',
           userName: 'Sistema',
           createdAt: DateTime.now(),

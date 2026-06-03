@@ -47,6 +47,20 @@ class CareerService extends ChangeNotifier {
     return Careers.findByAccessKey(accessKey);
   }
 
+  /// Fuerza la recarga de materias desde el código actualizado
+  /// Útil cuando se actualizan los nombres de profesores en career_model.dart
+  Future<void> reloadCareerWithUpdatedSubjects() async {
+    final career = getSelectedCareer();
+    if (career != null) {
+      // Obtener la carrera actualizada desde el código
+      final updatedCareer = Careers.findByAccessKey(career.accessKey);
+      if (updatedCareer != null) {
+        await saveSelectedCareer(updatedCareer);
+        Logger.info('Carrera recargada con materias actualizadas');
+      }
+    }
+  }
+
   /// Limpia carrera seleccionada (logout)
   Future<void> clearSelectedCareer() async {
     await _careerBox?.delete('selected_career');

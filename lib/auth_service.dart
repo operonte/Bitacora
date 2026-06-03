@@ -31,8 +31,17 @@ class AuthService {
       Logger.auth('Iniciando proceso de Google Sign-In');
 
       if (kIsWeb) {
+        // En web, usar Firebase Auth con signInWithPopup
+        // Esto detecta automáticamente cuentas existentes en el navegador
         final GoogleAuthProvider googleProvider = GoogleAuthProvider();
-        return await _auth.signInWithPopup(googleProvider);
+        googleProvider.setCustomParameters({'prompt': 'select_account'});
+
+        Logger.auth('Iniciando signInWithPopup con Firebase Auth');
+        final UserCredential userCredential = await _auth.signInWithPopup(
+          googleProvider,
+        );
+        Logger.auth('Autenticación exitosa: ${userCredential.user?.email}');
+        return userCredential;
       } else {
         Logger.auth('Solicitando cuenta de Google');
         final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();

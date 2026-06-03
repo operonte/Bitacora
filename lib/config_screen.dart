@@ -95,6 +95,23 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
           const SizedBox(height: 24),
 
+          // ── Materias ────────────────────────────────────────
+          _sectionHeader(context, 'Materias', Icons.book_outlined),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.refresh, color: AppColors.primary),
+              title: const Text('Actualizar nombres de profesores'),
+              subtitle: const Text(
+                'Recargar materias con información actualizada',
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: _reloadSubjects,
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
           // ── Notificaciones ───────────────────────────────────
           _sectionHeader(
             context,
@@ -213,6 +230,18 @@ class _ConfigScreenState extends State<ConfigScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _reloadSubjects() async {
+    try {
+      await _careerService.reloadCareerWithUpdatedSubjects();
+      _showSnack('✅ Materias actualizadas correctamente', Colors.green);
+      setState(() {
+        _selectedCareer = _careerService.getSelectedCareer();
+      });
+    } catch (e) {
+      _showSnack('Error al actualizar materias: $e', AppColors.error);
+    }
   }
 
   Future<void> _logout() async {
