@@ -14,9 +14,9 @@ class CareerFirestoreService {
     return _firestore.collection(_collection).snapshots().map((snapshot) {
       final customCareers = snapshot.docs.map((doc) {
         final data = doc.data();
-        final subjectsList = data['predefinedSubjects'] as List;
+        final subjectsList = List.from(data['predefinedSubjects'] as List<dynamic>);
         final subjects = subjectsList
-            .map((s) => Subject.fromMap(s as Map<String, dynamic>))
+            .map((s) => Subject.fromMap(Map<String, dynamic>.from(s as Map)))
             .toList();
         return Career(
           id: data['id'] as String,
@@ -52,9 +52,9 @@ class CareerFirestoreService {
       if (!doc.exists) return null;
 
       final data = doc.data()!;
-      final subjectsList = data['predefinedSubjects'] as List;
+      final subjectsList = List.from(data['predefinedSubjects'] as List<dynamic>);
       final subjects = subjectsList
-          .map((s) => Subject.fromMap(s as Map<String, dynamic>))
+          .map((s) => Subject.fromMap(Map<String, dynamic>.from(s as Map)))
           .toList();
       return Career(
         id: data['id'] as String,
@@ -91,9 +91,9 @@ class CareerFirestoreService {
       final snapshot = await _firestore.collection(_collection).get();
       final customCareers = snapshot.docs.map((doc) {
         final data = doc.data();
-        final subjectsList = data['predefinedSubjects'] as List;
+        final subjectsList = List.from(data['predefinedSubjects'] as List<dynamic>);
         final subjects = subjectsList
-            .map((s) => Subject.fromMap(s as Map<String, dynamic>))
+            .map((s) => Subject.fromMap(Map<String, dynamic>.from(s as Map)))
             .toList();
         return Career(
           id: data['id'] as String,
@@ -128,9 +128,9 @@ class CareerFirestoreService {
       final doc = await _firestore.collection(_collection).doc(id).get();
       if (doc.exists) {
         final data = doc.data()!;
-        final subjectsList = data['predefinedSubjects'] as List;
+        final subjectsList = List.from(data['predefinedSubjects'] as List<dynamic>);
         final subjects = subjectsList
-            .map((s) => Subject.fromMap(s as Map<String, dynamic>))
+            .map((s) => Subject.fromMap(Map<String, dynamic>.from(s as Map)))
             .toList();
         return Career(
           id: data['id'] as String,
@@ -184,9 +184,9 @@ class CareerFirestoreService {
 
       if (doc.exists) {
         final data = doc.data()!;
-        final subjectsList = data['predefinedSubjects'] as List;
+        final subjectsList = List.from(data['predefinedSubjects'] as List<dynamic>);
         currentSubjects = subjectsList
-            .map((s) => Subject.fromMap(s as Map<String, dynamic>))
+            .map((s) => Subject.fromMap(Map<String, dynamic>.from(s as Map)))
             .toList();
       } else {
         // Si no existe en Firebase, usar las materias del modelo predefinido si aplica
@@ -237,9 +237,9 @@ class CareerFirestoreService {
 
       if (doc.exists) {
         final data = doc.data()!;
-        final subjectsList = data['predefinedSubjects'] as List;
+        final subjectsList = List.from(data['predefinedSubjects'] as List<dynamic>);
         currentSubjects = subjectsList
-            .map((s) => Subject.fromMap(s as Map<String, dynamic>))
+            .map((s) => Subject.fromMap(Map<String, dynamic>.from(s as Map)))
             .toList();
       } else {
         // Si no existe en Firebase, usar las materias del modelo predefinido si aplica

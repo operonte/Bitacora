@@ -30,6 +30,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   final _descriptionController = TextEditingController();
   final _tagController = TextEditingController();
   final _collaboratorsController = TextEditingController();
+  final _professorController = TextEditingController();
 
   String _selectedSubject = '';
   String _selectedProfessor = '';
@@ -61,17 +62,18 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCareer();
+    // Cargar carrera de forma síncrona primero
+    _loadCareerSync();
+    // Luego cargar asignaturas
     _loadSubjects();
+    // Finalmente inicializar datos de la tarea si es edición
     _initializeData();
   }
 
-  Future<void> _loadCareer() async {
+  void _loadCareerSync() {
     final career = _careerService.getSelectedCareer();
     if (career != null) {
-      setState(() {
-        _selectedCareer = career;
-      });
+      _selectedCareer = career;
     }
   }
 
@@ -82,6 +84,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       _descriptionController.text = task.description;
       _selectedSubject = task.subject;
       _selectedProfessor = task.professor;
+      _professorController.text = task.professor;
       _selectedType = task.type;
       _dueDate = task.dueDate;
       _dueTime = TimeOfDay.fromDateTime(task.dueDate);
@@ -91,6 +94,16 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       _collaboratorsController.text = task.collaborators.join(', ');
       _filterSubjects('');
     }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _tagController.dispose();
+    _collaboratorsController.dispose();
+    _professorController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSubjects() async {
@@ -253,6 +266,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                     setState(() {
                       _selectedSubject = selection.name;
                       _selectedProfessor = selection.professor;
+                      _professorController.text = selection.professor;
                     });
                   }
                 },
@@ -293,7 +307,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               ),
               const SizedBox(height: 16),
               TextFormField(
-                initialValue: _selectedProfessor,
+                controller: _professorController,
                 decoration: const InputDecoration(
                   labelText: 'Profesor',
                   border: OutlineInputBorder(),

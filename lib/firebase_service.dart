@@ -159,22 +159,50 @@ class FirebaseService {
       Logger.database(
         'Cargando tareas${careerId != null ? ' para carrera: $careerId' : ''}',
       );
-      // Intentar obtener de Firebase primero
-      Query query = tasksCollection.orderBy('createdAt', descending: true);
-
-      // Filtrar por careerId solo si se proporciona
-      // Si careerId es null, no filtrar (mostrar todas las tareas)
-      if (careerId != null && careerId.isNotEmpty) {
-        query = query.where('careerId', isEqualTo: careerId);
+      
+      late QuerySnapshot snapshot;
+      
+      try {
+        // Intentar con orderBy createdAt primero
+        Query query = tasksCollection.orderBy('createdAt', descending: true);
+        if (careerId != null && careerId.isNotEmpty) {
+          query = query.where('careerId', isEqualTo: careerId);
+        }
+        snapshot = await query.get();
+      } catch (e) {
+        Logger.warning(
+          'No se pudo ordenar por createdAt, intentando sin ordenamiento: $e',
+          tag: 'FirebaseService',
+        );
+        // Fallback: obtener sin ordenamiento
+        Query query = tasksCollection;
+        if (careerId != null && careerId.isNotEmpty) {
+          query = query.where('careerId', isEqualTo: careerId);
+        }
+        snapshot = await query.get();
       }
 
-      final snapshot = await query.get();
-
-      final tasks = snapshot.docs
-          .map(
-            (doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id),
-          )
-          .toList();
+      final tasks = <Task>[];
+      for (final doc in snapshot.docs) {
+        try {
+          final rawData = doc.data() as Map;
+          late Map<String, dynamic> data;
+          if (rawData is Map<String, dynamic>) {
+            data = rawData;
+          } else {
+            data = rawData.cast<String, dynamic>();
+          }
+          final task = Task.fromMap(data, doc.id);
+          tasks.add(task);
+        } catch (e) {
+          Logger.error(
+            'Error parseando tarea ${doc.id}: $e. Datos: ${doc.data()}',
+            error: e,
+            tag: 'FirebaseService',
+          );
+          // Continuar con la siguiente tarea en lugar de fallar completamente
+        }
+      }
 
       // Guardar en caché para uso offline
       await _cache.cacheTasks(tasks);
@@ -198,42 +226,123 @@ class FirebaseService {
   }
 
   Future<List<Task>> getPendingTasks() async {
-    final snapshot = await tasksCollection.orderBy('dueDate').get();
-    final tasks = snapshot.docs
-        .map((doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-        .toList();
-    // Filtrar: no entregadas (ambos true) Y fecha futura
-    return tasks.where((task) {
-      final isDelivered = task.isCompleted && task.isSubmitted;
-      final isFuture = task.dueDate.isAfter(DateTime.now());
-      return !isDelivered && isFuture;
-    }).toList();
+    try {
+      late QuerySnapshot snapshot;
+      
+      try {
+        snapshot = await tasksCollection.orderBy('dueDate').get();
+      } catch (e) {
+        Logger.warning(
+          'No se pudo ordenar getPendingTasks por dueDate, intentando sin ordenamiento: $e',
+          tag: 'FirebaseService',
+        );
+        snapshot = await tasksCollection.get();
+      }
+      
+      final tasks = <Task>[];
+      for (final doc in snapshot.docs) {
+        try {
+          final data = Map<String, dynamic>.from(doc.data() as Map);
+          final task = Task.fromMap(data, doc.id);
+          tasks.add(task);
+        } catch (e) {
+          Logger.error(
+            'Error parseando tarea ${doc.id} en getPendingTasks: $e. Datos: ${doc.data()}',
+            error: e,
+            tag: 'FirebaseService',
+          );
+        }
+      }
+      // Filtrar: no entregadas (ambos true) Y fecha futura
+      return tasks.where((task) {
+        final isDelivered = task.isCompleted && task.isSubmitted;
+        final isFuture = task.dueDate.isAfter(DateTime.now());
+        return !isDelivered && isFuture;
+      }).toList();
+    } catch (e) {
+      Logger.warning('Error en getPendingTasks: $e', error: e, tag: 'FirebaseService');
+      return [];
+    }
   }
 
   Future<List<Task>> getOverdueTasks() async {
-    final snapshot = await tasksCollection
-        .orderBy('dueDate', descending: true)
-        .get();
-    final tasks = snapshot.docs
-        .map((doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-        .toList();
-    // Filtrar: no entregadas (ambos true) Y fecha pasada
-    return tasks.where((task) {
-      final isDelivered = task.isCompleted && task.isSubmitted;
-      final isPast = task.dueDate.isBefore(DateTime.now());
-      return !isDelivered && isPast;
-    }).toList();
+    try {
+      late QuerySnapshot snapshot;
+      
+      try {
+        snapshot = await tasksCollection
+            .orderBy('dueDate', descending: true)
+            .get();
+      } catch (e) {
+        Logger.warning(
+          'No se pudo ordenar getOverdueTasks por dueDate, intentando sin ordenamiento: $e',
+          tag: 'FirebaseService',
+        );
+        snapshot = await tasksCollection.get();
+      }
+      
+      final tasks = <Task>[];
+      for (final doc in snapshot.docs) {
+        try {
+          final data = Map<String, dynamic>.from(doc.data() as Map);
+          final task = Task.fromMap(data, doc.id);
+          tasks.add(task);
+        } catch (e) {
+          Logger.error(
+            'Error parseando tarea ${doc.id} en getOverdueTasks: $e. Datos: ${doc.data()}',
+            error: e,
+            tag: 'FirebaseService',
+          );
+        }
+      }
+      // Filtrar: no entregadas (ambos true) Y fecha pasada
+      return tasks.where((task) {
+        final isDelivered = task.isCompleted && task.isSubmitted;
+        final isPast = task.dueDate.isBefore(DateTime.now());
+        return !isDelivered && isPast;
+      }).toList();
+    } catch (e) {
+      Logger.warning('Error en getOverdueTasks: $e', error: e, tag: 'FirebaseService');
+      return [];
+    }
   }
 
   Future<List<Task>> getDeliveredTasks() async {
-    final snapshot = await tasksCollection
-        .orderBy('dueDate', descending: true)
-        .get();
-    final tasks = snapshot.docs
-        .map((doc) => Task.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-        .toList();
-    // Filtrar: entregadas (ambos true)
-    return tasks.where((task) => task.isCompleted && task.isSubmitted).toList();
+    try {
+      late QuerySnapshot snapshot;
+      
+      try {
+        snapshot = await tasksCollection
+            .orderBy('dueDate', descending: true)
+            .get();
+      } catch (e) {
+        Logger.warning(
+          'No se pudo ordenar getDeliveredTasks por dueDate, intentando sin ordenamiento: $e',
+          tag: 'FirebaseService',
+        );
+        snapshot = await tasksCollection.get();
+      }
+      
+      final tasks = <Task>[];
+      for (final doc in snapshot.docs) {
+        try {
+          final data = Map<String, dynamic>.from(doc.data() as Map);
+          final task = Task.fromMap(data, doc.id);
+          tasks.add(task);
+        } catch (e) {
+          Logger.error(
+            'Error parseando tarea ${doc.id} en getDeliveredTasks: $e. Datos: ${doc.data()}',
+            error: e,
+            tag: 'FirebaseService',
+          );
+        }
+      }
+      // Filtrar: entregadas (ambos true)
+      return tasks.where((task) => task.isCompleted && task.isSubmitted).toList();
+    } catch (e) {
+      Logger.warning('Error en getDeliveredTasks: $e', error: e, tag: 'FirebaseService');
+      return [];
+    }
   }
 
   Future<void> updateTaskStatus(

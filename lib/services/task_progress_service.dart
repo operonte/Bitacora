@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import '../utils/hive_box_helper.dart';
 import '../utils/logger.dart';
 
 /// Guarda el progreso personal (completada / enviada) por tarea y usuario.
@@ -12,7 +13,7 @@ class TaskProgressService {
   static const _boxName = 'task_progress';
 
   Future<void> initialize() async {
-    _box = await Hive.openBox(_boxName);
+    _box = await openHiveBoxSafelyUntyped(_boxName);
   }
 
   String _key(String userId, String taskId) => '$userId:$taskId';
@@ -39,8 +40,10 @@ class TaskProgressService {
       'isCompleted': isCompleted,
       'isSubmitted': isSubmitted,
     });
-    Logger.info('Progreso guardado: $taskId → completada=$isCompleted enviada=$isSubmitted',
-        tag: 'TaskProgress');
+    Logger.info(
+      'Progreso guardado: $taskId → completada=$isCompleted enviada=$isSubmitted',
+      tag: 'TaskProgress',
+    );
   }
 
   /// Elimina el progreso de una tarea (al borrarla).

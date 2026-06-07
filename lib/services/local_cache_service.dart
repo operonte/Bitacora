@@ -3,6 +3,7 @@ import 'package:hive/hive.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../task_model.dart';
 import '../subject_model.dart';
+import '../utils/hive_box_helper.dart';
 import '../utils/logger.dart';
 
 /// Servicio de caché local para soporte offline
@@ -29,12 +30,9 @@ class LocalCacheService {
     if (_initialized) return;
 
     try {
-      // Hive ya debe estar inicializado en main.dart con hive_flutter
-      _tasksBox = await Hive.openBox<Map>('tasks_cache');
-      _subjectsBox = await Hive.openBox<Map>('subjects_cache');
-      _metadataBox = await Hive.openBox('metadata_cache');
-
-      // FIX: connectivity_plus v5+ emite List<ConnectivityResult>, no ConnectivityResult
+      _tasksBox = await openHiveBoxSafely<Map>('tasks_cache');
+      _subjectsBox = await openHiveBoxSafely<Map>('subjects_cache');
+      _metadataBox = await openHiveBoxSafelyUntyped('metadata_cache');
       _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
         ConnectivityResult result,
       ) {
@@ -59,7 +57,10 @@ class LocalCacheService {
   void _onConnectivityChanged(ConnectivityResult result) {
     final hasInternet = result != ConnectivityResult.none;
     _connectionController.add(hasInternet);
-    Logger.info('Conectividad cambiada: ${hasInternet ? "Online" : "Offline"}', tag: 'Cache');
+    Logger.info(
+      'Conectividad cambiada: ${hasInternet ? "Online" : "Offline"}',
+      tag: 'Cache',
+    );
   }
 
   // ==================== TASKS CACHE ====================
@@ -88,7 +89,10 @@ class LocalCacheService {
       'last_tasks_sync',
       DateTime.now().millisecondsSinceEpoch,
     );
-    Logger.info('${tasks.length} tareas guardadas en caché local', tag: 'Cache');
+    Logger.info(
+      '${tasks.length} tareas guardadas en caché local',
+      tag: 'Cache',
+    );
   }
 
   /// Obtiene todas las tareas del caché local
@@ -144,7 +148,10 @@ class LocalCacheService {
       'last_subjects_sync',
       DateTime.now().millisecondsSinceEpoch,
     );
-    Logger.info('${subjects.length} materias guardadas en caché local', tag: 'Cache');
+    Logger.info(
+      '${subjects.length} materias guardadas en caché local',
+      tag: 'Cache',
+    );
   }
 
   /// Obtiene todas las materias del caché local

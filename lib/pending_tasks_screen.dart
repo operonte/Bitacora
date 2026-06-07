@@ -61,8 +61,13 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
     final careerService = CareerService();
     final selectedCareer = careerService.getSelectedCareer();
 
+    Logger.info('=== DEBUG CARGA TAREAS ===', tag: 'PendingTasks');
+    Logger.info('Carrera seleccionada: ${selectedCareer?.name} (id: ${selectedCareer?.id})', tag: 'PendingTasks');
+    Logger.info('Carrera completa: $selectedCareer', tag: 'PendingTasks');
+
     // Cargar primero desde caché local para respuesta inmediata (offline-first)
     final cachedTasks = _firebaseService.getTasksFromCache();
+    Logger.info('Tareas en caché: ${cachedTasks.length}', tag: 'PendingTasks');
     if (cachedTasks.isNotEmpty) {
       final pendingCached = cachedTasks.where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
@@ -74,8 +79,12 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
             task.careerId == null ||
             task.careerId!.isEmpty ||
             task.careerId == selectedCareer.id;
+        if (!matchesCareer) {
+          Logger.info('Tarea NO matchea (caché): ${task.title}, careerId: ${task.careerId}', tag: 'PendingTasks');
+        }
         return !isDelivered && isFuture && matchesCareer;
       }).toList();
+      Logger.info('Tareas pendientes en caché después del filtro: ${pendingCached.length}', tag: 'PendingTasks');
       setState(() {
         _tasks = pendingCached;
         _filteredTasks = pendingCached; // FIX: inicializar _filteredTasks
@@ -86,13 +95,12 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
     try {
       // Cargar todas las tareas sin filtrar por careerId inicialmente
       final allTasks = await _firebaseService.getTasks();
-      Logger.info(
-        'Carrera seleccionada: ${selectedCareer?.name} (id: ${selectedCareer?.id})',
-      );
-      Logger.info('Total tareas desde Firebase: ${allTasks.length}');
+      Logger.info('Total tareas desde Firebase: ${allTasks.length}', tag: 'PendingTasks');
+      Logger.info('IDs únicos de carrera en tareas: ${allTasks.map((t) => t.careerId).toSet()}', tag: 'PendingTasks');
       for (final task in allTasks) {
-        Logger.info('Tarea: ${task.title}, careerId: ${task.careerId}');
+        Logger.info('  - Tarea: ${task.title}, careerId: ${task.careerId}, dueDate: ${task.dueDate}', tag: 'PendingTasks');
       }
+      
       // Filtrar tareas pendientes y por carrera si está seleccionada
       final pendingTasks = allTasks.where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
@@ -103,9 +111,12 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
             task.careerId == null ||
             task.careerId!.isEmpty ||
             task.careerId == selectedCareer.id;
+        if (!matchesCareer) {
+          Logger.info('Tarea NO matchea (Firebase): ${task.title}, careerId: ${task.careerId}, expected: ${selectedCareer?.id}', tag: 'PendingTasks');
+        }
         return !isDelivered && isFuture && matchesCareer;
       }).toList();
-      Logger.info('Tareas después del filtro: ${pendingTasks.length}');
+      Logger.info('Tareas después del filtro: ${pendingTasks.length}', tag: 'PendingTasks');
 
       setState(() {
         _tasks = pendingTasks;

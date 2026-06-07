@@ -8,33 +8,42 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
+  static bool _persistenceConfigured = false;
+  Stream<User?>? _userStream;
+
   AuthService() {
     _configurePersistence();
   }
 
   Future<void> _configurePersistence() async {
+    if (!kIsWeb || _persistenceConfigured) return;
     try {
-      // En web, Firebase Auth usa localStorage por defecto
-      // Aseguramos que la persistencia esté habilitada
       await _auth.setPersistence(Persistence.LOCAL);
+      _persistenceConfigured = true;
       Logger.auth('Persistencia configurada: LOCAL');
     } catch (e) {
       Logger.warning('Error configurando persistencia', error: e, tag: 'Auth');
     }
   }
 
+  /// Stream estable para la UI. En web usa [idTokenChanges] porque restaura
+  /// la sesión de forma más fiable tras un refresh que [authStateChanges].
+  Stream<User?> get userStream {
+    _userStream ??= kIsWeb ? _auth.idTokenChanges() : _auth.authStateChanges();
+    return _userStream!;
+  }
+
+  Stream<User?> get authStateChanges => userStream;
+
   User? get currentUser => _auth.currentUser;
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
 
   Future<UserCredential?> signInWithGoogle() async {
     try {
       Logger.auth('Iniciando proceso de Google Sign-In');
 
       if (kIsWeb) {
-        // En web, usar Firebase Auth con signInWithPopup
-        // Esto detecta automáticamente cuentas existentes en el navegador
+        await _configurePersistence();
         final GoogleAuthProvider googleProvider = GoogleAuthProvider();
-        googleProvider.setCustomParameters({'prompt': 'select_account'});
 
         Logger.auth('Iniciando signInWithPopup con Firebase Auth');
         final UserCredential userCredential = await _auth.signInWithPopup(

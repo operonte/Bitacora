@@ -107,21 +107,39 @@ class Task {
   }
 
   factory Task.fromMap(Map<String, dynamic> map, [String? id]) {
+    // Validar campos críticos antes de crear Task
+    final title = map['title']?.toString().trim() ?? '';
+    final description = map['description']?.toString().trim() ?? '';
+    final subject = map['subject']?.toString().trim() ?? '';
+    final professor = map['professor']?.toString().trim() ?? '';
+    final userId = map['userId']?.toString().trim() ?? '';
+    final userName = map['userName']?.toString().trim() ?? '';
+    final dueDate = map['dueDate'];
+    final createdAt = map['createdAt'];
+    
+    // Validar tipos de datos críticos
+    if (dueDate is! int && dueDate is! num) {
+      throw ArgumentError('dueDate debe ser un número (milisegundos), se recibió: ${dueDate.runtimeType}');
+    }
+    if (createdAt is! int && createdAt is! num) {
+      throw ArgumentError('createdAt debe ser un número (milisegundos), se recibió: ${createdAt.runtimeType}');
+    }
+    
     return Task(
       id: id ?? map['id']?.toString(),
-      title: map['title'],
-      description: map['description'],
-      subject: map['subject'],
-      professor: map['professor'],
-      dueDate: DateTime.fromMillisecondsSinceEpoch(map['dueDate']),
+      title: title.isEmpty ? 'Tarea sin título' : title,
+      description: description.isEmpty ? 'Sin descripción' : description,
+      subject: subject.isEmpty ? 'Sin asignatura' : subject,
+      professor: professor.isEmpty ? 'Sin profesor' : professor,
+      dueDate: DateTime.fromMillisecondsSinceEpoch(dueDate.toInt()),
       isCompleted: map['isCompleted'] ?? false,
       isSubmitted: map['isSubmitted'] ?? false,
-      type: map['type'] ?? 'trabajo',
-      createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
-      tag: map['tag'],
-      userId: map['userId'],
-      userName: map['userName'],
-      careerId: map['careerId'],
+      type: (map['type']?.toString() ?? 'trabajo').toLowerCase(),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt.toInt()),
+      tag: map['tag']?.toString(),
+      userId: userId.isEmpty ? 'unknown' : userId,
+      userName: userName.isEmpty ? 'Usuario desconocido' : userName,
+      careerId: map['careerId']?.toString(),
       collaborators: List<String>.from(map['collaborators'] ?? []),
     );
   }

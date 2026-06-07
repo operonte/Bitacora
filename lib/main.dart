@@ -23,46 +23,55 @@ import 'services/career_service.dart';
 import 'services/task_progress_service.dart';
 import 'providers/app_state.dart';
 import 'providers/theme_provider.dart';
+import 'startup_error_screen.dart';
 import 'utils/logger.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Hive.initFlutter();
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
 
-  final cacheService = LocalCacheService();
-  await cacheService.initialize();
+    await Hive.initFlutter();
 
-  await TaskProgressService().initialize();
+    final cacheService = LocalCacheService();
+    await cacheService.initialize();
 
-  final careerService = CareerService();
-  await careerService.initialize();
+    await TaskProgressService().initialize();
 
-  final themeProvider = ThemeProvider();
-  await themeProvider.initialize();
+    final careerService = CareerService();
+    await careerService.initialize();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    final themeProvider = ThemeProvider();
+    await themeProvider.initialize();
 
-  final syncService = SyncService();
-  syncService.initialize();
+    final syncService = SyncService();
+    syncService.initialize();
 
-  if (!kIsWeb) {
-    await _requestPermissions();
-    final notificationService = NotificationService();
-    await notificationService.initialize();
-    await notificationService.scheduleDailyReminder();
+    if (!kIsWeb) {
+      await _requestPermissions();
+      final notificationService = NotificationService();
+      await notificationService.initialize();
+      await notificationService.scheduleDailyReminder();
+    }
+
+    runApp(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AppState()),
+          ChangeNotifierProvider<CareerService>.value(value: careerService),
+          ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
+        ],
+        child: const BitacoraApp(),
+      ),
+    );
+  } catch (e, stack) {
+    Logger.error('Error fatal en arranque', error: e, tag: 'Main');
+    debugPrintStack(stackTrace: stack);
+    runApp(StartupErrorScreen(error: e.toString()));
   }
-
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AppState()),
-        ChangeNotifierProvider<CareerService>.value(value: careerService),
-        ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
-      ],
-      child: const BitacoraApp(),
-    ),
-  );
 }
 
 Future<void> _requestPermissions() async {
@@ -327,7 +336,7 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   final AuthService _authService = AuthService();
   final SyncService _syncService = SyncService();
-  final CareerService _careerService = CareerService();
+  late final Stream<User?> _authStream;
   final List<Widget> _screens = const [
     PendingTasksScreen(),
     OverdueTasksScreen(),
@@ -335,11 +344,19 @@ class _MainScreenState extends State<MainScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _authStream = _authService.userStream;
+  }
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: _authService.authStateChanges,
+      stream: _authStream,
+      initialData: _authService.currentUser,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            snapshot.data == null) {
           return const Scaffold(
             body: Center(
               child: CircularProgressIndicator(
@@ -350,7 +367,8 @@ class _MainScreenState extends State<MainScreen> {
           );
         }
 
-        if (!snapshot.hasData || snapshot.data == null) {
+        final user = snapshot.data;
+        if (user == null) {
           return const AuthScreen();
         }
 
