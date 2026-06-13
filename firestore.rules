@@ -18,10 +18,19 @@ service cloud.firestore {
       allow write: if false; // Solo se puede crear manualmente desde Firebase Console
     }
 
-    // Tareas pendientes compartidas por carrera (ej: Teología) - cualquier
-    // usuario autenticado con esa carrera seleccionada puede crear/editar/eliminar
+    // Carrera seleccionada por cada usuario - usada para autorizar el acceso
+    // a sharedTasks/{careerId} según pertenencia.
+    match /userCareers/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Tareas pendientes compartidas por carrera (ej: Teología) - solo los
+    // usuarios autenticados que tienen esa carrera seleccionada
+    // (userCareers/{uid}.careerId == careerId) pueden leer/escribir.
     match /sharedTasks/{careerId}/tasks/{taskId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null
+        && exists(/databases/$(database)/documents/userCareers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/userCareers/$(request.auth.uid)).data.careerId == careerId;
     }
 
     // Progreso personal (Realizada/Enviada) por usuario y tarea - privado, se

@@ -103,6 +103,27 @@ class FirebaseService {
         .collection('tasks');
   }
 
+  /// Registra (o actualiza) la carrera del usuario actual en
+  /// `userCareers/{uid}`, usada por las reglas de Firestore para autorizar
+  /// el acceso a `sharedTasks/{careerId}`.
+  Future<void> registerCareerMembership(String careerId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      await _firestore.collection('userCareers').doc(user.uid).set({
+        'careerId': careerId,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (e) {
+      Logger.warning(
+        'Error registrando carrera del usuario',
+        error: e,
+        tag: 'FirebaseService',
+      );
+    }
+  }
+
   /// Devuelve la colección donde debe guardarse una tarea según su carrera:
   /// compartida (`sharedTasks/{careerId}/tasks`) o personal (`tasksCollection`).
   CollectionReference _collectionForTask(String? careerId) {
@@ -233,8 +254,9 @@ class FirebaseService {
           careerId ?? CareerService().getSelectedCareer()?.id;
       if (Careers.isShared(effectiveCareerId)) {
         try {
+          await registerCareerMembership(effectiveCareerId!);
           final sharedSnapshot = await sharedTasksCollection(
-            effectiveCareerId!,
+            effectiveCareerId,
           ).get();
           final existingIds = tasks.map((t) => t.id).toSet();
           for (final doc in sharedSnapshot.docs) {
