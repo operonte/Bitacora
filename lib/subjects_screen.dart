@@ -217,9 +217,11 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
             labelText: 'Contraseña de administrador',
             border: OutlineInputBorder(),
           ),
-          onSubmitted: (_) {
+          onSubmitted: (_) async {
             final password = passwordController.text.trim();
-            if (AdminAuthService.verifyPassword(password)) {
+            final isValid = await AdminAuthService.verifyPassword(password);
+            if (!context.mounted) return;
+            if (isValid) {
               Navigator.pop(context);
               onVerified();
             } else {
@@ -238,9 +240,11 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               final password = passwordController.text.trim();
-              if (AdminAuthService.verifyPassword(password)) {
+              final isValid = await AdminAuthService.verifyPassword(password);
+              if (!context.mounted) return;
+              if (isValid) {
                 Navigator.pop(context);
                 onVerified();
               } else {

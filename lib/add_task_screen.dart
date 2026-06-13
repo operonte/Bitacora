@@ -554,7 +554,6 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               (t) => t.title == task.title && t.createdAt == task.createdAt,
             )
             .firstOrNull;
-        final taskId = savedTask?.id ?? '';
 
         if (savedTask != null) {
           await notificationService.scheduleTaskReminders(savedTask);

@@ -5,6 +5,8 @@ import 'package:bitacora/task_model.dart';
 import 'package:bitacora/subject_model.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('LocalCacheService Tests', () {
     late LocalCacheService cacheService;
 

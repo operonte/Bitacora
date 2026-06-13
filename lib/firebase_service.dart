@@ -3,7 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'task_model.dart';
 import 'subject_model.dart';
+import 'models/career_model.dart';
+import 'services/career_service.dart';
 import 'services/local_cache_service.dart';
+import 'services/task_progress_service.dart';
 import 'utils/logger.dart';
 
 /// Servicio de Firebase para gestión de tareas y materias.
@@ -88,17 +91,36 @@ class FirebaseService {
         .collection('subjects');
   }
 
+  /// Colección de tareas "pendientes" compartidas entre todos los usuarios
+  /// que tienen seleccionada la carrera [careerId].
+  CollectionReference sharedTasksCollection(String careerId) {
+    if (_auth.currentUser == null) throw Exception('Usuario no autenticado');
+    return _firestore
+        .collection('sharedTasks')
+        .doc(careerId)
+        .collection('tasks');
+  }
+
+  /// Devuelve la colección donde debe guardarse una tarea según su carrera:
+  /// compartida (`sharedTasks/{careerId}/tasks`) o personal (`tasksCollection`).
+  CollectionReference _collectionForTask(String? careerId) {
+    if (Careers.isShared(careerId)) {
+      return sharedTasksCollection(careerId!);
+    }
+    return tasksCollection;
+  }
+
   Future<String> addTask(Task task) async {
     final taskData = task.toMap();
 
     try {
       Logger.database('Agregando tarea: ${task.title}');
-      final docRef = await tasksCollection.add(taskData);
+      final docRef = await _collectionForTask(task.careerId).add(taskData);
       final newTask = task.copyWith(id: docRef.id);
 
       // Guardar en caché local
       await _cache.cacheTask(newTask);
-      Logger.database('Tarea agregada exitosamente con ID: $docRef.id');
+      Logger.database('Tarea agregada exitosamente con ID: ${docRef.id}');
 
       return docRef.id;
     } catch (e) {
@@ -121,7 +143,7 @@ class FirebaseService {
 
     try {
       Logger.database('Actualizando tarea: ${task.id}');
-      await tasksCollection.doc(task.id).update(task.toMap());
+      await _collectionForTask(task.careerId).doc(task.id).update(task.toMap());
       // Actualizar caché
       await _cache.cacheTask(task);
       Logger.database('Tarea actualizada exitosamente');
@@ -132,14 +154,14 @@ class FirebaseService {
         tag: 'FirebaseService',
       );
       await _cache.cacheTask(task);
-      await _cache.markPendingSync('task', task.id!, 'update');
+      await _cache.markPendingSync('task', task.id!, 'update', careerId: task.careerId);
     }
   }
 
-  Future<void> deleteTask(String taskId) async {
+  Future<void> deleteTask(String taskId, {String? careerId}) async {
     try {
       Logger.database('Eliminando tarea: $taskId');
-      await tasksCollection.doc(taskId).delete();
+      await _collectionForTask(careerId).doc(taskId).delete();
       // Eliminar del caché
       await _cache.removeCachedTask(taskId);
       Logger.database('Tarea eliminada exitosamente');
@@ -150,7 +172,7 @@ class FirebaseService {
         tag: 'FirebaseService',
       );
       await _cache.removeCachedTask(taskId);
-      await _cache.markPendingSync('task', taskId, 'delete');
+      await _cache.markPendingSync('task', taskId, 'delete', careerId: careerId);
     }
   }
 
@@ -204,11 +226,45 @@ class FirebaseService {
         }
       }
 
+      // Agregar tareas compartidas de la carrera seleccionada (si aplica)
+      final effectiveCareerId =
+          careerId ?? CareerService().getSelectedCareer()?.id;
+      if (Careers.isShared(effectiveCareerId)) {
+        try {
+          final sharedSnapshot = await sharedTasksCollection(
+            effectiveCareerId!,
+          ).get();
+          final existingIds = tasks.map((t) => t.id).toSet();
+          for (final doc in sharedSnapshot.docs) {
+            if (existingIds.contains(doc.id)) continue;
+            try {
+              final rawData = doc.data() as Map;
+              final data = rawData is Map<String, dynamic>
+                  ? rawData
+                  : rawData.cast<String, dynamic>();
+              tasks.add(Task.fromMap(data, doc.id));
+            } catch (e) {
+              Logger.error(
+                'Error parseando tarea compartida ${doc.id}: $e',
+                error: e,
+                tag: 'FirebaseService',
+              );
+            }
+          }
+        } catch (e) {
+          Logger.warning(
+            'Error cargando tareas compartidas de $effectiveCareerId',
+            error: e,
+            tag: 'FirebaseService',
+          );
+        }
+      }
+
       // Guardar en caché para uso offline
       await _cache.cacheTasks(tasks);
       Logger.database('Tareas cargadas exitosamente: ${tasks.length} tareas');
 
-      return tasks;
+      return applyCurrentUserProgress(tasks);
     } catch (e) {
       Logger.warning(
         'Error cargando desde Firebase, usando caché local',
@@ -218,6 +274,25 @@ class FirebaseService {
       // Si falla Firebase, retornar desde caché
       return _cache.getCachedTasks();
     }
+  }
+
+  List<Task> applyCurrentUserProgress(List<Task> tasks) {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return tasks;
+
+    final progressService = TaskProgressService();
+    return tasks.map((task) {
+      final taskId = task.id;
+      if (taskId == null || taskId.isEmpty) return task;
+
+      final progress = progressService.getProgress(uid, taskId);
+      if (progress == null) return task;
+
+      return task.copyWith(
+        isCompleted: progress['isCompleted'] ?? task.isCompleted,
+        isSubmitted: progress['isSubmitted'] ?? task.isSubmitted,
+      );
+    }).toList();
   }
 
   /// Obtiene tareas solo del caché local (útil para mostrar datos inmediatamente)
@@ -424,7 +499,7 @@ class FirebaseService {
 
       // Guardar en caché local
       await _cache.cacheSubject(newSubject);
-      Logger.database('Materia agregada exitosamente con ID: $docRef.id');
+      Logger.database('Materia agregada exitosamente con ID: ${docRef.id}');
 
       return docRef.id;
     } catch (e) {

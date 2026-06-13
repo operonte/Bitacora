@@ -120,4 +120,13 @@ class Careers {
 
   /// Obtiene lista de nombres de carreras
   static List<String> get careerNames => all.map((c) => c.name).toList();
+
+  /// Carreras cuyas tareas "pendientes" son compartidas entre todos los
+  /// usuarios con esa carrera seleccionada.
+  static const Set<String> sharedTaskCareerIds = {'teologia'};
+
+  /// Indica si las tareas de [careerId] se almacenan en una colección
+  /// compartida en vez de la colección personal del usuario.
+  static bool isShared(String? careerId) =>
+      careerId != null && sharedTaskCareerIds.contains(careerId);
 }

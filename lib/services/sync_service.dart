@@ -120,8 +120,9 @@ class SyncService {
           final type = item['type'] as String;
           final id = item['id'] as String;
           final operation = item['operation'] as String;
+          final careerId = item['careerId'] as String?;
 
-          await _syncItem(type, id, operation);
+          await _syncItem(type, id, operation, careerId: careerId);
           successCount++;
         } catch (e) {
           Logger.error(
@@ -162,10 +163,15 @@ class SyncService {
   }
 
   /// Sincroniza un item específico
-  Future<void> _syncItem(String type, String id, String operation) async {
+  Future<void> _syncItem(
+    String type,
+    String id,
+    String operation, {
+    String? careerId,
+  }) async {
     switch (type) {
       case 'task':
-        await _syncTask(id, operation);
+        await _syncTask(id, operation, careerId: careerId);
         break;
       case 'subject':
         await _syncSubject(id, operation);
@@ -174,7 +180,7 @@ class SyncService {
   }
 
   /// Sincroniza una tarea
-  Future<void> _syncTask(String id, String operation) async {
+  Future<void> _syncTask(String id, String operation, {String? careerId}) async {
     final cachedTask = _cache.getCachedTask(id);
 
     if (cachedTask == null && operation != 'delete') {
@@ -206,7 +212,7 @@ class SyncService {
 
       case 'delete':
         try {
-          await _firebase.deleteTask(id);
+          await _firebase.deleteTask(id, careerId: careerId ?? cachedTask?.careerId);
           Logger.sync('Tarea eliminada: $id');
         } catch (e) {
           // Si ya no existe en Firebase, ignorar error

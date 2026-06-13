@@ -5,10 +5,7 @@ import 'package:bitacora/services/sync_service.dart';
 import 'package:bitacora/services/local_cache_service.dart';
 import 'package:bitacora/firebase_service.dart';
 
-// Mocks
-class MockLocalCacheService extends Mock implements LocalCacheService {}
-
-class MockFirebaseService extends Mock implements FirebaseService {}
+import 'sync_service_test.mocks.dart';
 
 @GenerateMocks([LocalCacheService, FirebaseService])
 void main() {
@@ -55,6 +52,8 @@ void main() {
         });
 
         await syncService.forceSync();
+        // Permite que los eventos del stream broadcast lleguen al listener
+        await Future.delayed(Duration.zero);
 
         expect(statusHistory, contains(SyncStatus.syncing));
         expect(statusHistory, contains(SyncStatus.completed));

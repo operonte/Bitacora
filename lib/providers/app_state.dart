@@ -31,17 +31,20 @@ class AppState extends ChangeNotifier {
     final isDelivered = task.isCompleted && task.isSubmitted;
     final isFuture = task.dueDate.isAfter(DateTime.now());
     return !isDelivered && isFuture;
-  }).toList();
+  }).toList()
+    ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
   
   List<Task> get overdueTasks => _tasks.where((task) {
     final isDelivered = task.isCompleted && task.isSubmitted;
     final isPast = task.dueDate.isBefore(DateTime.now());
     return !isDelivered && isPast;
-  }).toList();
+  }).toList()
+    ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
   
   List<Task> get deliveredTasks => _tasks.where((task) => 
     task.isCompleted && task.isSubmitted
-  ).toList();
+  ).toList()
+    ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
   
   // ==================== TASKS ====================
   
@@ -113,9 +116,11 @@ class AppState extends ChangeNotifier {
   /// Elimina una tarea
   Future<void> deleteTask(String taskId) async {
     _clearError();
-    
+
     try {
-      await _firebase.deleteTask(taskId);
+      final matches = _tasks.where((t) => t.id == taskId);
+      final careerId = matches.isEmpty ? null : matches.first.careerId;
+      await _firebase.deleteTask(taskId, careerId: careerId);
       _tasks.removeWhere((t) => t.id == taskId);
       notifyListeners();
     } catch (e) {
@@ -200,8 +205,8 @@ class AppState extends ChangeNotifier {
     _setLoading(true);
     
     try {
-      final result = await _sync.forceSync();
-      
+      await _sync.forceSync();
+
       // Recargar datos después de sync
       await Future.wait([
         loadTasks(),

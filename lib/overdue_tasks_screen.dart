@@ -19,7 +19,6 @@ class OverdueTasksScreen extends StatefulWidget {
 class _OverdueTasksScreenState extends State<OverdueTasksScreen>
     with RouteAware {
   List<Task> _tasks = [];
-  List<Task> _filteredTasks = [];
   bool _isLoading = true;
   final FirebaseService _firebaseService = FirebaseService();
 
@@ -60,7 +59,9 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
     // Cargar primero desde caché local para respuesta inmediata (offline-first)
     final cachedTasks = _firebaseService.getTasksFromCache();
     if (cachedTasks.isNotEmpty) {
-      final overdueCached = cachedTasks.where((task) {
+      final overdueCached = _firebaseService
+          .applyCurrentUserProgress(cachedTasks)
+          .where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
         final isPast = task.dueDate.isBefore(DateTime.now());
         // Filtrar por carrera si hay una seleccionada
@@ -70,10 +71,10 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
             task.careerId!.isEmpty ||
             task.careerId == selectedCareer.id;
         return !isDelivered && isPast && matchesCareer;
-      }).toList();
+      }).toList()
+        ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
       setState(() {
         _tasks = overdueCached;
-        _filteredTasks = _tasks;
         _isLoading = false;
       });
     }
@@ -82,7 +83,9 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
       // Cargar todas las tareas sin filtrar por careerId inicialmente
       final allTasks = await _firebaseService.getTasks();
       // Filtrar tareas vencidas y por carrera si está seleccionada
-      final overdueTasks = allTasks.where((task) {
+      final overdueTasks = _firebaseService
+          .applyCurrentUserProgress(allTasks)
+          .where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
         final isPast = task.dueDate.isBefore(DateTime.now());
         // Filtrar por carrera: mostrar si no tiene careerId o si coincide con la seleccionada
@@ -92,12 +95,11 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
             task.careerId!.isEmpty ||
             task.careerId == selectedCareer.id;
         return !isDelivered && isPast && matchesCareer;
-      }).toList();
+      }).toList()
+        ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
 
       setState(() {
         _tasks = overdueTasks;
-        _filteredTasks =
-            overdueTasks; // FIX: sincronizar _filteredTasks con datos frescos
         _isLoading = false;
       });
     } catch (e) {
@@ -427,7 +429,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await _firebaseService.deleteTask(task.id!);
+                await _firebaseService.deleteTask(task.id!, careerId: task.careerId);
                 _loadData();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Tarea eliminada')),
@@ -547,7 +549,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
               Navigator.pop(context);
               try {
                 for (final task in completedTasks) {
-                  await _firebaseService.deleteTask(task.id!);
+                  await _firebaseService.deleteTask(task.id!, careerId: task.careerId);
                 }
                 _loadData();
                 ScaffoldMessenger.of(context).showSnackBar(

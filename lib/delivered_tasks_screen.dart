@@ -54,7 +54,9 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
     // Cargar primero desde caché local para respuesta inmediata (offline-first)
     final cachedTasks = _firebaseService.getTasksFromCache();
     if (cachedTasks.isNotEmpty) {
-      final deliveredCached = cachedTasks.where((task) {
+      final deliveredCached = _firebaseService
+          .applyCurrentUserProgress(cachedTasks)
+          .where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
         // Filtrar por carrera si hay una seleccionada
         final matchesCareer =
@@ -63,7 +65,8 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
             task.careerId!.isEmpty ||
             task.careerId == selectedCareer.id;
         return isDelivered && matchesCareer;
-      }).toList();
+      }).toList()
+        ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
       setState(() {
         _tasks = deliveredCached;
         _isLoading = false;
@@ -74,7 +77,9 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
       // Cargar todas las tareas sin filtrar por careerId inicialmente
       final allTasks = await _firebaseService.getTasks();
       // Filtrar tareas entregadas y por carrera si está seleccionada
-      final deliveredTasks = allTasks.where((task) {
+      final deliveredTasks = _firebaseService
+          .applyCurrentUserProgress(allTasks)
+          .where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
         // Filtrar por carrera: mostrar si no tiene careerId o si coincide con la seleccionada
         final matchesCareer =
@@ -83,7 +88,8 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
             task.careerId!.isEmpty ||
             task.careerId == selectedCareer.id;
         return isDelivered && matchesCareer;
-      }).toList();
+      }).toList()
+        ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
 
       setState(() {
         _tasks = deliveredTasks;
@@ -306,7 +312,7 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
               Navigator.pop(context);
 
               try {
-                await _firebaseService.deleteTask(task.id!);
+                await _firebaseService.deleteTask(task.id!, careerId: task.careerId);
                 _loadData();
 
                 ScaffoldMessenger.of(context).showSnackBar(

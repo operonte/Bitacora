@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'colors.dart';
 import 'services/career_service.dart';
+import 'services/admin_auth_service.dart';
 import 'administration_screen.dart';
 
 class CareerSelectionScreen extends StatefulWidget {
@@ -122,7 +123,7 @@ class _CareerSelectionScreenState extends State<CareerSelectionScreen> {
 
     try {
       // Verificar si es la clave de administrador
-      if (accessKey == 'operonte23') {
+      if (await AdminAuthService.verifyPassword(accessKey)) {
         if (mounted) {
           Navigator.push(
             context,

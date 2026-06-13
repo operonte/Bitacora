@@ -69,7 +69,9 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
     final cachedTasks = _firebaseService.getTasksFromCache();
     Logger.info('Tareas en caché: ${cachedTasks.length}', tag: 'PendingTasks');
     if (cachedTasks.isNotEmpty) {
-      final pendingCached = cachedTasks.where((task) {
+      final pendingCached = _firebaseService
+          .applyCurrentUserProgress(cachedTasks)
+          .where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
         final isFuture = task.dueDate.isAfter(DateTime.now());
         // Filtrar por carrera si hay una seleccionada
@@ -83,7 +85,8 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
           Logger.info('Tarea NO matchea (caché): ${task.title}, careerId: ${task.careerId}', tag: 'PendingTasks');
         }
         return !isDelivered && isFuture && matchesCareer;
-      }).toList();
+      }).toList()
+        ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
       Logger.info('Tareas pendientes en caché después del filtro: ${pendingCached.length}', tag: 'PendingTasks');
       setState(() {
         _tasks = pendingCached;
@@ -102,7 +105,9 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
       }
       
       // Filtrar tareas pendientes y por carrera si está seleccionada
-      final pendingTasks = allTasks.where((task) {
+      final pendingTasks = _firebaseService
+          .applyCurrentUserProgress(allTasks)
+          .where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
         final isFuture = task.dueDate.isAfter(DateTime.now());
         // Filtrar por carrera: mostrar si no tiene careerId o si coincide con la seleccionada
@@ -112,10 +117,11 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
             task.careerId!.isEmpty ||
             task.careerId == selectedCareer.id;
         if (!matchesCareer) {
-          Logger.info('Tarea NO matchea (Firebase): ${task.title}, careerId: ${task.careerId}, expected: ${selectedCareer?.id}', tag: 'PendingTasks');
+          Logger.info('Tarea NO matchea (Firebase): ${task.title}, careerId: ${task.careerId}, expected: ${selectedCareer.id}', tag: 'PendingTasks');
         }
         return !isDelivered && isFuture && matchesCareer;
-      }).toList();
+      }).toList()
+        ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
       Logger.info('Tareas después del filtro: ${pendingTasks.length}', tag: 'PendingTasks');
 
       setState(() {
@@ -484,7 +490,7 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
               Navigator.pop(context);
 
               try {
-                await _firebaseService.deleteTask(task.id!);
+                await _firebaseService.deleteTask(task.id!, careerId: task.careerId);
                 _loadData();
 
                 ScaffoldMessenger.of(context).showSnackBar(

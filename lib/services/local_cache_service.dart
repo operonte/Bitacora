@@ -181,14 +181,16 @@ class LocalCacheService {
   Future<void> markPendingSync(
     String entityType,
     String entityId,
-    String operation,
-  ) async {
+    String operation, {
+    String? careerId,
+  }) async {
     final pending =
         _metadataBox?.get('pending_sync', defaultValue: <Map>[]) as List? ?? [];
     pending.add({
       'type': entityType,
       'id': entityId,
       'operation': operation, // 'create', 'update', 'delete'
+      'careerId': careerId,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     });
     await _metadataBox?.put('pending_sync', pending);

@@ -114,6 +114,7 @@ class CareerService extends ChangeNotifier {
   @override
   void dispose() {
     _careerBox?.close();
+    super.dispose();
   }
 }
 

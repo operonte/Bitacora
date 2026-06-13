@@ -86,9 +86,11 @@ class _CareersScreenState extends State<CareersScreen> {
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               final password = passwordController.text.trim();
-              if (AdminAuthService.verifyPassword(password)) {
+              final isValid = await AdminAuthService.verifyPassword(password);
+              if (!context.mounted) return;
+              if (isValid) {
                 // Aquí se implementaría la lógica para crear la carrera
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -196,9 +198,11 @@ class _CareersScreenState extends State<CareersScreen> {
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               final password = passwordController.text.trim();
-              if (AdminAuthService.verifyPassword(password)) {
+              final isValid = await AdminAuthService.verifyPassword(password);
+              if (!context.mounted) return;
+              if (isValid) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
