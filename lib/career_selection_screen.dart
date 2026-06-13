@@ -123,15 +123,15 @@ class _CareerSelectionScreenState extends State<CareerSelectionScreen> {
 
     try {
       // Verificar si es la clave de administrador
-      if (await AdminAuthService.verifyPassword(accessKey)) {
-        if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AdministrationScreen(),
-            ),
-          );
-        }
+      final isAdmin = await AdminAuthService.verifyPassword(accessKey);
+      if (!mounted) return;
+      if (isAdmin) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const AdministrationScreen(),
+          ),
+        );
         return;
       }
 
@@ -147,16 +147,16 @@ class _CareerSelectionScreenState extends State<CareerSelectionScreen> {
         );
       } else {
         await _careerService.saveSelectedCareer(career);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('✅ Carrera configurada: ${career.name}'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Carrera configurada: ${career.name}'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );

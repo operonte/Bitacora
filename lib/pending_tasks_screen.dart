@@ -158,6 +158,7 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
       ErrorHandler.showErrorSnackBar(
         context,
@@ -398,6 +399,7 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
                         isCompleted: task.isCompleted,
                         isSubmitted: task.isSubmitted,
                       );
+                      if (!context.mounted) return;
                       if (task.isCompleted && task.isSubmitted) {
                         Navigator.pop(context);
                         _loadData();
@@ -425,6 +427,7 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
                         isCompleted: task.isCompleted,
                         isSubmitted: task.isSubmitted,
                       );
+                      if (!context.mounted) return;
                       if (task.isCompleted && task.isSubmitted) {
                         Navigator.pop(context);
                         _loadData();
@@ -519,11 +522,12 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
                 await _firebaseService.deleteTask(task.id!, careerId: task.careerId);
                 _loadData();
 
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Tarea eliminada')),
                 );
               } catch (e) {
-                if (mounted) {
+                if (context.mounted) {
                   final appException = ErrorMessages.fromFirebaseError(e);
                   ErrorHandler.showErrorSnackBar(context, appException);
                 }

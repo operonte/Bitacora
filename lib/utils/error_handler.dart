@@ -201,7 +201,9 @@ class ErrorHandler {
       }
 
       final appException = ErrorMessages.fromFirebaseError(error);
-      showErrorSnackBar(context, appException);
+      if (context.mounted) {
+        showErrorSnackBar(context, appException);
+      }
 
       onError?.call();
       return null;

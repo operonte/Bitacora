@@ -430,11 +430,13 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
 
                     if (isEditing) {
                       await _firebaseService.updateSubject(newSubject);
+                      if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Materia actualizada')),
                       );
                     } else {
                       await _firebaseService.addSubject(newSubject);
+                      if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Materia agregada')),
                       );
@@ -442,8 +444,10 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
 
                     _loadData();
                   } catch (e) {
-                    final appException = ErrorMessages.fromFirebaseError(e);
-                    ErrorHandler.showErrorSnackBar(context, appException);
+                    if (context.mounted) {
+                      final appException = ErrorMessages.fromFirebaseError(e);
+                      ErrorHandler.showErrorSnackBar(context, appException);
+                    }
                   }
                 },
                 child: Text(isEditing ? 'Guardar' : 'Agregar'),
@@ -474,12 +478,15 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
               try {
                 await _firebaseService.deleteSubject(subject.id!);
                 _loadData();
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Materia eliminada')),
                 );
               } catch (e) {
-                final appException = ErrorMessages.fromFirebaseError(e);
-                ErrorHandler.showErrorSnackBar(context, appException);
+                if (context.mounted) {
+                  final appException = ErrorMessages.fromFirebaseError(e);
+                  ErrorHandler.showErrorSnackBar(context, appException);
+                }
               }
             },
             child: const Text('Eliminar', style: TextStyle(color: Colors.red)),

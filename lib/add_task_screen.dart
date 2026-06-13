@@ -608,13 +608,16 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                 final notificationService = NotificationService();
                 await notificationService.cancelTaskReminders(widget.task!.id!);
 
+                if (!context.mounted) return;
                 Navigator.pop(context, true);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Tarea eliminada')),
                 );
               } catch (e) {
-                final appException = ErrorMessages.fromFirebaseError(e);
-                ErrorHandler.showErrorSnackBar(context, appException);
+                if (context.mounted) {
+                  final appException = ErrorMessages.fromFirebaseError(e);
+                  ErrorHandler.showErrorSnackBar(context, appException);
+                }
               }
             },
             child: const Text('Eliminar', style: TextStyle(color: Colors.red)),

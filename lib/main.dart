@@ -415,7 +415,7 @@ class _MainScreenState extends State<MainScreen> {
                               color: Colors.orange),
                           onPressed: () async {
                             final result = await _syncService.forceSync();
-                            if (mounted) {
+                            if (context.mounted) {
                               final msg = switch (result) {
                                 SyncResult.success => '✅ Datos sincronizados',
                                 SyncResult.noConnection =>

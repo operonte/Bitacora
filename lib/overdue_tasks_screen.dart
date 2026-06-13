@@ -130,6 +130,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
       ErrorHandler.showErrorSnackBar(
         context,
@@ -334,6 +335,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
                         isCompleted: task.isCompleted,
                         isSubmitted: task.isSubmitted,
                       );
+                      if (!context.mounted) return;
                       // Si marca ambos, la tarea se mueve a Entregadas
                       if (task.isCompleted && task.isSubmitted) {
                         Navigator.pop(context);
@@ -364,6 +366,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
                         isCompleted: task.isCompleted,
                         isSubmitted: task.isSubmitted,
                       );
+                      if (!context.mounted) return;
                       // Si marca ambos, la tarea se mueve a Entregadas
                       if (task.isCompleted && task.isSubmitted) {
                         Navigator.pop(context);
@@ -458,10 +461,12 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
               try {
                 await _firebaseService.deleteTask(task.id!, careerId: task.careerId);
                 _loadData();
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Tarea eliminada')),
                 );
               } catch (e) {
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Error al eliminar: $e')),
                 );
@@ -528,13 +533,14 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
                   }
                 }
                 _loadData();
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Todas las tareas marcadas como completadas'),
                   ),
                 );
               } catch (e) {
-                if (mounted) {
+                if (context.mounted) {
                   final appException = ErrorMessages.fromFirebaseError(e);
                   ErrorHandler.showErrorSnackBar(context, appException);
                 }
@@ -579,6 +585,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
                   await _firebaseService.deleteTask(task.id!, careerId: task.careerId);
                 }
                 _loadData();
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
@@ -587,6 +594,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
                   ),
                 );
               } catch (e) {
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Error al eliminar: $e')),
                 );
