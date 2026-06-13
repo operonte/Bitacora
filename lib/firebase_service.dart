@@ -264,6 +264,20 @@ class FirebaseService {
       await _cache.cacheTasks(tasks);
       Logger.database('Tareas cargadas exitosamente: ${tasks.length} tareas');
 
+      // Sincronizar progreso personal (Realizada/Enviada) entre dispositivos
+      final uid = _auth.currentUser?.uid;
+      if (uid != null && uid.isNotEmpty) {
+        try {
+          await TaskProgressService().syncProgress(uid);
+        } catch (e) {
+          Logger.warning(
+            'Error sincronizando progreso personal',
+            error: e,
+            tag: 'FirebaseService',
+          );
+        }
+      }
+
       return applyCurrentUserProgress(tasks);
     } catch (e) {
       Logger.warning(

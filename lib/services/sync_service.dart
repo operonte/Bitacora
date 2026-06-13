@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'local_cache_service.dart';
+import 'task_progress_service.dart';
 import '../firebase_service.dart';
 import '../subject_model.dart';
 import '../utils/logger.dart';
@@ -176,7 +177,33 @@ class SyncService {
       case 'subject':
         await _syncSubject(id, operation);
         break;
+      case 'progress':
+        await _syncProgress(id, operation);
+        break;
     }
+  }
+
+  /// Sincroniza progreso personal pendiente (id con formato '$userId:$taskId')
+  Future<void> _syncProgress(String id, String operation) async {
+    final parts = id.split(':');
+    if (parts.length != 2) {
+      Logger.warning('ID de progreso inválido: $id', tag: 'SyncService');
+      return;
+    }
+    final userId = parts[0];
+    final taskId = parts[1];
+
+    final progressService = TaskProgressService();
+    if (progressService.getProgress(userId, taskId) == null) {
+      Logger.warning(
+        'Progreso $id no encontrado en caché, saltando...',
+        tag: 'SyncService',
+      );
+      return;
+    }
+
+    await progressService.pushProgress(userId, taskId);
+    Logger.sync('Progreso sincronizado: $id');
   }
 
   /// Sincroniza una tarea

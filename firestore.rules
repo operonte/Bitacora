@@ -23,5 +23,11 @@ service cloud.firestore {
     match /sharedTasks/{careerId}/tasks/{taskId} {
       allow read, write: if request.auth != null;
     }
+
+    // Progreso personal (Realizada/Enviada) por usuario y tarea - privado, se
+    // sincroniza entre los dispositivos del mismo usuario.
+    match /userProgress/{userId}/tasks/{taskId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }
