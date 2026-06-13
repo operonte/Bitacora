@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
 import 'package:hive_test/hive_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:bitacora/services/task_progress_service.dart';
@@ -127,6 +128,43 @@ void main() {
       final local = service.getProgress(userId, 'task-conflict');
       expect(local, {'isCompleted': true, 'isSubmitted': true});
     });
+
+    test(
+      'syncProgress migra entradas locales antiguas (updatedAt: 0) y las sube',
+      () async {
+        // Simula una entrada local guardada por una versión anterior, que no
+        // tenía el campo `updatedAt` (queda en 0 por el valor por defecto).
+        final box = Hive.box('task_progress');
+        await box.put('$userId:task-legacy', {
+          'isCompleted': true,
+          'isSubmitted': true,
+        });
+
+        // El remoto también tiene una entrada vieja con updatedAt: 0 (creada
+        // antes de este arreglo), que sin la migración quedaría "empatada".
+        await firestore
+            .collection('userProgress')
+            .doc(userId)
+            .collection('tasks')
+            .doc('task-legacy')
+            .set({'isCompleted': true, 'isSubmitted': true, 'updatedAt': 0});
+
+        await service.syncProgress(userId);
+
+        final remoteDoc = await firestore
+            .collection('userProgress')
+            .doc(userId)
+            .collection('tasks')
+            .doc('task-legacy')
+            .get();
+        expect(remoteDoc.data()!['updatedAt'], greaterThan(0));
+
+        final localRaw = Map<String, dynamic>.from(
+          box.get('$userId:task-legacy') as Map,
+        );
+        expect(localRaw['updatedAt'], greaterThan(0));
+      },
+    );
 
     test('pushProgress no falla si no hay progreso local', () async {
       await service.pushProgress(userId, 'nonexistent');

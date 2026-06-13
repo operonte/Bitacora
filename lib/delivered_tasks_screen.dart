@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'services/task_progress_service.dart';
@@ -8,6 +10,7 @@ import 'task_card.dart';
 import 'add_task_screen.dart';
 import 'colors.dart';
 import 'utils/error_handler.dart';
+import 'utils/logger.dart';
 import 'services/career_service.dart';
 
 class DeliveredTasksScreen extends StatefulWidget {
@@ -23,10 +26,14 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
   bool _isLoading = true;
   final FirebaseService _firebaseService = FirebaseService();
 
+  StreamSubscription<void>? _changesSubscription;
+  Timer? _reloadDebounce;
+
   @override
   void initState() {
     super.initState();
     _loadData();
+    _subscribeToRemoteChanges();
   }
 
   @override
@@ -36,7 +43,27 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
 
   @override
   void dispose() {
+    _changesSubscription?.cancel();
+    _reloadDebounce?.cancel();
     super.dispose();
+  }
+
+  /// Escucha cambios remotos (tareas y progreso) para refrescar la pantalla
+  /// automáticamente cuando otro dispositivo modifica datos.
+  void _subscribeToRemoteChanges() {
+    _changesSubscription = _firebaseService.watchRelevantChanges().listen(
+      (_) {
+        _reloadDebounce?.cancel();
+        _reloadDebounce = Timer(const Duration(milliseconds: 500), _loadData);
+      },
+      onError: (e) {
+        Logger.warning(
+          'Error escuchando cambios remotos',
+          error: e,
+          tag: 'DeliveredTasks',
+        );
+      },
+    );
   }
 
   @override

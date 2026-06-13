@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -307,6 +309,52 @@ class FirebaseService {
         isSubmitted: progress['isSubmitted'] ?? task.isSubmitted,
       );
     }).toList();
+  }
+
+  /// Emite un evento cada vez que cambian tareas o progreso del usuario.
+  /// Útil para refrescar pantallas en tiempo real entre web y APK.
+  Stream<void> watchRelevantChanges({String? careerId}) {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return Stream<void>.error(Exception('Usuario no autenticado'));
+    }
+
+    final controller = StreamController<void>.broadcast();
+    StreamSubscription? personalTasksSubscription;
+    StreamSubscription? sharedTasksSubscription;
+    StreamSubscription? progressSubscription;
+
+    void emitChange() {
+      if (!controller.isClosed) {
+        controller.add(null);
+      }
+    }
+
+    personalTasksSubscription = tasksCollection.snapshots().listen(
+      (_) => emitChange(),
+      onError: controller.addError,
+    );
+
+    final effectiveCareerId = careerId ?? CareerService().getSelectedCareer()?.id;
+    if (Careers.isShared(effectiveCareerId)) {
+      sharedTasksSubscription = sharedTasksCollection(effectiveCareerId!).snapshots().listen(
+        (_) => emitChange(),
+        onError: controller.addError,
+      );
+    }
+
+    progressSubscription = TaskProgressService().watchProgress(user.uid).listen(
+      (_) => emitChange(),
+      onError: controller.addError,
+    );
+
+    controller.onCancel = () async {
+      await personalTasksSubscription?.cancel();
+      await sharedTasksSubscription?.cancel();
+      await progressSubscription?.cancel();
+    };
+
+    return controller.stream;
   }
 
   /// Obtiene tareas solo del caché local (útil para mostrar datos inmediatamente)

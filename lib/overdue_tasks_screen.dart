@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'services/task_progress_service.dart';
@@ -7,6 +9,7 @@ import 'task_model.dart';
 import 'task_card.dart';
 import 'colors.dart';
 import 'utils/error_handler.dart';
+import 'utils/logger.dart';
 import 'services/career_service.dart';
 
 class OverdueTasksScreen extends StatefulWidget {
@@ -26,10 +29,14 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
   static final RouteObserver<ModalRoute<void>> routeObserver =
       RouteObserver<ModalRoute<void>>();
 
+  StreamSubscription<void>? _changesSubscription;
+  Timer? _reloadDebounce;
+
   @override
   void initState() {
     super.initState();
     _loadData();
+    _subscribeToRemoteChanges();
   }
 
   @override
@@ -41,7 +48,27 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
+    _changesSubscription?.cancel();
+    _reloadDebounce?.cancel();
     super.dispose();
+  }
+
+  /// Escucha cambios remotos (tareas y progreso) para refrescar la pantalla
+  /// automáticamente cuando otro dispositivo modifica datos.
+  void _subscribeToRemoteChanges() {
+    _changesSubscription = _firebaseService.watchRelevantChanges().listen(
+      (_) {
+        _reloadDebounce?.cancel();
+        _reloadDebounce = Timer(const Duration(milliseconds: 500), _loadData);
+      },
+      onError: (e) {
+        Logger.warning(
+          'Error escuchando cambios remotos',
+          error: e,
+          tag: 'OverdueTasks',
+        );
+      },
+    );
   }
 
   @override

@@ -130,7 +130,19 @@ class TaskProgressService {
     final prefix = '$userId:';
     final localKeys = (_box!.keys)
         .whereType<String>()
-        .where((k) => k.startsWith(prefix));
+        .where((k) => k.startsWith(prefix))
+        .toList();
+
+    // Migrar entradas locales antiguas (de antes de que existiera `updatedAt`,
+    // antes de esta versión) a un timestamp actual, para que se reconcilien
+    // correctamente en vez de quedar "empatadas" con un remoto sin `updatedAt`.
+    for (final key in localKeys) {
+      final raw = Map<String, dynamic>.from(_box!.get(key) as Map);
+      if (_updatedAtOf(raw) == 0) {
+        raw['updatedAt'] = DateTime.now().millisecondsSinceEpoch;
+        await _box!.put(key, raw);
+      }
+    }
 
     // Local -> remoto: subir entradas sin equivalente remoto o más nuevas.
     for (final key in localKeys) {
@@ -168,6 +180,30 @@ class TaskProgressService {
         });
       }
     }
+  }
+
+  /// Emite un evento cada vez que cambia el progreso remoto del usuario y
+  /// actualiza la caché local (Hive) con los cambios más recientes.
+  Stream<void> watchProgress(String userId) {
+    return _collection(userId).snapshots().asyncMap((snapshot) async {
+      for (final doc in snapshot.docs) {
+        final remoteRaw = Map<String, dynamic>.from(
+          doc.data()! as Map,
+        );
+        final key = _key(userId, doc.id);
+        final localRaw = _box?.get(key) as Map?;
+
+        if (localRaw == null ||
+            _updatedAtOf(remoteRaw) >
+                _updatedAtOf(Map<String, dynamic>.from(localRaw))) {
+          await _box?.put(key, {
+            'isCompleted': remoteRaw['isCompleted'] as bool? ?? false,
+            'isSubmitted': remoteRaw['isSubmitted'] as bool? ?? false,
+            'updatedAt': _updatedAtOf(remoteRaw),
+          });
+        }
+      }
+    });
   }
 
   /// Elimina el progreso de una tarea (al borrarla).
