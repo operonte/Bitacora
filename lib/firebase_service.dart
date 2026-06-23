@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
+import 'services/app_firestore.dart';
 import 'task_model.dart';
 import 'subject_model.dart';
 import 'models/career_model.dart';
@@ -30,10 +30,7 @@ class FirebaseService {
   /// Constructor principal (privado para singleton)
   /// Inicializa Firestore con databaseId 'dtbitacora' y usa instancias singleton de Auth y Cache
   FirebaseService._internal()
-    : _firestore = FirebaseFirestore.instanceFor(
-        app: Firebase.app(),
-        databaseId: 'dtbitacora',
-      ),
+    : _firestore = AppFirestore.instance,
       _auth = FirebaseAuth.instance,
       _cache = LocalCacheService();
 
@@ -103,21 +100,29 @@ class FirebaseService {
         .collection('tasks');
   }
 
-  /// Registra (o actualiza) la carrera del usuario actual en
-  /// `userCareers/{uid}`, usada por las reglas de Firestore para autorizar
-  /// el acceso a `sharedTasks/{careerId}`.
-  Future<void> registerCareerMembership(String careerId) async {
+  /// Registra (o actualiza) las carreras del usuario actual en
+  /// `userCareers/{uid}`, usadas por las reglas de Firestore para autorizar el
+  /// acceso a `sharedTasks/{careerId}`.
+  ///
+  /// Escribe `careerIds` (array con todas las carreras del usuario) y también
+  /// `careerId` (la activa) por compatibilidad con reglas/datos antiguos.
+  Future<void> registerCareerMemberships() async {
     final user = _auth.currentUser;
     if (user == null) return;
 
+    final careerService = CareerService();
+    final ids = careerService.careerIds;
+    if (ids.isEmpty) return;
+
     try {
       await _firestore.collection('userCareers').doc(user.uid).set({
-        'careerId': careerId,
+        'careerIds': ids,
+        'careerId': careerService.getSelectedCareer()?.id ?? ids.first,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
       });
     } catch (e) {
       Logger.warning(
-        'Error registrando carrera del usuario',
+        'Error registrando carreras del usuario',
         error: e,
         tag: 'FirebaseService',
       );
@@ -249,38 +254,44 @@ class FirebaseService {
         }
       }
 
-      // Agregar tareas compartidas de la carrera seleccionada (si aplica)
-      final effectiveCareerId =
-          careerId ?? CareerService().getSelectedCareer()?.id;
-      if (Careers.isShared(effectiveCareerId)) {
-        try {
-          await registerCareerMembership(effectiveCareerId!);
-          final sharedSnapshot = await sharedTasksCollection(
-            effectiveCareerId,
-          ).get();
-          final existingIds = tasks.map((t) => t.id).toSet();
-          for (final doc in sharedSnapshot.docs) {
-            if (existingIds.contains(doc.id)) continue;
-            try {
-              final rawData = doc.data() as Map;
-              final data = rawData is Map<String, dynamic>
-                  ? rawData
-                  : rawData.cast<String, dynamic>();
-              tasks.add(Task.fromMap(data, doc.id));
-            } catch (e) {
-              Logger.error(
-                'Error parseando tarea compartida ${doc.id}: $e',
-                error: e,
-                tag: 'FirebaseService',
-              );
+      // Agregar tareas compartidas de TODAS las carreras del usuario.
+      // Si se pasó un [careerId] explícito, solo esa; si no, todas las
+      // carreras compartidas a las que pertenece.
+      final sharedCareerIds = careerId != null
+          ? (Careers.isShared(careerId) ? [careerId] : <String>[])
+          : CareerService().careerIds.where(Careers.isShared).toList();
+      if (sharedCareerIds.isNotEmpty) {
+        // Registrar membresías para que las reglas de Firestore autoricen.
+        await registerCareerMemberships();
+        final existingIds = tasks.map((t) => t.id).toSet();
+        for (final sharedCareerId in sharedCareerIds) {
+          try {
+            final sharedSnapshot =
+                await sharedTasksCollection(sharedCareerId).get();
+            for (final doc in sharedSnapshot.docs) {
+              if (existingIds.contains(doc.id)) continue;
+              try {
+                final rawData = doc.data() as Map;
+                final data = rawData is Map<String, dynamic>
+                    ? rawData
+                    : rawData.cast<String, dynamic>();
+                tasks.add(Task.fromMap(data, doc.id));
+                existingIds.add(doc.id);
+              } catch (e) {
+                Logger.error(
+                  'Error parseando tarea compartida ${doc.id}: $e',
+                  error: e,
+                  tag: 'FirebaseService',
+                );
+              }
             }
+          } catch (e) {
+            Logger.warning(
+              'Error cargando tareas compartidas de $sharedCareerId',
+              error: e,
+              tag: 'FirebaseService',
+            );
           }
-        } catch (e) {
-          Logger.warning(
-            'Error cargando tareas compartidas de $effectiveCareerId',
-            error: e,
-            tag: 'FirebaseService',
-          );
         }
       }
 
@@ -343,7 +354,7 @@ class FirebaseService {
 
     final controller = StreamController<void>.broadcast();
     StreamSubscription? personalTasksSubscription;
-    StreamSubscription? sharedTasksSubscription;
+    final sharedTasksSubscriptions = <StreamSubscription>[];
     StreamSubscription? progressSubscription;
 
     void emitChange() {
@@ -357,11 +368,15 @@ class FirebaseService {
       onError: controller.addError,
     );
 
-    final effectiveCareerId = careerId ?? CareerService().getSelectedCareer()?.id;
-    if (Careers.isShared(effectiveCareerId)) {
-      sharedTasksSubscription = sharedTasksCollection(effectiveCareerId!).snapshots().listen(
-        (_) => emitChange(),
-        onError: controller.addError,
+    final sharedCareerIds = careerId != null
+        ? (Careers.isShared(careerId) ? [careerId] : <String>[])
+        : CareerService().careerIds.where(Careers.isShared).toList();
+    for (final sharedCareerId in sharedCareerIds) {
+      sharedTasksSubscriptions.add(
+        sharedTasksCollection(sharedCareerId).snapshots().listen(
+          (_) => emitChange(),
+          onError: controller.addError,
+        ),
       );
     }
 
@@ -372,7 +387,9 @@ class FirebaseService {
 
     controller.onCancel = () async {
       await personalTasksSubscription?.cancel();
-      await sharedTasksSubscription?.cancel();
+      for (final sub in sharedTasksSubscriptions) {
+        await sub.cancel();
+      }
       await progressSubscription?.cancel();
     };
 

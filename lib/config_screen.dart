@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'colors.dart';
 import 'models/career_model.dart';
+import 'auth_service.dart';
 import 'services/career_service.dart';
 import 'notification_service.dart';
 import 'providers/theme_provider.dart';
@@ -17,7 +19,9 @@ class ConfigScreen extends StatefulWidget {
 class _ConfigScreenState extends State<ConfigScreen> {
   final CareerService _careerService = CareerService();
   final NotificationService _notifService = NotificationService();
+  final AuthService _authService = AuthService();
   Career? _selectedCareer;
+  List<Career> _careers = [];
   bool _notif24h = true;
   bool _notif2h = true;
 
@@ -29,11 +33,13 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
   Future<void> _loadData() async {
     final career = _careerService.getSelectedCareer();
+    final careers = _careerService.getCareers();
     final n24 = await _notifService.is24hEnabled;
     final n2 = await _notifService.is2hEnabled;
     if (mounted) {
       setState(() {
         _selectedCareer = career;
+        _careers = careers;
         _notif24h = n24;
         _notif2h = n2;
       });
@@ -95,6 +101,28 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
           const SizedBox(height: 24),
 
+          // ── Mis carreras ────────────────────────────────────
+          _sectionHeader(context, 'Mis carreras', Icons.school_outlined),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                ..._careers.map(_careerTile),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.add_circle_outline,
+                      color: AppColors.primary),
+                  title: const Text('Unirse a otra carrera'),
+                  subtitle: const Text('Ingresar una clave de acceso'),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: _joinCareerDialog,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
           // ── Materias ────────────────────────────────────────
           _sectionHeader(context, 'Materias', Icons.book_outlined),
           const SizedBox(height: 8),
@@ -151,15 +179,21 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
           const SizedBox(height: 24),
 
-          // ── Carrera ─────────────────────────────────────────
+          // ── Cuenta ──────────────────────────────────────────
           _sectionHeader(context, 'Cuenta', Icons.manage_accounts_outlined),
           const SizedBox(height: 8),
           Card(
-            child: ListTile(
-              leading: const Icon(Icons.logout, color: AppColors.error),
-              title: const Text('Salir de la carrera'),
-              subtitle: const Text('Volver a la pantalla de acceso'),
-              onTap: _logout,
+            child: Column(
+              children: [
+                _accountTile(),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.logout, color: AppColors.error),
+                  title: const Text('Salir de todas las carreras'),
+                  subtitle: const Text('Volver a la pantalla de acceso'),
+                  onTap: _logout,
+                ),
+              ],
             ),
           ),
 
@@ -212,6 +246,168 @@ class _ConfigScreenState extends State<ConfigScreen> {
         ],
       ),
     );
+  }
+
+  Widget _accountTile() {
+    final User? user = _authService.currentUser;
+
+    if (user == null) {
+      return const ListTile(
+        leading: CircleAvatar(child: Icon(Icons.person_outline)),
+        title: Text('Sin sesión iniciada'),
+        subtitle: Text('No hay una cuenta conectada'),
+      );
+    }
+
+    final name = (user.displayName?.trim().isNotEmpty ?? false)
+        ? user.displayName!.trim()
+        : 'Sin nombre';
+    final email = user.email ?? 'Sin correo';
+    final photoUrl = user.photoURL;
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: AppColors.primary,
+        foregroundImage:
+            (photoUrl != null && photoUrl.isNotEmpty) ? NetworkImage(photoUrl) : null,
+        child: Text(
+          initial,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
+      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(email),
+    );
+  }
+
+  Widget _careerTile(Career career) {
+    final isActive = _selectedCareer?.id == career.id;
+    return ListTile(
+      leading: Icon(
+        isActive ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: isActive ? AppColors.primary : AppColors.textSecondary,
+      ),
+      title: Text(
+        career.name,
+        style: TextStyle(
+          fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(isActive ? 'Carrera activa' : 'Tocar para activar'),
+      trailing: _careers.length > 1
+          ? IconButton(
+              icon: const Icon(Icons.logout, color: AppColors.error, size: 20),
+              tooltip: 'Salir de esta carrera',
+              onPressed: () => _leaveCareer(career),
+            )
+          : null,
+      onTap: isActive ? null : () => _setActiveCareer(career),
+    );
+  }
+
+  Future<void> _setActiveCareer(Career career) async {
+    await _careerService.setActiveCareer(career.id);
+    await _loadData();
+  }
+
+  Future<void> _joinCareerDialog() async {
+    // Refrescar las carreras creadas en el admin para poder validar su clave.
+    await _careerService.loadRemoteCareers();
+
+    final controller = TextEditingController();
+    String? errorText;
+
+    if (!mounted) return;
+    final added = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Unirse a otra carrera'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Ingresa la clave de acceso de la carrera o grupo al que quieres unirte.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Clave de acceso',
+                  border: const OutlineInputBorder(),
+                  errorText: errorText,
+                ),
+                onSubmitted: (_) {},
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final key = controller.text.trim();
+                final career = _careerService.validateAccessKey(key);
+                if (career == null) {
+                  setLocal(() => errorText = 'Clave de acceso inválida');
+                  return;
+                }
+                if (_careerService.isMember(career.id)) {
+                  setLocal(() => errorText = 'Ya perteneces a esta carrera');
+                  return;
+                }
+                await _careerService.addCareer(career);
+                if (ctx.mounted) Navigator.pop(ctx, true);
+              },
+              child: const Text('Unirse'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (added == true) {
+      await _loadData();
+      _showSnack('✅ Te uniste a la carrera', Colors.green);
+    }
+  }
+
+  Future<void> _leaveCareer(Career career) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Salir de la carrera'),
+        content: Text(
+          '¿Seguro que quieres salir de "${career.name}"? Dejarás de ver sus tareas. '
+          'Podrás volver a unirte con la clave de acceso.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Salir', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    await _careerService.removeCareer(career.id);
+
+    // Si era la última carrera, volver para que el routing muestre el acceso.
+    if (_careerService.getCareers().isEmpty && mounted) {
+      Navigator.of(context).pop();
+      return;
+    }
+    await _loadData();
+    _showSnack('Saliste de ${career.name}', Colors.orange);
   }
 
   Widget _sectionHeader(BuildContext context, String label, IconData icon) {

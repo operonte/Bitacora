@@ -100,16 +100,9 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
           .where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
         final isFuture = task.dueDate.isAfter(DateTime.now());
-        // Filtrar por carrera si hay una seleccionada
-        // Igual que el filtro de Firebase: tareas sin careerId se muestran siempre
-        final matchesCareer =
-            selectedCareer == null ||
-            task.careerId == null ||
-            task.careerId!.isEmpty ||
-            task.careerId == selectedCareer.id;
-        if (!matchesCareer) {
-          Logger.info('Tarea NO matchea (caché): ${task.title}, careerId: ${task.careerId}', tag: 'PendingTasks');
-        }
+        // Mostrar tareas de cualquier carrera a la que pertenezca el usuario
+        // (las sin careerId se muestran siempre).
+        final matchesCareer = careerService.matchesAnyCareer(task.careerId);
         return !isDelivered && isFuture && matchesCareer;
       }).toList()
         ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
@@ -136,15 +129,8 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
           .where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
         final isFuture = task.dueDate.isAfter(DateTime.now());
-        // Filtrar por carrera: mostrar si no tiene careerId o si coincide con la seleccionada
-        final matchesCareer =
-            selectedCareer == null ||
-            task.careerId == null ||
-            task.careerId!.isEmpty ||
-            task.careerId == selectedCareer.id;
-        if (!matchesCareer) {
-          Logger.info('Tarea NO matchea (Firebase): ${task.title}, careerId: ${task.careerId}, expected: ${selectedCareer.id}', tag: 'PendingTasks');
-        }
+        // Mostrar tareas de cualquier carrera a la que pertenezca el usuario.
+        final matchesCareer = careerService.matchesAnyCareer(task.careerId);
         return !isDelivered && isFuture && matchesCareer;
       }).toList()
         ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
@@ -374,6 +360,7 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
               children: [
                 Text('Asignatura: ${task.subject}'),
                 Text('Profesor: ${task.professor}'),
+                Text('Creado por: ${task.userName}'),
                 Text('Tipo: ${task.type}'),
                 Text(
                   'Entrega: ${DateFormat('dd/MM/yyyy HH:mm').format(task.dueDate)}',

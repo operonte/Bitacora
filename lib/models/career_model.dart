@@ -35,7 +35,8 @@ class Career {
 
 /// Carreras predefinidas
 class Careers {
-  static List<Career> all = [
+  /// Carreras definidas en el código (siempre disponibles, incluso offline).
+  static final List<Career> _predefined = [
     Career(
       id: 'teologia',
       name: 'Teología',
@@ -109,6 +110,16 @@ class Careers {
     ),
   ];
 
+  /// Carreras creadas desde el panel de administración (colección `careers`
+  /// en Firestore). Se cargan en runtime con [CareerService.loadRemoteCareers].
+  static List<Career> remote = [];
+
+  /// Carreras definidas en el código (solo lectura).
+  static List<Career> get predefined => List.unmodifiable(_predefined);
+
+  /// Todas las carreras conocidas: las del código + las creadas en el admin.
+  static List<Career> get all => [..._predefined, ...remote];
+
   /// Busca carrera por clave de acceso
   static Career? findByAccessKey(String accessKey) {
     try {
@@ -118,15 +129,29 @@ class Careers {
     }
   }
 
+  /// Busca carrera por id. Devuelve null si no existe.
+  static Career? findById(String? id) {
+    if (id == null || id.isEmpty) return null;
+    try {
+      return all.firstWhere((career) => career.id == id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Nombre legible de la carrera para mostrar en la UI, o null si no se
+  /// puede resolver el [careerId].
+  static String? nameForId(String? careerId) => findById(careerId)?.name;
+
   /// Obtiene lista de nombres de carreras
   static List<String> get careerNames => all.map((c) => c.name).toList();
 
-  /// Carreras cuyas tareas "pendientes" son compartidas entre todos los
-  /// usuarios con esa carrera seleccionada.
-  static const Set<String> sharedTaskCareerIds = {'teologia'};
-
   /// Indica si las tareas de [careerId] se almacenan en una colección
-  /// compartida en vez de la colección personal del usuario.
+  /// compartida (de grupo) en vez de la colección personal del usuario.
+  ///
+  /// Toda carrera/grupo es compartida: cualquier tarea asociada a una carrera
+  /// (careerId no vacío) se comparte entre los miembros de esa carrera. Solo
+  /// las tareas sin carrera (careerId nulo/vacío) son privadas del usuario.
   static bool isShared(String? careerId) =>
-      careerId != null && sharedTaskCareerIds.contains(careerId);
+      careerId != null && careerId.isNotEmpty;
 }

@@ -81,8 +81,6 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
 
     // Obtener carrera seleccionada
     final careerService = CareerService();
-    final selectedCareer = careerService.getSelectedCareer();
-
     // Cargar primero desde caché local para respuesta inmediata (offline-first)
     final cachedTasks = _firebaseService.getTasksFromCache();
     if (cachedTasks.isNotEmpty) {
@@ -92,11 +90,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
         final isDelivered = task.isCompleted && task.isSubmitted;
         final isPast = task.dueDate.isBefore(DateTime.now());
         // Filtrar por carrera si hay una seleccionada
-        final matchesCareer =
-            selectedCareer == null ||
-            task.careerId == null ||
-            task.careerId!.isEmpty ||
-            task.careerId == selectedCareer.id;
+        final matchesCareer = careerService.matchesAnyCareer(task.careerId);
         return !isDelivered && isPast && matchesCareer;
       }).toList()
         ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
@@ -116,11 +110,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
         final isDelivered = task.isCompleted && task.isSubmitted;
         final isPast = task.dueDate.isBefore(DateTime.now());
         // Filtrar por carrera: mostrar si no tiene careerId o si coincide con la seleccionada
-        final matchesCareer =
-            selectedCareer == null ||
-            task.careerId == null ||
-            task.careerId!.isEmpty ||
-            task.careerId == selectedCareer.id;
+        final matchesCareer = careerService.matchesAnyCareer(task.careerId);
         return !isDelivered && isPast && matchesCareer;
       }).toList()
         ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
@@ -308,6 +298,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
                 const SizedBox(height: 16),
                 Text('Asignatura: ${task.subject}'),
                 Text('Profesor: ${task.professor}'),
+                Text('Creado por: ${task.userName}'),
                 Text('Tipo: ${task.type}'),
                 Text(
                   'Entrega: ${DateFormat('dd/MM/yyyy HH:mm').format(task.dueDate)}',

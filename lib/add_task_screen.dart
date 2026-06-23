@@ -247,7 +247,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                 ),
                 maxLines: 3,
                 validator: (value) =>
-                    Validators.maxLength(value, 500, 'La descripción'),
+                    Validators.maxLength(value, 1000, 'La descripción'),
               ),
               const SizedBox(height: 16),
               Autocomplete<Subject>(

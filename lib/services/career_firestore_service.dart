@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'app_firestore.dart';
 import '../models/career_model.dart';
 import '../subject_model.dart';
 
@@ -6,29 +7,42 @@ import '../subject_model.dart';
 ///
 /// Proporciona streams para actualizaciones en tiempo real de carreras y sus materias.
 class CareerFirestoreService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore = AppFirestore.instance;
   final String _collection = 'careers';
+
+  /// Convierte un documento de la colección `careers` en un [Career].
+  Career _careerFromData(Map<String, dynamic> data) {
+    final subjectsList = List.from(data['predefinedSubjects'] as List<dynamic>);
+    final subjects = subjectsList
+        .map((s) => Subject.fromMap(Map<String, dynamic>.from(s as Map)))
+        .toList();
+    return Career(
+      id: data['id'] as String,
+      name: data['name'] as String,
+      accessKey: data['accessKey'] as String,
+      description: data['description'] as String?,
+      predefinedSubjects: subjects,
+    );
+  }
+
+  /// Carga puntual (una sola vez) de las carreras creadas en el admin.
+  Future<List<Career>> fetchCustomCareers() async {
+    final snapshot = await _firestore.collection(_collection).get();
+    return snapshot.docs
+        .map((doc) => _careerFromData(doc.data()))
+        .toList();
+  }
 
   /// Stream que emite la lista completa de carreras en tiempo real
   Stream<List<Career>> getCareersStream() {
     return _firestore.collection(_collection).snapshots().map((snapshot) {
-      final customCareers = snapshot.docs.map((doc) {
-        final data = doc.data();
-        final subjectsList = List.from(data['predefinedSubjects'] as List<dynamic>);
-        final subjects = subjectsList
-            .map((s) => Subject.fromMap(Map<String, dynamic>.from(s as Map)))
-            .toList();
-        return Career(
-          id: data['id'] as String,
-          name: data['name'] as String,
-          accessKey: data['accessKey'] as String,
-          description: data['description'] as String?,
-          predefinedSubjects: subjects,
-        );
-      }).toList();
+      final customCareers = snapshot.docs
+          .map((doc) => _careerFromData(doc.data()))
+          .toList();
 
-      // Combinar con carreras predefinidas
-      return [...Careers.all, ...customCareers];
+      // Combinar con carreras predefinidas (sin las remotas cacheadas para
+      // evitar duplicados con las que llegan en este snapshot).
+      return [...Careers.predefined, ...customCareers];
     });
   }
 

@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:hive/hive.dart';
 import '../utils/hive_box_helper.dart';
 import '../utils/logger.dart';
+import 'app_firestore.dart';
 import 'encryption_service.dart';
 import 'local_cache_service.dart';
 
@@ -31,9 +31,7 @@ class TaskProgressService {
   /// Instancia de Firestore obtenida de forma diferida: en el constructor
   /// singleton, `Firebase.app()` puede no estar listo todavía (ej. en tests
   /// que no inicializan Firebase y no usan progreso remoto).
-  FirebaseFirestore get _firestore =>
-      _firestoreOverride ??
-      FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'dtbitacora');
+  FirebaseFirestore get _firestore => _firestoreOverride ?? AppFirestore.instance;
 
   Box? _box;
   static const _boxName = 'task_progress';

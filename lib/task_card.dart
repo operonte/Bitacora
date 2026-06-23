@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'task_model.dart';
+import 'models/career_model.dart';
+import 'services/career_service.dart';
 import 'colors.dart';
 
 class TaskCard extends StatelessWidget {
@@ -25,6 +27,7 @@ class TaskCard extends StatelessWidget {
     final icon = TaskColorHelper.getUrgencyIcon(urgency);
     final label = TaskColorHelper.getUrgencyText(urgency);
     final isOverdue = urgency == TaskUrgency.overdue;
+    final careerName = CareerService().careerNameFor(task.careerId);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -144,6 +147,55 @@ class TaskCard extends StatelessWidget {
                                 _TypeChip(type: task.type),
                               ],
                             ),
+
+                            // Carrera / grupo al que pertenece la tarea
+                            if (careerName != null) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.school_outlined,
+                                    size: 12,
+                                    color: AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    careerName,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ],
+
+                            // Autor de la tarea (en tareas de grupo compartidas)
+                            if (Careers.isShared(task.careerId)) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.person_outline,
+                                    size: 12,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      'Creado por ${task.userName}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
 
                             // Descripción (si existe)
                             if (task.description.isNotEmpty) ...[

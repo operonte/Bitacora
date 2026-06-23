@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'app_firestore.dart';
 import '../utils/logger.dart';
 
 /// Servicio de autenticación administrativa para operaciones protegidas.
@@ -9,7 +10,7 @@ import '../utils/logger.dart';
 /// El hash de la contraseña se guarda en Firestore (`admins/{uid}`), nunca
 /// en el código fuente. Solo el propio usuario admin puede leer su doc.
 class AdminAuthService {
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static FirebaseFirestore get _firestore => AppFirestore.instance;
 
   /// Verifica si la contraseña ingresada coincide con el hash guardado
   /// en Firestore para el usuario autenticado actual.

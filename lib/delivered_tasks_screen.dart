@@ -74,9 +74,7 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
-    // Obtener carrera seleccionada
     final careerService = CareerService();
-    final selectedCareer = careerService.getSelectedCareer();
 
     // Cargar primero desde caché local para respuesta inmediata (offline-first)
     final cachedTasks = _firebaseService.getTasksFromCache();
@@ -86,11 +84,7 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
           .where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
         // Filtrar por carrera si hay una seleccionada
-        final matchesCareer =
-            selectedCareer == null ||
-            task.careerId == null ||
-            task.careerId!.isEmpty ||
-            task.careerId == selectedCareer.id;
+        final matchesCareer = careerService.matchesAnyCareer(task.careerId);
         return isDelivered && matchesCareer;
       }).toList()
         ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
@@ -109,11 +103,7 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
           .where((task) {
         final isDelivered = task.isCompleted && task.isSubmitted;
         // Filtrar por carrera: mostrar si no tiene careerId o si coincide con la seleccionada
-        final matchesCareer =
-            selectedCareer == null ||
-            task.careerId == null ||
-            task.careerId!.isEmpty ||
-            task.careerId == selectedCareer.id;
+        final matchesCareer = careerService.matchesAnyCareer(task.careerId);
         return isDelivered && matchesCareer;
       }).toList()
         ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
@@ -216,6 +206,7 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
               children: [
                 Text('Asignatura: ${task.subject}'),
                 Text('Profesor: ${task.professor}'),
+                Text('Creado por: ${task.userName}'),
                 Text('Tipo: ${task.type}'),
                 Text(
                   'Entrega: ${DateFormat('dd/MM/yyyy HH:mm').format(task.dueDate)}',
