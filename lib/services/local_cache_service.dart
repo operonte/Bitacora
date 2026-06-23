@@ -5,6 +5,7 @@ import '../task_model.dart';
 import '../subject_model.dart';
 import '../utils/hive_box_helper.dart';
 import '../utils/logger.dart';
+import 'encryption_service.dart';
 
 /// Servicio de caché local para soporte offline
 /// Usa Hive para almacenamiento local y maneja sincronización con Firebase
@@ -30,9 +31,10 @@ class LocalCacheService {
     if (_initialized) return;
 
     try {
-      _tasksBox = await openHiveBoxSafely<Map>('tasks_cache');
-      _subjectsBox = await openHiveBoxSafely<Map>('subjects_cache');
-      _metadataBox = await openHiveBoxSafelyUntyped('metadata_cache');
+      final cipher = EncryptionService.cipher;
+      _tasksBox = await openHiveBoxSafely<Map>('tasks_cache', cipher: cipher);
+      _subjectsBox = await openHiveBoxSafely<Map>('subjects_cache', cipher: cipher);
+      _metadataBox = await openHiveBoxSafelyUntyped('metadata_cache', cipher: cipher);
       _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
         ConnectivityResult result,
       ) {

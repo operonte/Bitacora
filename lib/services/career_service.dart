@@ -4,6 +4,7 @@ import 'package:hive/hive.dart';
 import 'package:bitacora/models/career_model.dart';
 import 'package:bitacora/subject_model.dart';
 import 'package:bitacora/utils/hive_box_helper.dart';
+import 'encryption_service.dart';
 
 /// Servicio para gestión de carreras académicas
 class CareerService extends ChangeNotifier {
@@ -15,7 +16,7 @@ class CareerService extends ChangeNotifier {
 
   /// Inicializa el servicio
   Future<void> initialize() async {
-    _careerBox = await openHiveBoxSafelyUntyped('career_settings');
+    _careerBox = await openHiveBoxSafelyUntyped('career_settings', cipher: EncryptionService.cipher);
   }
 
   /// Guarda la carrera seleccionada

@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:hive/hive.dart';
 import '../utils/hive_box_helper.dart';
 import '../utils/logger.dart';
+import 'encryption_service.dart';
 import 'local_cache_service.dart';
 
 /// Guarda el progreso personal (completada / enviada) por tarea y usuario.
@@ -38,7 +39,7 @@ class TaskProgressService {
   static const _boxName = 'task_progress';
 
   Future<void> initialize() async {
-    _box = await openHiveBoxSafelyUntyped(_boxName);
+    _box = await openHiveBoxSafelyUntyped(_boxName, cipher: EncryptionService.cipher);
   }
 
   String _key(String userId, String taskId) => '$userId:$taskId';

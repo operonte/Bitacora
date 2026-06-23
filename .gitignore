@@ -1,3 +1,6 @@
+# Claude Code local config (no es código de la app)
+.claude/
+
 # Miscellaneous
 *.class
 *.log

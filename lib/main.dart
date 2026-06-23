@@ -17,6 +17,7 @@ import 'auth_screen.dart';
 import 'config_screen.dart';
 import 'career_selection_screen.dart';
 import 'onboarding_screen.dart';
+import 'services/encryption_service.dart';
 import 'services/local_cache_service.dart';
 import 'services/sync_service.dart';
 import 'services/career_service.dart';
@@ -35,6 +36,7 @@ Future<void> main() async {
     );
 
     await Hive.initFlutter();
+    await EncryptionService.initialize();
 
     final cacheService = LocalCacheService();
     await cacheService.initialize();

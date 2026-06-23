@@ -10,29 +10,29 @@ const _deleteTimeout = Duration(seconds: 3);
 
 /// Abre una caja Hive con recuperación si los datos locales están corruptos.
 /// En web, `deleteBoxFromDisk` puede colgar; se aplica timeout para no bloquear el arranque.
-Future<Box<T>> openHiveBoxSafely<T>(String name) async {
+Future<Box<T>> openHiveBoxSafely<T>(String name, {HiveCipher? cipher}) async {
   try {
     if (Hive.isBoxOpen(name)) {
       return Hive.box<T>(name);
     }
-    return await Hive.openBox<T>(name).timeout(_openTimeout);
+    return await Hive.openBox<T>(name, encryptionCipher: cipher).timeout(_openTimeout);
   } catch (e) {
     Logger.warning('Error abriendo caja Hive "$name": $e', tag: 'Hive');
     await _recoverHiveBox(name);
-    return await Hive.openBox<T>(name).timeout(_openTimeout);
+    return await Hive.openBox<T>(name, encryptionCipher: cipher).timeout(_openTimeout);
   }
 }
 
-Future<Box> openHiveBoxSafelyUntyped(String name) async {
+Future<Box> openHiveBoxSafelyUntyped(String name, {HiveCipher? cipher}) async {
   try {
     if (Hive.isBoxOpen(name)) {
       return Hive.box(name);
     }
-    return await Hive.openBox(name).timeout(_openTimeout);
+    return await Hive.openBox(name, encryptionCipher: cipher).timeout(_openTimeout);
   } catch (e) {
     Logger.warning('Error abriendo caja Hive "$name": $e', tag: 'Hive');
     await _recoverHiveBox(name);
-    return await Hive.openBox(name).timeout(_openTimeout);
+    return await Hive.openBox(name, encryptionCipher: cipher).timeout(_openTimeout);
   }
 }
 
