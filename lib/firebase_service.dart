@@ -28,7 +28,7 @@ class FirebaseService {
   final LocalCacheService _cache;
 
   /// Constructor principal (privado para singleton)
-  /// Inicializa Firestore con databaseId 'dtbitacora' y usa instancias singleton de Auth y Cache
+  /// Inicializa Firestore con databaseId 'bitacora' y usa instancias singleton de Auth y Cache
   FirebaseService._internal()
     : _firestore = AppFirestore.instance,
       _auth = FirebaseAuth.instance,
@@ -76,7 +76,7 @@ class FirebaseService {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Usuario no autenticado');
     return _firestore
-        .collection('dtbitacora')
+        .collection('bitacora')
         .doc(user.uid)
         .collection('tasks');
   }
@@ -85,7 +85,7 @@ class FirebaseService {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Usuario no autenticado');
     return _firestore
-        .collection('dtbitacora')
+        .collection('bitacora')
         .doc(user.uid)
         .collection('subjects');
   }
@@ -526,65 +526,101 @@ class FirebaseService {
     bool isCompleted,
     bool isSubmitted,
   ) async {
-    try {
-      Logger.database(
-        'Actualizando estado de tarea: $taskId (completada: $isCompleted, enviada: $isSubmitted)',
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final cached = _cache.getCachedTask(taskId);
+    final isShared = cached != null && Careers.isShared(cached.careerId);
+
+    if (isShared) {
+      Logger.database('Actualizando estado de tarea compartida: $taskId en TaskProgressService');
+      final progressService = TaskProgressService();
+      await progressService.setProgress(
+        user.uid,
+        taskId,
+        isCompleted: isCompleted,
+        isSubmitted: isSubmitted,
       );
-      await tasksCollection.doc(taskId).update({
-        'isCompleted': isCompleted,
-        'isSubmitted': isSubmitted,
-        'updatedAt': DateTime.now().millisecondsSinceEpoch,
-      });
-      // FIX: actualizar caché local para consistencia offline
-      final cached = _cache.getCachedTask(taskId);
-      if (cached != null) {
-        final updated = cached.copyWith(
-          isCompleted: isCompleted,
-          isSubmitted: isSubmitted,
-        );
-        await _cache.cacheTask(updated);
-      }
-      Logger.database('Estado de tarea actualizado exitosamente');
-    } catch (e) {
-      // Sin conexión: actualizar solo el caché y marcar para sync
-      Logger.warning(
-        'Sin conexión al actualizar estado, guardando en caché',
-        error: e,
-        tag: 'FirebaseService',
+
+      // Actualizar localmente el caché con el estado actualizado
+      final updated = cached.copyWith(
+        isCompleted: isCompleted,
+        isSubmitted: isSubmitted,
       );
-      final cached = _cache.getCachedTask(taskId);
-      if (cached != null) {
-        final updated = cached.copyWith(
-          isCompleted: isCompleted,
-          isSubmitted: isSubmitted,
+      await _cache.cacheTask(updated);
+    } else {
+      try {
+        Logger.database(
+          'Actualizando estado de tarea personal: $taskId (completada: $isCompleted, enviada: $isSubmitted)',
         );
-        await _cache.cacheTask(updated);
-        await _cache.markPendingSync('task', taskId, 'update');
+        await tasksCollection.doc(taskId).update({
+          'isCompleted': isCompleted,
+          'isSubmitted': isSubmitted,
+          'updatedAt': DateTime.now().millisecondsSinceEpoch,
+        });
+        if (cached != null) {
+          final updated = cached.copyWith(
+            isCompleted: isCompleted,
+            isSubmitted: isSubmitted,
+          );
+          await _cache.cacheTask(updated);
+        }
+      } catch (e) {
+        Logger.warning(
+          'Sin conexión al actualizar estado personal, guardando en caché',
+          error: e,
+          tag: 'FirebaseService',
+        );
+        if (cached != null) {
+          final updated = cached.copyWith(
+            isCompleted: isCompleted,
+            isSubmitted: isSubmitted,
+          );
+          await _cache.cacheTask(updated);
+          await _cache.markPendingSync('task', taskId, 'update');
+        }
       }
     }
   }
 
   Future<void> toggleTaskCompletion(Task task) async {
     if (task.id == null) throw Exception('Task ID is required for toggle');
-    try {
-      Logger.database('Alternando completado de tarea: ${task.id}');
-      await tasksCollection.doc(task.id).update({
-        'isCompleted': !task.isCompleted,
-        'updatedAt': DateTime.now().millisecondsSinceEpoch,
-      });
-      // FIX: actualizar caché local
-      final updated = task.copyWith(isCompleted: !task.isCompleted);
-      await _cache.cacheTask(updated);
-      Logger.database('Completado de tarea alternado exitosamente');
-    } catch (e) {
-      Logger.warning(
-        'Sin conexión al hacer toggle, guardando en caché',
-        error: e,
-        tag: 'FirebaseService',
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final isShared = Careers.isShared(task.careerId);
+    final newCompleted = !task.isCompleted;
+
+    if (isShared) {
+      Logger.database('Alternando completado de tarea compartida: ${task.id} en TaskProgressService');
+      final progressService = TaskProgressService();
+      await progressService.setProgress(
+        user.uid,
+        task.id!,
+        isCompleted: newCompleted,
+        isSubmitted: task.isSubmitted,
       );
-      final updated = task.copyWith(isCompleted: !task.isCompleted);
+      final updated = task.copyWith(isCompleted: newCompleted);
       await _cache.cacheTask(updated);
-      await _cache.markPendingSync('task', task.id!, 'update');
+    } else {
+      try {
+        Logger.database('Alternando completado de tarea personal: ${task.id}');
+        await tasksCollection.doc(task.id).update({
+          'isCompleted': newCompleted,
+          'updatedAt': DateTime.now().millisecondsSinceEpoch,
+        });
+        final updated = task.copyWith(isCompleted: newCompleted);
+        await _cache.cacheTask(updated);
+      } catch (e) {
+        Logger.warning(
+          'Sin conexión al hacer toggle personal, guardando en caché',
+          error: e,
+          tag: 'FirebaseService',
+        );
+        final updated = task.copyWith(isCompleted: newCompleted);
+        await _cache.cacheTask(updated);
+        await _cache.markPendingSync('task', task.id!, 'update');
+      }
     }
   }
 

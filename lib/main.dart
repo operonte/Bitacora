@@ -338,6 +338,7 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   final AuthService _authService = AuthService();
   late final Stream<User?> _authStream;
+  late final PageController _pageController;
   final List<Widget> _screens = const [
     PendingTasksScreen(),
     OverdueTasksScreen(),
@@ -348,6 +349,13 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _authStream = _authService.userStream;
+    _pageController = PageController(initialPage: _currentIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   @override
@@ -382,8 +390,9 @@ class _MainScreenState extends State<MainScreen> {
             }
 
             return Scaffold(
-              body: IndexedStack(
-                index: _currentIndex,
+              body: PageView(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
                 children: _screens,
               ),
               bottomNavigationBar: SafeArea(
@@ -407,7 +416,14 @@ class _MainScreenState extends State<MainScreen> {
                         elevation: 0,
                         backgroundColor: Colors.transparent,
                         currentIndex: _currentIndex,
-                        onTap: (i) => setState(() => _currentIndex = i),
+                        onTap: (i) {
+                          setState(() => _currentIndex = i);
+                          _pageController.animateToPage(
+                            i,
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOutCubic,
+                          );
+                        },
                         items: const [
                           BottomNavigationBarItem(
                             icon: Icon(Icons.task_outlined),
