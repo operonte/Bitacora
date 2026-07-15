@@ -13,7 +13,7 @@ class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
 
   @override
-  _ConfigScreenState createState() => _ConfigScreenState();
+  State<ConfigScreen> createState() => _ConfigScreenState();
 }
 
 class _ConfigScreenState extends State<ConfigScreen> {

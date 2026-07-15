@@ -20,7 +20,11 @@ class StartupErrorScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Spacer(),
-                const Icon(Icons.error_outline, size: 64, color: AppColors.error),
+                const Icon(
+                  Icons.error_outline,
+                  size: 64,
+                  color: AppColors.error,
+                ),
                 const SizedBox(height: 24),
                 const Text(
                   'No se pudo iniciar Bitácora',
@@ -34,9 +38,9 @@ class StartupErrorScreen extends StatelessWidget {
                   style: const TextStyle(color: AppColors.textSecondary),
                 ),
                 const Spacer(),
-                ElevatedButton(
+                const ElevatedButton(
                   onPressed: reloadPage,
-                  child: const Text('Reintentar'),
+                  child: Text('Reintentar'),
                 ),
               ],
             ),

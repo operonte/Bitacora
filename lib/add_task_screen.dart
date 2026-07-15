@@ -21,7 +21,7 @@ class AddTaskScreen extends StatefulWidget {
   const AddTaskScreen({super.key, this.task});
 
   @override
-  _AddTaskScreenState createState() => _AddTaskScreenState();
+  State<AddTaskScreen> createState() => _AddTaskScreenState();
 }
 
 class _AddTaskScreenState extends State<AddTaskScreen> {
@@ -209,8 +209,6 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               ? 'Agregar Tarea - ${_selectedCareer!.name}'
               : (widget.task == null ? 'Nueva Tarea' : 'Editar Tarea'),
         ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
         actions: [
           if (widget.task != null)
             IconButton(icon: const Icon(Icons.delete), onPressed: _deleteTask),

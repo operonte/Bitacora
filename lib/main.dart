@@ -14,7 +14,7 @@ import 'notification_service.dart';
 import 'colors.dart';
 import 'auth_service.dart';
 import 'auth_screen.dart';
-import 'config_screen.dart';
+
 import 'career_selection_screen.dart';
 import 'onboarding_screen.dart';
 import 'services/encryption_service.dart';
@@ -126,17 +126,17 @@ class BitacoraApp extends StatelessWidget {
       ),
       scaffoldBackgroundColor: AppColors.background,
       appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
+        foregroundColor: AppColors.onSurface,
         elevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
-          color: Colors.white,
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
+          color: AppColors.onSurface,
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
           letterSpacing: 0.3,
         ),
-        iconTheme: IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: AppColors.onSurface),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
@@ -211,14 +211,14 @@ class BitacoraApp extends StatelessWidget {
       ),
       scaffoldBackgroundColor: AppColors.darkBackground,
       appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.darkAppBar,
+        backgroundColor: Colors.transparent,
         foregroundColor: AppColors.darkOnSurface,
         elevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
           color: AppColors.darkOnSurface,
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
           letterSpacing: 0.3,
         ),
         iconTheme: IconThemeData(color: AppColors.darkOnSurface),
@@ -331,13 +331,12 @@ class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
   @override
-  _MainScreenState createState() => _MainScreenState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   final AuthService _authService = AuthService();
-  final SyncService _syncService = SyncService();
   late final Stream<User?> _authStream;
   final List<Widget> _screens = const [
     PendingTasksScreen(),
@@ -383,144 +382,53 @@ class _MainScreenState extends State<MainScreen> {
             }
 
             return Scaffold(
-              appBar: AppBar(
-                title: Text('Bitácora — ${career.name}'),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.logout),
-                    onPressed: () async => await _authService.signOut(),
-                    tooltip: 'Cerrar sesión',
-                  ),
-                  // Indicador de sincronización
-                  StreamBuilder<SyncStatus>(
-                    stream: _syncService.statusStream,
-                    initialData: SyncStatus.idle,
-                    builder: (context, snap) {
-                      final status = snap.data ?? SyncStatus.idle;
-
-                      if (status == SyncStatus.syncing) {
-                        return const Padding(
-                          padding: EdgeInsets.all(8),
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.white),
-                            ),
-                          ),
-                        );
-                      } else if (_syncService.hasPendingChanges()) {
-                        return IconButton(
-                          icon: const Icon(Icons.cloud_off,
-                              color: Colors.orange),
-                          onPressed: () async {
-                            final result = await _syncService.forceSync();
-                            if (context.mounted) {
-                              final msg = switch (result) {
-                                SyncResult.success => '✅ Datos sincronizados',
-                                SyncResult.noConnection =>
-                                  '⚠️ Sin conexión a internet',
-                                SyncResult.nothingToSync =>
-                                  'ℹ️ No hay cambios pendientes',
-                                _ => '❌ Error en sincronización',
-                              };
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(msg)));
-                            }
-                          },
-                          tooltip: 'Sincronizar',
-                        );
-                      }
-                      return const SizedBox.shrink();
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.settings),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const ConfigScreen()),
-                    ),
-                    tooltip: 'Configuración',
-                  ),
-                ],
+              body: IndexedStack(
+                index: _currentIndex,
+                children: _screens,
               ),
-              drawer: Drawer(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    DrawerHeader(
-                      decoration:
-                          const BoxDecoration(color: AppColors.primary),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.school,
-                              size: 48, color: Colors.white),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Bitácora',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
+              bottomNavigationBar: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: BottomNavigationBar(
+                        elevation: 0,
+                        backgroundColor: Colors.transparent,
+                        currentIndex: _currentIndex,
+                        onTap: (i) => setState(() => _currentIndex = i),
+                        items: const [
+                          BottomNavigationBarItem(
+                            icon: Icon(Icons.task_outlined),
+                            activeIcon: Icon(Icons.task),
+                            label: 'Pendientes',
                           ),
-                          Text(
-                            _authService.currentUser?.displayName ??
-                                'Usuario',
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 14),
+                          BottomNavigationBarItem(
+                            icon: Icon(Icons.history_outlined),
+                            activeIcon: Icon(Icons.history),
+                            label: 'Vencidas',
+                          ),
+                          BottomNavigationBarItem(
+                            icon: Icon(Icons.check_circle_outline),
+                            activeIcon: Icon(Icons.check_circle),
+                            label: 'Entregadas',
                           ),
                         ],
                       ),
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.task),
-                      title: const Text('Tareas Pendientes'),
-                      selected: _currentIndex == 0,
-                      onTap: () {
-                        Navigator.pop(context);
-                        setState(() => _currentIndex = 0);
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.history),
-                      title: const Text('Tareas Vencidas'),
-                      selected: _currentIndex == 1,
-                      onTap: () {
-                        Navigator.pop(context);
-                        setState(() => _currentIndex = 1);
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.check_circle_outline),
-                      title: const Text('Tareas Entregadas'),
-                      selected: _currentIndex == 2,
-                      onTap: () {
-                        Navigator.pop(context);
-                        setState(() => _currentIndex = 2);
-                      },
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              body: IndexedStack(
-                  index: _currentIndex, children: _screens),
-              bottomNavigationBar: BottomNavigationBar(
-                currentIndex: _currentIndex,
-                onTap: (i) => setState(() => _currentIndex = i),
-                items: const [
-                  BottomNavigationBarItem(
-                      icon: Icon(Icons.task), label: 'Pendientes'),
-                  BottomNavigationBarItem(
-                      icon: Icon(Icons.history), label: 'Vencidas'),
-                  BottomNavigationBarItem(
-                      icon: Icon(Icons.check_circle_outline),
-                      label: 'Entregadas'),
-                ],
               ),
             );
           },

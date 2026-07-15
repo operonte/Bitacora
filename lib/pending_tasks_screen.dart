@@ -12,12 +12,14 @@ import 'colors.dart';
 import 'utils/error_handler.dart';
 import 'utils/logger.dart';
 import 'services/career_service.dart';
+import 'services/sync_service.dart';
+import 'config_screen.dart';
 
 class PendingTasksScreen extends StatefulWidget {
   const PendingTasksScreen({super.key});
 
   @override
-  _PendingTasksScreenState createState() => _PendingTasksScreenState();
+  State<PendingTasksScreen> createState() => _PendingTasksScreenState();
 }
 
 class _PendingTasksScreenState extends State<PendingTasksScreen>
@@ -168,15 +170,40 @@ class _PendingTasksScreenState extends State<PendingTasksScreen>
 
   @override
   Widget build(BuildContext context) {
+    final career = CareerService().getSelectedCareer();
+    final careerName = career?.name ?? '';
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tareas Pendientes'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Tareas Pendientes'),
+            if (careerName.isNotEmpty)
+              Text(
+                careerName,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.normal,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: _showSearchDialog,
+            tooltip: 'Buscar',
+          ),
+          SyncIndicator(syncService: SyncService()),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ConfigScreen()),
+            ),
+            tooltip: 'Configuración',
           ),
         ],
       ),

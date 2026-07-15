@@ -8,16 +8,18 @@ import 'firebase_service.dart';
 import 'task_model.dart';
 import 'task_card.dart';
 import 'add_task_screen.dart';
-import 'colors.dart';
+
 import 'utils/error_handler.dart';
 import 'utils/logger.dart';
 import 'services/career_service.dart';
+import 'services/sync_service.dart';
+import 'config_screen.dart';
 
 class DeliveredTasksScreen extends StatefulWidget {
   const DeliveredTasksScreen({super.key});
 
   @override
-  _DeliveredTasksScreenState createState() => _DeliveredTasksScreenState();
+  State<DeliveredTasksScreen> createState() => _DeliveredTasksScreenState();
 }
 
 class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
@@ -124,30 +126,58 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
 
   @override
   Widget build(BuildContext context) {
+    final career = CareerService().getSelectedCareer();
+    final careerName = career?.name ?? '';
+
     return Scaffold(
       appBar: AppBar(
-        title: Row(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Tareas Entregadas'),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '${_tasks.length}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Tareas Entregadas'),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${_tasks.length}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (careerName.isNotEmpty)
+              Text(
+                careerName,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.normal,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
               ),
-            ),
           ],
         ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
+        actions: [
+          SyncIndicator(syncService: SyncService()),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ConfigScreen()),
+            ),
+            tooltip: 'Configuración',
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

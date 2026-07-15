@@ -10,7 +10,7 @@ class SubjectsScreen extends StatefulWidget {
   const SubjectsScreen({super.key});
 
   @override
-  _SubjectsScreenState createState() => _SubjectsScreenState();
+  State<SubjectsScreen> createState() => _SubjectsScreenState();
 }
 
 class _SubjectsScreenState extends State<SubjectsScreen> {
@@ -46,8 +46,6 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mis Materias'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

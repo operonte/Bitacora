@@ -7,7 +7,7 @@ class CareersScreen extends StatefulWidget {
   const CareersScreen({super.key});
 
   @override
-  _CareersScreenState createState() => _CareersScreenState();
+  State<CareersScreen> createState() => _CareersScreenState();
 }
 
 class _CareersScreenState extends State<CareersScreen> {
@@ -232,8 +232,6 @@ class _CareersScreenState extends State<CareersScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Mis Carreras'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

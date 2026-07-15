@@ -11,12 +11,14 @@ import 'colors.dart';
 import 'utils/error_handler.dart';
 import 'utils/logger.dart';
 import 'services/career_service.dart';
+import 'services/sync_service.dart';
+import 'config_screen.dart';
 
 class OverdueTasksScreen extends StatefulWidget {
   const OverdueTasksScreen({super.key});
 
   @override
-  _OverdueTasksScreenState createState() => _OverdueTasksScreenState();
+  State<OverdueTasksScreen> createState() => _OverdueTasksScreenState();
 }
 
 class _OverdueTasksScreenState extends State<OverdueTasksScreen>
@@ -131,35 +133,61 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen>
 
   @override
   Widget build(BuildContext context) {
+    final career = CareerService().getSelectedCareer();
+    final careerName = career?.name ?? '';
+
     return Scaffold(
       appBar: AppBar(
-        title: Row(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Tareas Vencidas'),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '${_tasks.length}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Tareas Vencidas'),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${_tasks.length}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (careerName.isNotEmpty)
+              Text(
+                careerName,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.normal,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
               ),
-            ),
           ],
         ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: const Icon(Icons.info),
+            icon: const Icon(Icons.info_outline),
             onPressed: () => _showAppInfo(),
             tooltip: 'Acerca de',
+          ),
+          SyncIndicator(syncService: SyncService()),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ConfigScreen()),
+            ),
+            tooltip: 'Configuración',
           ),
           PopupMenuButton<String>(
             onSelected: (value) {

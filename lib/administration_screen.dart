@@ -11,7 +11,7 @@ class AdministrationScreen extends StatefulWidget {
   const AdministrationScreen({super.key});
 
   @override
-  _AdministrationScreenState createState() => _AdministrationScreenState();
+  State<AdministrationScreen> createState() => _AdministrationScreenState();
 }
 
 class _AdministrationScreenState extends State<AdministrationScreen> {
@@ -668,8 +668,6 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Administración'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
       ),
       body: StreamBuilder<List<Career>>(
         stream: _careerService.getCareersStream(),

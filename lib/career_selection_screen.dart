@@ -8,7 +8,7 @@ class CareerSelectionScreen extends StatefulWidget {
   const CareerSelectionScreen({super.key});
 
   @override
-  _CareerSelectionScreenState createState() => _CareerSelectionScreenState();
+  State<CareerSelectionScreen> createState() => _CareerSelectionScreenState();
 }
 
 class _CareerSelectionScreenState extends State<CareerSelectionScreen> {
@@ -22,8 +22,6 @@ class _CareerSelectionScreenState extends State<CareerSelectionScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Seleccionar Carrera'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),

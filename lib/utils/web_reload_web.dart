@@ -1,3 +1,4 @@
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
-void reloadPage() => html.window.location.reload();
+void reloadPage() => web.window.location.reload();
+
