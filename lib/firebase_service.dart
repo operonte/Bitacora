@@ -28,7 +28,7 @@ class FirebaseService {
   final LocalCacheService _cache;
 
   /// Constructor principal (privado para singleton)
-  /// Inicializa Firestore con databaseId 'bitacora' y usa instancias singleton de Auth y Cache
+  /// Inicializa Firestore con databaseId 'dtbitacora' y usa instancias singleton de Auth y Cache
   FirebaseService._internal()
     : _firestore = AppFirestore.instance,
       _auth = FirebaseAuth.instance,
@@ -76,7 +76,7 @@ class FirebaseService {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Usuario no autenticado');
     return _firestore
-        .collection('bitacora')
+        .collection('dtbitacora')
         .doc(user.uid)
         .collection('tasks');
   }
@@ -85,7 +85,7 @@ class FirebaseService {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Usuario no autenticado');
     return _firestore
-        .collection('bitacora')
+        .collection('dtbitacora')
         .doc(user.uid)
         .collection('subjects');
   }
