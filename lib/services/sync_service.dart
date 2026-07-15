@@ -82,7 +82,7 @@ class SyncService {
 
   /// Handler para cambios de conectividad
   void _onConnectivityChanged(ConnectivityResult result) async {
-    final hasInternet = result != ConnectivityResult.none;
+    final hasInternet = await _cache.hasConnection();
 
     if (hasInternet && !_isSyncing) {
       // Hay conexión - verificar si hay cambios pendientes
@@ -340,6 +340,8 @@ class SyncIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeColor = Theme.of(context).colorScheme.onSurface;
+
     return StreamBuilder<SyncStatus>(
       stream: syncService.statusStream,
       initialData: SyncStatus.idle,
@@ -348,16 +350,16 @@ class SyncIndicator extends StatelessWidget {
 
         switch (status) {
           case SyncStatus.syncing:
-            return const SizedBox(
+            return SizedBox(
               width: 20,
               height: 20,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                valueColor: AlwaysStoppedAnimation<Color>(themeColor),
               ),
             );
           case SyncStatus.completed:
-            return const Icon(Icons.cloud_done, size: 20, color: Colors.white);
+            return const Icon(Icons.cloud_done, size: 20);
           case SyncStatus.partialError:
           case SyncStatus.error:
             return const Icon(Icons.cloud_off, size: 20, color: Colors.orange);

@@ -600,8 +600,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               Navigator.pop(context);
 
               try {
-                final firebaseService = FirebaseService();
-                await firebaseService.deleteTask(widget.task!.id!);
+                final appState = context.read<AppState>();
+                await appState.deleteTask(widget.task!.id!);
 
                 final notificationService = NotificationService();
                 await notificationService.cancelTaskReminders(widget.task!.id!);

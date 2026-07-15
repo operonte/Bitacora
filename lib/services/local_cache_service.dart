@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../task_model.dart';
@@ -49,15 +51,26 @@ class LocalCacheService {
     }
   }
 
-  /// Verifica si hay conexión a internet
+  /// Verifica si hay conexión a internet activa resolviendo un host
   Future<bool> hasConnection() async {
     final result = await Connectivity().checkConnectivity();
-    return result != ConnectivityResult.none;
+    if (result == ConnectivityResult.none) return false;
+
+    if (!kIsWeb) {
+      try {
+        final lookup = await InternetAddress.lookup('google.com')
+            .timeout(const Duration(seconds: 3));
+        return lookup.isNotEmpty && lookup[0].rawAddress.isNotEmpty;
+      } catch (_) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// Handler para cambios de conectividad
-  void _onConnectivityChanged(ConnectivityResult result) {
-    final hasInternet = result != ConnectivityResult.none;
+  void _onConnectivityChanged(ConnectivityResult result) async {
+    final hasInternet = await hasConnection();
     _connectionController.add(hasInternet);
     Logger.info(
       'Conectividad cambiada: ${hasInternet ? "Online" : "Offline"}',

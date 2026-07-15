@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../task_model.dart';
 import '../subject_model.dart';
@@ -6,6 +7,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/task_progress_service.dart';
 import '../services/local_cache_service.dart';
 import '../services/sync_service.dart';
+import '../services/career_service.dart';
+import '../notification_service.dart';
 
 /// Estado global de la aplicación
 /// Centraliza datos y operaciones para evitar inconsistencias entre pantallas
@@ -20,6 +23,47 @@ class AppState extends ChangeNotifier {
   bool _isLoading = false;
   String _error = '';
   
+  StreamSubscription? _changesSubscription;
+  StreamSubscription? _authSubscription;
+  
+  AppState() {
+    _initAuthListener();
+    _initCareerListener();
+  }
+  
+  void _initAuthListener() {
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null) {
+        _subscribeToChanges();
+        loadTasks();
+        loadSubjects();
+      } else {
+        _unsubscribeFromChanges();
+        _tasks = [];
+        _subjects = [];
+        notifyListeners();
+      }
+    });
+  }
+  
+  void _initCareerListener() {
+    CareerService().addListener(() {
+      loadTasks();
+    });
+  }
+  
+  void _subscribeToChanges() {
+    _unsubscribeFromChanges();
+    _changesSubscription = _firebase.watchRelevantChanges().listen((_) {
+      loadTasks();
+    });
+  }
+  
+  void _unsubscribeFromChanges() {
+    _changesSubscription?.cancel();
+    _changesSubscription = null;
+  }
+  
   // Getters
   List<Task> get tasks => _tasks;
   List<Subject> get subjects => _subjects;
@@ -30,20 +74,24 @@ class AppState extends ChangeNotifier {
   List<Task> get pendingTasks => _tasks.where((task) {
     final isDelivered = task.isCompleted && task.isSubmitted;
     final isFuture = task.dueDate.isAfter(DateTime.now());
-    return !isDelivered && isFuture;
+    final matchesCareer = CareerService().matchesAnyCareer(task.careerId);
+    return !isDelivered && isFuture && matchesCareer;
   }).toList()
     ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
   
   List<Task> get overdueTasks => _tasks.where((task) {
     final isDelivered = task.isCompleted && task.isSubmitted;
     final isPast = task.dueDate.isBefore(DateTime.now());
-    return !isDelivered && isPast;
+    final matchesCareer = CareerService().matchesAnyCareer(task.careerId);
+    return !isDelivered && isPast && matchesCareer;
   }).toList()
     ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
   
-  List<Task> get deliveredTasks => _tasks.where((task) => 
-    task.isCompleted && task.isSubmitted
-  ).toList()
+  List<Task> get deliveredTasks => _tasks.where((task) {
+    final isDelivered = task.isCompleted && task.isSubmitted;
+    final matchesCareer = CareerService().matchesAnyCareer(task.careerId);
+    return isDelivered && matchesCareer;
+  }).toList()
     ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
   
   // ==================== TASKS ====================
@@ -76,6 +124,7 @@ class AppState extends ChangeNotifier {
         );
       }).toList();
       _clearError();
+      NotificationService().syncAllTaskReminders(_tasks);
     } catch (e) {
       _setError('Error cargando tareas: $e');
     } finally {
@@ -92,6 +141,7 @@ class AppState extends ChangeNotifier {
       final newTask = task.copyWith(id: id);
       _tasks.add(newTask);
       notifyListeners();
+      NotificationService().syncAllTaskReminders(_tasks);
     } catch (e) {
       _setError('Error agregando tarea: $e');
     }
@@ -107,6 +157,7 @@ class AppState extends ChangeNotifier {
       if (index != -1) {
         _tasks[index] = task;
         notifyListeners();
+        NotificationService().syncAllTaskReminders(_tasks);
       }
     } catch (e) {
       _setError('Error actualizando tarea: $e');
@@ -123,8 +174,32 @@ class AppState extends ChangeNotifier {
       await _firebase.deleteTask(taskId, careerId: careerId);
       _tasks.removeWhere((t) => t.id == taskId);
       notifyListeners();
+      NotificationService().syncAllTaskReminders(_tasks);
     } catch (e) {
       _setError('Error eliminando tarea: $e');
+    }
+  }
+
+  /// Actualiza el estado (isCompleted, isSubmitted) de una tarea
+  Future<void> updateTaskStatus(
+    String taskId,
+    bool isCompleted,
+    bool isSubmitted,
+  ) async {
+    _clearError();
+    try {
+      await _firebase.updateTaskStatus(taskId, isCompleted, isSubmitted);
+      final index = _tasks.indexWhere((t) => t.id == taskId);
+      if (index != -1) {
+        _tasks[index] = _tasks[index].copyWith(
+          isCompleted: isCompleted,
+          isSubmitted: isSubmitted,
+        );
+        notifyListeners();
+        NotificationService().syncAllTaskReminders(_tasks);
+      }
+    } catch (e) {
+      _setError('Error actualizando estado de tarea: $e');
     }
   }
   
@@ -270,5 +345,12 @@ class AppState extends ChangeNotifier {
       task.subject.toLowerCase().contains(lowerQuery) ||
       (task.tag?.toLowerCase().contains(lowerQuery) ?? false)
     ).toList();
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    _changesSubscription?.cancel();
+    super.dispose();
   }
 }

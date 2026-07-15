@@ -1,16 +1,11 @@
-import 'dart:async';
-
+import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'services/task_progress_service.dart';
 import 'package:intl/intl.dart';
-import 'firebase_service.dart';
+import 'providers/app_state.dart';
 import 'task_model.dart';
 import 'task_card.dart';
 import 'add_task_screen.dart';
-
 import 'utils/error_handler.dart';
-import 'utils/logger.dart';
 import 'services/career_service.dart';
 import 'services/sync_service.dart';
 import 'config_screen.dart';
@@ -22,112 +17,14 @@ class DeliveredTasksScreen extends StatefulWidget {
   State<DeliveredTasksScreen> createState() => _DeliveredTasksScreenState();
 }
 
-class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
-    with RouteAware {
-  List<Task> _tasks = [];
-  bool _isLoading = true;
-  final FirebaseService _firebaseService = FirebaseService();
-
-  StreamSubscription<void>? _changesSubscription;
-  Timer? _reloadDebounce;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-    _subscribeToRemoteChanges();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-  }
-
-  @override
-  void dispose() {
-    _changesSubscription?.cancel();
-    _reloadDebounce?.cancel();
-    super.dispose();
-  }
-
-  /// Escucha cambios remotos (tareas y progreso) para refrescar la pantalla
-  /// automáticamente cuando otro dispositivo modifica datos.
-  void _subscribeToRemoteChanges() {
-    _changesSubscription = _firebaseService.watchRelevantChanges().listen(
-      (_) {
-        _reloadDebounce?.cancel();
-        _reloadDebounce = Timer(const Duration(milliseconds: 500), _loadData);
-      },
-      onError: (e) {
-        Logger.warning(
-          'Error escuchando cambios remotos',
-          error: e,
-          tag: 'DeliveredTasks',
-        );
-      },
-    );
-  }
-
-  @override
-  void didPopNext() {
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-
-    final careerService = CareerService();
-
-    // Cargar primero desde caché local para respuesta inmediata (offline-first)
-    final cachedTasks = _firebaseService.getTasksFromCache();
-    if (cachedTasks.isNotEmpty) {
-      final deliveredCached = _firebaseService
-          .applyCurrentUserProgress(cachedTasks)
-          .where((task) {
-        final isDelivered = task.isCompleted && task.isSubmitted;
-        // Filtrar por carrera si hay una seleccionada
-        final matchesCareer = careerService.matchesAnyCareer(task.careerId);
-        return isDelivered && matchesCareer;
-      }).toList()
-        ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
-      setState(() {
-        _tasks = deliveredCached;
-        _isLoading = false;
-      });
-    }
-
-    try {
-      // Cargar todas las tareas sin filtrar por careerId inicialmente
-      final allTasks = await _firebaseService.getTasks();
-      // Filtrar tareas entregadas y por carrera si está seleccionada
-      final deliveredTasks = _firebaseService
-          .applyCurrentUserProgress(allTasks)
-          .where((task) {
-        final isDelivered = task.isCompleted && task.isSubmitted;
-        // Filtrar por carrera: mostrar si no tiene careerId o si coincide con la seleccionada
-        final matchesCareer = careerService.matchesAnyCareer(task.careerId);
-        return isDelivered && matchesCareer;
-      }).toList()
-        ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
-
-      setState(() {
-        _tasks = deliveredTasks;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ErrorHandler.showErrorSnackBar(
-        context,
-        ErrorMessages.fromFirebaseError(e),
-      );
-    }
-  }
-
+class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
   @override
   Widget build(BuildContext context) {
     final career = CareerService().getSelectedCareer();
     final careerName = career?.name ?? '';
+
+    final appState = context.watch<AppState>();
+    final deliveredTasks = appState.deliveredTasks;
 
     return Scaffold(
       appBar: AppBar(
@@ -138,22 +35,24 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text('Tareas Entregadas'),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${_tasks.length}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
+                if (deliveredTasks.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${deliveredTasks.length}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
             if (careerName.isNotEmpty)
@@ -179,51 +78,54 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _tasks.isEmpty
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.check_circle_outline,
-                    size: 64,
-                    color: Colors.grey,
-                  ),
-                  SizedBox(height: 16),
-                  Text(
-                    'No hay tareas entregadas',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Las tareas aparecerán aquí cuando\nestén realizadas y enviadas',
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+      body: appState.isLoading && deliveredTasks.isEmpty
+          ? ListView.builder(
+              itemCount: 3,
+              itemBuilder: (context, index) => const SkeletonTaskCard(),
             )
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              child: ListView.builder(
-                itemCount: _tasks.length,
-                itemBuilder: (context, index) {
-                  final task = _tasks[index];
-                  return TaskCard(
-                    task: task,
-                    onTap: () => _showTaskDetails(task),
-                    onEdit: () => _editTask(task),
-                    onDelete: () => _deleteTask(task),
-                  );
-                },
-              ),
-            ),
+          : deliveredTasks.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 64,
+                        color: Colors.grey,
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'No hay tareas entregadas',
+                        style: TextStyle(fontSize: 18, color: Colors.grey),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Las tareas aparecerán aquí cuando\nestén realizadas y enviadas',
+                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: () => appState.forceSync(),
+                  child: ListView.builder(
+                    itemCount: deliveredTasks.length,
+                    itemBuilder: (context, index) {
+                      final task = deliveredTasks[index];
+                      return TaskCard(
+                        task: task,
+                        onTap: () => _showTaskDetails(task, appState),
+                        onEdit: () => _editTask(task),
+                        onDelete: () => _deleteTask(task, appState),
+                      );
+                    },
+                  ),
+                ),
     );
   }
 
-  void _showTaskDetails(Task task) {
+  void _showTaskDetails(Task task, AppState appState) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -257,18 +159,15 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
                       setDialogState(() {
                         task.isCompleted = value;
                       });
-                      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-                      await TaskProgressService().setProgress(
-                        uid,
+                      await appState.updateTaskStatus(
                         task.id!,
-                        isCompleted: task.isCompleted,
-                        isSubmitted: task.isSubmitted,
+                        task.isCompleted,
+                        task.isSubmitted,
                       );
                       if (!context.mounted) return;
                       // Si desmarca alguno, la tarea ya no es "entregada"
                       if (!task.isCompleted || !task.isSubmitted) {
                         Navigator.pop(context);
-                        _loadData();
                       }
                     }
                   },
@@ -282,18 +181,15 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
                       setDialogState(() {
                         task.isSubmitted = value;
                       });
-                      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-                      await TaskProgressService().setProgress(
-                        uid,
+                      await appState.updateTaskStatus(
                         task.id!,
-                        isCompleted: task.isCompleted,
-                        isSubmitted: task.isSubmitted,
+                        task.isCompleted,
+                        task.isSubmitted,
                       );
                       if (!context.mounted) return;
                       // Si desmarca alguno, la tarea ya no es "entregada"
                       if (!task.isCompleted || !task.isSubmitted) {
                         Navigator.pop(context);
-                        _loadData();
                       }
                     }
                   },
@@ -336,18 +232,14 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
     );
   }
 
-  void _editTask(Task task) async {
-    final result = await Navigator.push(
+  void _editTask(Task task) {
+    Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => AddTaskScreen(task: task)),
     );
-
-    if (result != null) {
-      _loadData();
-    }
   }
 
-  void _deleteTask(Task task) {
+  void _deleteTask(Task task, AppState appState) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -361,11 +253,8 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen>
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-
               try {
-                await _firebaseService.deleteTask(task.id!, careerId: task.careerId);
-                _loadData();
-
+                await appState.deleteTask(task.id!);
                 if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Tarea eliminada')),

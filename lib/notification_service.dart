@@ -172,6 +172,26 @@ class NotificationService {
     await _notifications.cancel(baseId + 1000000);
   }
 
+  /// Sincroniza todas las notificaciones locales con la lista actual de tareas
+  Future<void> syncAllTaskReminders(List<Task> tasks) async {
+    try {
+      for (final task in tasks) {
+        if (task.id == null) continue;
+        final isDelivered = task.isCompleted && task.isSubmitted;
+        final isFuture = task.dueDate.isAfter(DateTime.now());
+
+        if (!isDelivered && isFuture) {
+          await scheduleTaskReminders(task);
+        } else {
+          await cancelTaskReminders(task.id!);
+        }
+      }
+      Logger.info('Sincronizados recordatorios locales para ${tasks.length} tareas', tag: 'Notif');
+    } catch (e) {
+      Logger.error('Error sincronizando recordatorios de tareas: $e', tag: 'Notif');
+    }
+  }
+
   // ==================== RECORDATORIO DIARIO ====================
 
   Future<void> scheduleDailyReminder() async {
