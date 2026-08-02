@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Datos de membresía de carreras del usuario actual.
+    function userCareerData() {
+      return get(/databases/$(database)/documents/userCareers/$(request.auth.uid)).data;
+    }
+
+    // True si el usuario pertenece a [careerId], soportando tanto el formato
+    // nuevo (array `careerIds`) como el antiguo (string `careerId`).
+    function belongsToCareer(careerId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/userCareers/$(request.auth.uid))
+        && (
+          ('careerIds' in userCareerData() && careerId in userCareerData().careerIds)
+          || userCareerData().careerId == careerId
+        );
+    }
+
+    // Regla para permitir lectura/escritura solo al usuario autenticado en su propia subcolección
+    match /dtbitacora/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Regla para colección careers - lectura para todos autenticados, escritura solo para admins
+    match /careers/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Regla para colección admins - solo el propio usuario puede leer su doc (contiene passwordHash)
+    match /admins/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false; // Solo se puede crear manualmente desde Firebase Console
+    }
+
+    // Carrera seleccionada por cada usuario - usada para autorizar el acceso
+    // a sharedTasks/{careerId} según pertenencia.
+    match /userCareers/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Tareas pendientes compartidas por carrera (ej: Teología) - solo los
+    // usuarios autenticados que pertenecen a esa carrera
+    // (careerId está en userCareers/{uid}.careerIds) pueden leer/escribir.
+    match /sharedTasks/{careerId}/tasks/{taskId} {
+      allow read, write: if belongsToCareer(careerId);
+    }
+
+    // Progreso personal (Realizada/Enviada) por usuario y tarea - privado, se
+    // sincroniza entre los dispositivos del mismo usuario.
+    match /userProgress/{userId}/tasks/{taskId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

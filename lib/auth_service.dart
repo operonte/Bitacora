@@ -1,0 +1,104 @@
+import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/logger.dart';
+import 'services/local_cache_service.dart';
+import 'services/google_drive_service.dart';
+
+const _webClientId =
+    '651071616802-1pgjc8uu88a58m5999noa0uits5n6s1j.apps.googleusercontent.com';
+
+/// Servicio de autenticación usando Supabase Auth + Google Sign-In Nativo.
+class AuthService {
+  final SupabaseClient _client = Supabase.instance.client;
+
+  AuthService();
+
+  /// Stream estable de sesión de usuario.
+  Stream<AuthState> get authStateChanges => _client.auth.onAuthStateChange;
+
+  /// Stream mapeado a User?
+  Stream<User?> get userStream => _client.auth.onAuthStateChange
+      .map((authState) => authState.session?.user);
+
+  /// Usuario actual (null si no hay sesión)
+  User? get currentUser => _client.auth.currentUser;
+
+  /// Inicia sesión con Google.
+  /// En Android/iOS: Ventana flotante 100% nativa (sin abrir Chrome ni URLs raras).
+  /// En Web: OAuth popup.
+  Future<void> signInWithGoogle() async {
+    try {
+      Logger.auth('Iniciando proceso de Google Sign-In');
+
+      if (kIsWeb) {
+        await _client.auth.signInWithOAuth(
+          OAuthProvider.google,
+          scopes: 'https://www.googleapis.com/auth/drive.file',
+          queryParams: {
+            'access_type': 'offline',
+            'prompt': 'select_account',
+          },
+        );
+      } else {
+        // En Móvil (Android): Login 100% Nativo sin abrir navegador ni URLs
+        final googleSignIn = GoogleSignIn(
+          serverClientId: _webClientId,
+          scopes: [
+            'email',
+            'profile',
+            'https://www.googleapis.com/auth/drive.file',
+          ],
+        );
+
+        final googleUser = await googleSignIn.signIn();
+        if (googleUser == null) {
+          Logger.auth('El usuario canceló el inicio de sesión nativo');
+          return;
+        }
+
+        final googleAuth = await googleUser.authentication;
+        final idToken = googleAuth.idToken;
+        final accessToken = googleAuth.accessToken;
+
+        if (idToken == null) {
+          throw Exception('No se pudo obtener el ID Token de Google.');
+        }
+
+        await _client.auth.signInWithIdToken(
+          provider: OAuthProvider.google,
+          idToken: idToken,
+          accessToken: accessToken,
+        );
+
+        if (accessToken != null && accessToken.isNotEmpty) {
+          await GoogleDriveService.persistToken(accessToken);
+        }
+      }
+      Logger.auth('Google Sign-In completado exitosamente');
+    } catch (e) {
+      Logger.error('Error en signInWithGoogle', error: e, tag: 'AuthService');
+      throw Exception('Error al iniciar sesión con Google: $e');
+    }
+  }
+
+  /// Cierra sesión y limpia caché local.
+  Future<void> signOut() async {
+    try {
+      await LocalCacheService().clearAllCache();
+      await GoogleDriveService.clearToken();
+      await _client.auth.signOut();
+      Logger.auth('Sesión cerrada exitosamente');
+    } catch (e) {
+      Logger.error('Error signing out', error: e, tag: 'AuthService');
+    }
+  }
+
+  bool get isSignedIn => _client.auth.currentUser != null;
+  String? get userDisplayName =>
+      _client.auth.currentUser?.userMetadata?['full_name'] as String? ??
+      _client.auth.currentUser?.userMetadata?['name'] as String?;
+  String? get userEmail => _client.auth.currentUser?.email;
+  String? get userPhotoURL =>
+      _client.auth.currentUser?.userMetadata?['avatar_url'] as String?;
+}
