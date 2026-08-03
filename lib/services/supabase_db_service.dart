@@ -264,17 +264,26 @@ class SupabaseDbService {
     final primaryTable = isShared ? 'shared_tasks' : 'tasks';
     final secondaryTable = isShared ? 'tasks' : 'shared_tasks';
 
+    // Campos de autoría: identifican a quien CREÓ la tarea, así que una
+    // edición no puede tocarlos. Faltaba quitar user_name, y por eso al editar
+    // una tarea compartida el nombre del creador quedaba reemplazado por el
+    // del editor. En shared_tasks el trigger los preserva igual, pero tampoco
+    // hay que mandarlos.
+    void stripAuthorFields(Map<String, dynamic> r) {
+      r.remove('user_id');
+      r.remove('user_name');
+      r.remove('created_by');
+    }
+
     final row = _taskToRow(task, isShared: isShared);
-    row.remove('user_id'); // No actualizar user_id
-    row.remove('created_by');
+    stripAuthorFields(row);
 
     try {
       await _client.from(primaryTable).update(row).eq('id', task.id!);
     } catch (errPrimary) {
       Logger.warning('Falló update en $primaryTable ($errPrimary), intentando en $secondaryTable', tag: 'SupabaseDbService');
       final secondaryRow = _taskToRow(task, isShared: !isShared);
-      secondaryRow.remove('user_id');
-      secondaryRow.remove('created_by');
+      stripAuthorFields(secondaryRow);
       await _client.from(secondaryTable).update(secondaryRow).eq('id', task.id!);
     }
 
