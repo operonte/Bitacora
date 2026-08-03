@@ -319,23 +319,26 @@ void main() {
       final career = Career(
         id: 'teologia',
         name: 'Teología',
-        accessKey: 'teologia2026',
+        accessKey: 'clave-de-prueba',
         predefinedSubjects: [subject1, subject2],
       );
 
       expect(career.id, 'teologia');
       expect(career.name, 'Teología');
-      expect(career.accessKey, 'teologia2026');
+      expect(career.accessKey, 'clave-de-prueba');
       expect(career.predefinedSubjects.length, 2);
     });
 
-    test('Careers.findByAccessKey returns correct career', () {
-      final found = Careers.findByAccessKey('teologia2026');
-      expect(found, isNotNull);
-      expect(found?.name, 'Teología');
-
+    test('Careers.findByAccessKey solo encuentra claves ya guardadas', () {
+      // Las carreras predefinidas ya no llevan la clave en el código: se
+      // valida contra el servidor con el RPC join_career.
       final notFound = Careers.findByAccessKey('invalid_key');
       expect(notFound, isNull);
+
+      // Una clave vacía no debe calzar con las carreras cuyo accessKey
+      // quedó vacío, que ahora son todas las predefinidas.
+      expect(Careers.findByAccessKey(''), isNull);
+      expect(Careers.predefined.every((c) => c.accessKey.isEmpty), isTrue);
     });
 
     test('Careers.careerNames returns list of career names', () {
@@ -350,7 +353,7 @@ void main() {
     });
 
     test('Teología career has correct predefined subjects', () {
-      final teologia = Careers.findByAccessKey('teologia2026');
+      final teologia = Careers.findById('teologia');
       expect(teologia, isNotNull);
       expect(
         teologia!.predefinedSubjects.map((s) => s.name),

@@ -200,7 +200,10 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
 
     Future<void> updateStatus(bool completed, bool submitted, void Function(void Function()) setDialogState) async {
       final success = await appState.updateTaskStatus(task.id!, completed, submitted);
-      if (!context.mounted) return;
+      // `mounted` del State, no `context.mounted`: el context capturado acá es
+      // el de la pantalla, y es ese el que puede haberse desmontado durante el
+      // await si el usuario salió mientras se guardaba.
+      if (!mounted) return;
       if (!success) {
         ErrorHandler.showErrorSnackBar(
           context,

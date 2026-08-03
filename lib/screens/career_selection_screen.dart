@@ -133,8 +133,10 @@ class _CareerSelectionScreenState extends State<CareerSelectionScreen> {
         return;
       }
 
-      // Si no es clave de admin, validar como clave de carrera
-      final career = _careerService.validateAccessKey(accessKey);
+      // Si no es clave de admin, validar como clave de carrera. Esto consulta
+      // al servidor: la clave ya no viaja en la app.
+      final career = await _careerService.validateAccessKey(accessKey);
+      if (!mounted) return;
 
       if (career == null) {
         ScaffoldMessenger.of(context).showSnackBar(

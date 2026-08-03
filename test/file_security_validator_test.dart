@@ -44,14 +44,24 @@ void main() {
       );
     });
 
-    test('rejects files over the 25 MB limit', () {
+    test('rejects files over the 50 MB limit', () {
       final result = FileSecurityValidator.validateFile(
         fileName: 'grande.pdf',
-        sizeInBytes: 26 * 1024 * 1024,
+        sizeInBytes: FileSecurityValidator.maxFileSizeBytes + 1,
         bytes: Uint8List.fromList([1, 2, 3]),
       );
 
       expect(result.isValid, isFalse);
+    });
+
+    test('accepts files right at the limit', () {
+      final result = FileSecurityValidator.validateFile(
+        fileName: 'justo.pdf',
+        sizeInBytes: FileSecurityValidator.maxFileSizeBytes,
+        bytes: Uint8List.fromList([1, 2, 3]),
+      );
+
+      expect(result.isValid, isTrue);
     });
 
     test('rejects empty files', () {

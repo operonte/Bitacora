@@ -69,9 +69,15 @@ flutter run
 
 ### Claves de acceso para carreras
 
-- **Teología**: `teologia2026`
-- **Primero Medio A**: `primero_medio_a`
-- **Octavo A**: `octavo_a`
+Las claves no se publican acá. Viven hasheadas en Supabase
+(`career_access_keys`) y se validan con el RPC `join_career`. Pídesela a
+quien administre la carrera.
+
+Un administrador las fija o cambia con:
+
+```sql
+select public.set_career_access_key('<career_id>', '<clave>');
+```
 
 ## Tests
 

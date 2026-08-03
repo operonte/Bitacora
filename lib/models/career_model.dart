@@ -40,7 +40,10 @@ class Careers {
     Career(
       id: 'teologia',
       name: 'Teología',
-      accessKey: 'teologia2026',
+      // Vacía a propósito: la clave real vive hasheada en Supabase
+      // (career_access_keys) y se valida con el RPC join_career. Ponerla acá
+      // la publica en el repo y en cada APK.
+      accessKey: '',
       predefinedSubjects: [
         Subject(
           id: 'griego',
@@ -129,8 +132,16 @@ class Careers {
     return map.values.toList();
   }
 
-  /// Busca carrera por clave de acceso
+  /// Busca carrera por clave de acceso entre las carreras ya conocidas.
+  ///
+  /// Solo sirve para carreras que el usuario ya tiene guardadas localmente con
+  /// su clave. Las claves nuevas se validan contra el servidor
+  /// ([CareerService.validateAccessKey]); acá no hay nada que validar porque
+  /// el cliente ya no guarda las claves de las carreras a las que no pertenece.
   static Career? findByAccessKey(String accessKey) {
+    // Sin esta guarda, una clave vacía calzaría con cualquier carrera cuyo
+    // accessKey también esté vacío, que ahora son casi todas.
+    if (accessKey.isEmpty) return null;
     try {
       return all.firstWhere((career) => career.accessKey == accessKey);
     } catch (e) {

@@ -154,9 +154,26 @@ class CareerService extends ChangeNotifier {
     }
   }
 
-  /// Valida clave de acceso
-  Career? validateAccessKey(String accessKey) {
-    return Careers.findByAccessKey(accessKey);
+  /// Valida una clave de acceso contra el servidor y, si es correcta, deja al
+  /// usuario inscrito en la carrera. Devuelve la carrera o null si no calza.
+  ///
+  /// Requiere conexión. La comparación no puede hacerse localmente: para eso
+  /// habría que repartir las claves en la app, que es justamente el problema
+  /// que se está cerrando. Las carreras a las que el usuario ya pertenece
+  /// siguen funcionando offline; lo que necesita red es *entrar* a una nueva.
+  Future<Career?> validateAccessKey(String accessKey) async {
+    final local = Careers.findByAccessKey(accessKey);
+    if (local != null) return local;
+
+    try {
+      final careerId = await CareerSupabaseService().joinCareer(accessKey);
+      if (careerId == null) return null;
+      await loadRemoteCareers();
+      return Careers.findById(careerId);
+    } catch (e) {
+      Logger.warning('No se pudo validar la clave de acceso: $e', tag: 'CareerService');
+      rethrow;
+    }
   }
 
   /// Nombre legible de la carrera [careerId]: primero entre las carreras del

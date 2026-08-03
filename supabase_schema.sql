@@ -1,6 +1,17 @@
 -- ============================================================
 -- BITÁCORA — Esquema PostgreSQL para Supabase
 -- Pegar en: supabase.com/dashboard/project/pigrmmxmcmtdppkhnsbw/sql/new
+--
+-- Este archivo deja las tablas y las políticas base. Después hay que correr,
+-- en este orden:
+--   1. supabase_hardening.sql    — flag is_admin(), políticas de escritura
+--   2. supabase_hardening_2.sql  — claves de carrera hasheadas, RPC
+--                                  join_career(), auditoría de shared_tasks
+--   3. supabase_hardening_3_drop_access_key.sql — DIFERIDO, leer el archivo
+--
+-- Regla que se rompió una vez y no hay que volver a romper: ninguna política
+-- de escritura puede ser USING (true). La anon key viaja dentro de cada APK,
+-- así que USING (true) equivale a dejar la tabla abierta a internet.
 -- ============================================================
 
 -- ─── PROFILES (extensión de auth.users) ─────────────────────
@@ -10,8 +21,31 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   email               TEXT,
   photo_url           TEXT,
   admin_password_hash TEXT,
+  -- Flag de administrador. NO se deduce de admin_password_hash: el usuario
+  -- puede escribir su propia fila, así que usar ese campo como señal de
+  -- privilegio permite que cualquiera se ascienda solo. Ver el REVOKE de
+  -- más abajo, que impide escribir esta columna desde el cliente.
+  is_admin            BOOLEAN NOT NULL DEFAULT FALSE,
   created_at          TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- El privilegio de tabla domina sobre el de columna: hay que quitar UPDATE
+-- completo y reotorgarlo solo en las columnas que el usuario sí puede tocar.
+REVOKE UPDATE ON public.profiles FROM anon, authenticated;
+GRANT  UPDATE (display_name, email, photo_url, admin_password_hash)
+  ON public.profiles TO authenticated;
+
+-- SECURITY DEFINER evita recursión de RLS al consultar profiles desde
+-- las políticas de otras tablas.
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+  SELECT COALESCE((SELECT p.is_admin FROM public.profiles p WHERE p.id = auth.uid()), FALSE);
+$$;
+
+REVOKE ALL     ON FUNCTION public.is_admin() FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.is_admin() TO authenticated;
 
 -- Trigger: crea profile automáticamente al registrarse un usuario
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -38,7 +72,10 @@ CREATE TRIGGER on_auth_user_created
 CREATE TABLE IF NOT EXISTS public.careers (
   id                  TEXT PRIMARY KEY,
   name                TEXT NOT NULL,
-  access_key          TEXT NOT NULL,
+  -- OBSOLETA. La clave real vive hasheada en career_access_keys (ver
+  -- supabase_hardening_2.sql). Esta columna queda solo para que las apps
+  -- viejas no crasheen y se borra en la fase 3. No escribir nada acá.
+  access_key          TEXT NOT NULL DEFAULT '',
   description         TEXT DEFAULT '',
   predefined_subjects JSONB DEFAULT '[]'::jsonb,
   created_at          TIMESTAMPTZ DEFAULT NOW(),
@@ -125,25 +162,54 @@ ALTER TABLE public.tasks          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shared_tasks   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_progress  ENABLE ROW LEVEL SECURITY;
 
--- profiles
-CREATE POLICY "profiles_own" ON public.profiles
-  FOR ALL USING (auth.uid() = id);
+-- profiles: cada usuario solo su fila. Sin política de DELETE a propósito.
+CREATE POLICY "profiles_select_own" ON public.profiles
+  FOR SELECT TO authenticated USING (auth.uid() = id);
 
--- careers: lectura y modificación pública/autenticada
-DROP POLICY IF EXISTS "careers_read" ON public.careers;
-DROP POLICY IF EXISTS "careers_all" ON public.careers;
-CREATE POLICY "careers_public_all" ON public.careers
-  FOR ALL USING (true)
-  WITH CHECK (true);
+CREATE POLICY "profiles_insert_own" ON public.profiles
+  FOR INSERT TO authenticated WITH CHECK (auth.uid() = id);
 
--- user_careers: cada usuario gestiona sus membresías
-CREATE POLICY "user_careers_own" ON public.user_careers
-  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "profiles_update_own" ON public.profiles
+  FOR UPDATE TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
--- subjects: solo el dueño
-CREATE POLICY "subjects_own" ON public.subjects
-  FOR ALL USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+-- careers: lectura abierta (la pantalla de selección corre antes del login),
+-- escritura solo para administradores. NO usar USING (true) para escritura:
+-- la anon key viaja en cada APK, así que eso deja borrar todas las carreras
+-- a cualquiera.
+CREATE POLICY "careers_read" ON public.careers
+  FOR SELECT TO anon, authenticated USING (true);
+
+CREATE POLICY "careers_admin_write" ON public.careers
+  FOR ALL TO authenticated
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+-- user_careers: el usuario lee y abandona sus membresías, pero NO se puede
+-- insertar solo. Crear una membresía pasa por join_career() (definido en
+-- supabase_hardening_2.sql), que es quien valida la clave de acceso. Si el
+-- cliente pudiera insertar, la clave de carrera no serviría de nada.
+CREATE POLICY "user_careers_select_own" ON public.user_careers
+  FOR SELECT TO authenticated USING (auth.uid() = user_id);
+
+CREATE POLICY "user_careers_delete_own" ON public.user_careers
+  FOR DELETE TO authenticated USING (auth.uid() = user_id);
+
+-- subjects: lectura según SubjectVisibility (0 soloYo, 1 cursoCompleto,
+-- 2 seleccionar); escritura y borrado siempre solo del dueño.
+CREATE POLICY "subjects_read_visible" ON public.subjects
+  FOR SELECT TO authenticated
+  USING (
+    user_id = auth.uid()
+    OR visibility = 1
+    OR (visibility = 2 AND auth.uid()::text = ANY(allowed_users))
+  );
+
+CREATE POLICY "subjects_write_own" ON public.subjects
+  FOR ALL TO authenticated
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
 
 -- tasks: solo el dueño
 CREATE POLICY "tasks_own" ON public.tasks
@@ -233,8 +299,11 @@ CREATE TABLE IF NOT EXISTS public.study_files (
 
 ALTER TABLE public.study_files ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "study_files_public_all" ON public.study_files
-  FOR ALL USING (true) WITH CHECK (true);
+-- Archivos personales: solo el dueño. Ojo, user_id acá es TEXT, no UUID.
+CREATE POLICY "study_files_own" ON public.study_files
+  FOR ALL TO authenticated
+  USING (user_id = auth.uid()::text)
+  WITH CHECK (user_id = auth.uid()::text);
 
 -- ============================================================
 -- ÍNDICES B-TREE DE SEGURIDAD Y RENDIMIENTO (Evita Table Scan DoS)

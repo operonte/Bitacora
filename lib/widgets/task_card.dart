@@ -207,6 +207,35 @@ class TaskCard extends StatelessWidget {
                                   ),
                                 ],
                               ),
+
+                              // Última edición, si alguien la modificó después
+                              // de crearla. Cualquier miembro de la carrera
+                              // puede editar, así que queda constancia de quién.
+                              if (task.updatedByName != null) ...[
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.edit_outlined,
+                                      size: 12,
+                                      color: subtextColor,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        'Editado por ${task.updatedByName}'
+                                        '${task.updatedAt != null ? ' · ${_formatEditDate(task.updatedAt!)}' : ''}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: subtextColor,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ],
 
                             // Descripción (si existe)
@@ -387,6 +416,17 @@ class TaskCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Fecha de la última edición en formato corto. Relativa mientras sea
+  /// reciente, porque "hace 5 min" se lee más rápido que una fecha completa.
+  static String _formatEditDate(DateTime date) {
+    final diff = DateTime.now().difference(date);
+    if (diff.inMinutes < 1) return 'recién';
+    if (diff.inMinutes < 60) return 'hace ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'hace ${diff.inHours} h';
+    if (diff.inDays < 7) return 'hace ${diff.inDays} d';
+    return DateFormat('d MMM', 'es').format(date);
   }
 }
 

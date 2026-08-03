@@ -20,7 +20,9 @@ class CareerSupabaseService {
     return Career(
       id: row['id'] as String,
       name: row['name'] as String,
-      accessKey: row['access_key'] as String,
+      // La clave nunca vuelve del servidor: vive hasheada en
+      // career_access_keys y solo se compara dentro del RPC join_career.
+      accessKey: '',
       description: row['description'] as String?,
       predefinedSubjects: subjects,
     );
@@ -30,12 +32,36 @@ class CareerSupabaseService {
     return {
       'id': career.id,
       'name': career.name,
-      'access_key': career.accessKey,
       'description': career.description ?? '',
       'predefined_subjects': career.predefinedSubjects
           .map((s) => s.toMap())
           .toList(),
     };
+  }
+
+  /// Fija la clave de acceso de una carrera. Solo funciona para administradores
+  /// (lo valida el propio RPC). La clave viaja para ser hasheada en el servidor
+  /// y nunca se guarda en texto plano.
+  Future<void> setAccessKey(String careerId, String accessKey) async {
+    if (accessKey.isEmpty) return;
+    await _client.rpc(
+      'set_career_access_key',
+      params: {'p_career_id': careerId, 'p_access_key': accessKey},
+    );
+  }
+
+  /// Valida [accessKey] contra el servidor y, si es correcta, deja al usuario
+  /// inscrito en la carrera. Devuelve el id de la carrera o null si no calza.
+  ///
+  /// Requiere conexión: una clave secreta no se puede verificar sin el
+  /// servidor sin volver a repartirla en el cliente.
+  Future<String?> joinCareer(String accessKey) async {
+    final result = await _client.rpc(
+      'join_career',
+      params: {'p_access_key': accessKey},
+    );
+    final careerId = result as String?;
+    return (careerId == null || careerId.isEmpty) ? null : careerId;
   }
 
   /// Combina las carreras predefinidas con las de Supabase.
@@ -108,6 +134,7 @@ class CareerSupabaseService {
   Future<void> createCareer(Career career) async {
     final row = _careerToRow(career);
     await _client.from(_table).insert(row);
+    await setAccessKey(career.id, career.accessKey);
     await CareerService().loadRemoteCareers();
   }
 
@@ -125,6 +152,8 @@ class CareerSupabaseService {
   Future<void> updateCareer(Career career) async {
     final row = _careerToRow(career);
     await _client.from(_table).upsert(row, onConflict: 'id');
+    // Solo si el admin escribió una clave nueva; vacío deja la actual intacta.
+    await setAccessKey(career.id, career.accessKey);
     await CareerService().loadRemoteCareers();
   }
 
@@ -144,7 +173,6 @@ class CareerSupabaseService {
       final subjectsList = List.from(data['predefined_subjects'] as List<dynamic>? ?? []);
       return _CareerMutableData(
         careerName: data['name'] as String? ?? 'Carrera',
-        accessKey: data['access_key'] as String? ?? '',
         description: data['description'] as String?,
         subjects: subjectsList
             .map((s) => Subject.fromMap(Map<String, dynamic>.from(s as Map)))
@@ -158,7 +186,6 @@ class CareerSupabaseService {
     );
     return _CareerMutableData(
       careerName: predefined.name,
-      accessKey: predefined.accessKey,
       description: predefined.description,
       subjects: List.from(predefined.predefinedSubjects),
     );
@@ -173,7 +200,6 @@ class CareerSupabaseService {
     await _client.from(_table).upsert({
       'id': careerId,
       'name': data.careerName,
-      'access_key': data.accessKey,
       'description': data.description ?? '',
       'predefined_subjects': data.subjects.map((s) => s.toMap()).toList(),
     }, onConflict: 'id');
@@ -224,13 +250,11 @@ class CareerSupabaseService {
 /// actualizar o quitar una materia.
 class _CareerMutableData {
   final String careerName;
-  final String accessKey;
   final String? description;
   final List<Subject> subjects;
 
   _CareerMutableData({
     required this.careerName,
-    required this.accessKey,
     required this.description,
     required this.subjects,
   });

@@ -98,6 +98,13 @@ class SupabaseDbService {
       userName: row['user_name']?.toString() ?? 'Usuario',
       careerId: row['career_id']?.toString(),
       collaborators: List<String>.from(row['collaborators'] ?? []),
+      // Solo vienen en shared_tasks, y solo si alguien ya editó la tarea.
+      updatedByName: (row['updated_by_name'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : row['updated_by_name'] as String?,
+      updatedAt: row['updated_at'] == null
+          ? null
+          : DateTime.tryParse(row['updated_at'].toString()),
     );
   }
 
@@ -134,39 +141,50 @@ class SupabaseDbService {
 
   // ── Membresías de carrera ────────────────────────────────────
 
-  /// Registra (o actualiza) las carreras del usuario en user_careers.
-  /// Equivale a registerCareerMemberships() de FirebaseService.
+  /// Comprueba que las carreras guardadas localmente tengan su membresía en
+  /// `user_careers`.
+  ///
+  /// Antes esta función escribía: hacía upsert en `careers` y se insertaba sola
+  /// en `user_careers`. Las dos cosas ya no están permitidas — `careers` es de
+  /// escritura exclusiva de administradores y las membresías las crea el RPC
+  /// `join_career`, que es el que valida la clave. Si el cliente pudiera
+  /// insertarse solo, la clave de carrera no serviría de nada.
+  ///
+  /// Queda como verificación: si falta una membresía, el usuario tiene que
+  /// volver a ingresar la clave de esa carrera.
   Future<void> registerCareerMemberships() async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) return;
 
-    final careerService = CareerService();
-    final userCareers = careerService.getCareers();
+    final userCareers = CareerService().getCareers();
     if (userCareers.isEmpty) return;
 
-    // 1. Asegurar que las carreras existan en la tabla public.careers de Supabase para evitar violación de llave foránea
-    for (final c in userCareers) {
-      try {
-        await _client.from('careers').upsert({
-          'id': c.id,
-          'name': c.name,
-          'access_key': c.accessKey,
-          'description': c.description ?? '',
-        }, onConflict: 'id');
-      } catch (e) {
-        Logger.warning('Error registrando carrera ${c.id} en Supabase: $e', tag: 'SupabaseDbService');
-      }
-    }
-
-    // 2. Registrar las membresías del usuario en public.user_careers
     try {
-      final rows = userCareers.map((c) => {'user_id': uid, 'career_id': c.id}).toList();
-      await _client
+      final rows = await _client
           .from('user_careers')
-          .upsert(rows, onConflict: 'user_id,career_id');
+          .select('career_id')
+          .eq('user_id', uid);
+
+      final registered = rows
+          .map((r) => (r as Map)['career_id'] as String?)
+          .whereType<String>()
+          .toSet();
+
+      final missing = userCareers
+          .where((c) => !registered.contains(c.id))
+          .map((c) => c.id)
+          .toList();
+
+      if (missing.isNotEmpty) {
+        Logger.warning(
+          'Carreras locales sin membresía en el servidor: ${missing.join(', ')}. '
+          'El usuario debe reingresar la clave de acceso.',
+          tag: 'SupabaseDbService',
+        );
+      }
     } catch (e) {
       Logger.warning(
-        'Error registrando carreras del usuario: $e',
+        'Error verificando carreras del usuario: $e',
         error: e,
         tag: 'SupabaseDbService',
       );

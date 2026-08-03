@@ -17,6 +17,15 @@ class Task {
   List<String>
   collaborators; // IDs de usuarios con los que se comparte la tarea
 
+  /// Nombre de quien editó la tarea por última vez, y cuándo. Solo aplica a
+  /// tareas compartidas de carrera, que cualquier miembro puede editar.
+  ///
+  /// Los estampa el trigger `shared_tasks_stamp_author` en Supabase, no el
+  /// cliente: si los mandara la app, cualquiera podría atribuirle una edición
+  /// a otra persona. Son de solo lectura, por eso no van en [toMap].
+  String? updatedByName;
+  DateTime? updatedAt;
+
   Task({
     this.id,
     required this.title,
@@ -33,6 +42,8 @@ class Task {
     required this.userName,
     this.careerId,
     this.collaborators = const [],
+    this.updatedByName,
+    this.updatedAt,
   }) {
     _validate();
   }
@@ -103,6 +114,10 @@ class Task {
       'userName': userName,
       'careerId': careerId,
       'collaborators': collaborators,
+      // Solo para el caché local: al servidor no se mandan (los pone el
+      // trigger), pero sin esto la autoría desaparecería estando offline.
+      'updatedByName': updatedByName,
+      'updatedAt': updatedAt?.millisecondsSinceEpoch,
     };
   }
 
@@ -141,6 +156,10 @@ class Task {
       userName: userName.isEmpty ? 'Usuario desconocido' : userName,
       careerId: map['careerId']?.toString(),
       collaborators: List<String>.from(map['collaborators'] ?? []),
+      updatedByName: map['updatedByName']?.toString(),
+      updatedAt: map['updatedAt'] is num
+          ? DateTime.fromMillisecondsSinceEpoch((map['updatedAt'] as num).toInt())
+          : null,
     );
   }
 
@@ -160,6 +179,8 @@ class Task {
     String? userName,
     String? careerId,
     List<String>? collaborators,
+    String? updatedByName,
+    DateTime? updatedAt,
   }) {
     return Task(
       id: id ?? this.id,
@@ -177,6 +198,8 @@ class Task {
       userName: userName ?? this.userName,
       careerId: careerId ?? this.careerId,
       collaborators: collaborators ?? this.collaborators,
+      updatedByName: updatedByName ?? this.updatedByName,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 

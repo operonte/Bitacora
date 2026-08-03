@@ -555,7 +555,14 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
             TextButton(
               onPressed: () async {
                 final key = controller.text.trim();
-                final career = _careerService.validateAccessKey(key);
+                Career? career;
+                try {
+                  // Consulta al servidor: la clave ya no viaja en la app.
+                  career = await _careerService.validateAccessKey(key);
+                } catch (e) {
+                  setLocal(() => errorText = 'Sin conexión para validar la clave');
+                  return;
+                }
                 if (career == null) {
                   setLocal(() => errorText = 'Clave de acceso inválida');
                   return;
