@@ -5,9 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/study_file_model.dart';
-import '../models/teaching_material_model.dart';
 import '../services/study_file_service.dart';
-import '../services/teaching_material_service.dart';
 import '../services/google_drive_service.dart';
 import '../services/career_service.dart';
 import '../utils/file_security_validator.dart';
@@ -29,7 +27,6 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final StudyFileService _studyFileService = StudyFileService();
-  final TeachingMaterialService _teachingMaterialService = TeachingMaterialService();
   bool _isUploading = false;
 
   @override
@@ -37,8 +34,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Un solo sync: trabajos y material docente viven en la misma tabla.
       _syncAndCleanFiles();
-      _teachingMaterialService.syncFromSupabase();
     });
   }
 
@@ -287,6 +284,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   }
 
   void _showShareOptions(StudyFile file) {
+    final driveId = file.driveFileId;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -317,10 +315,15 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
               overflow: TextOverflow.ellipsis,
             ),
             Text(
-              '${file.subject} \u2022 ${file.formattedSize}',
+              [file.subject, file.formattedSize]
+                  .where((s) => s.isNotEmpty)
+                  .join(' \u2022 '),
               style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 20),
+            // Compartir por link solo aplica a archivos que viven en Drive:
+            // un material que es un enlace externo ya es un link.
+            if (driveId != null && driveId.isNotEmpty) ...[
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Container(
@@ -336,7 +339,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
               onTap: () async {
                 final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(ctx);
-                final link = await GoogleDriveService().makeFilePubliclySharable(file.driveFileId);
+                final link = await GoogleDriveService().makeFilePubliclySharable(driveId);
                 await Clipboard.setData(ClipboardData(text: link));
                 messenger.showSnackBar(
                   const SnackBar(content: Text('\u00a1Enlace copiado!')),
@@ -357,13 +360,14 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
               subtitle: const Text('Abre el men\u00fa nativo para compartir'),
               onTap: () async {
                 Navigator.pop(ctx);
-                final link = await GoogleDriveService().makeFilePubliclySharable(file.driveFileId);
+                final link = await GoogleDriveService().makeFilePubliclySharable(driveId);
                 await Share.share(
                   '\u00abBit\u00e1cora\u00bb \u2022 ${file.name}\n$link',
                   subject: file.name,
                 );
               },
             ),
+            ],
           ],
         ),
       ),
@@ -516,6 +520,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
             itemBuilder: _buildFileCard,
             dateOf: (f) => f.createdAt,
             dateDescending: true,
+            searchHint: 'Buscar archivo o materia',
+            searchTextOf: (f) => '${f.name} ${f.subject}',
           ),
         );
       },
@@ -700,7 +706,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       if (fileId != null && fileId.isNotEmpty) {
         await _studyFileService.deleteFile(fileId);
       }
-      if (driveId.isNotEmpty) {
+      if (driveId != null && driveId.isNotEmpty) {
         await _studyFileService.deleteFile(driveId);
         await GoogleDriveService().deleteFile(driveId);
       }
@@ -716,23 +722,26 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
 
   Widget _buildTeachingMaterialsTab(dynamic career) {
     return ListenableBuilder(
-      listenable: _teachingMaterialService,
+      listenable: _studyFileService,
       builder: (context, _) {
-        final materials = _teachingMaterialService.getMaterials();
+        final materials =
+            _studyFileService.getFiles(category: StudyFileCategory.guia);
 
         if (materials.isEmpty) {
           return _buildEmptyMaterialsState();
         }
 
         return RefreshIndicator(
-          onRefresh: () => _teachingMaterialService.syncFromSupabase(),
-          child: SubjectGroupList<TeachingMaterial>(
+          onRefresh: () => _studyFileService.syncFromSupabase(),
+          child: SubjectGroupList<StudyFile>(
             items: materials,
             subjectOf: (m) => m.subject,
             countLabelOf: (count) => '$count ${count == 1 ? 'material' : 'materiales'}',
             itemBuilder: _buildMaterialCard,
             dateOf: (m) => m.createdAt,
             dateDescending: true,
+            searchHint: 'Buscar material o materia',
+            searchTextOf: (m) => '${m.name} ${m.subject} ${m.description ?? ''}',
           ),
         );
       },
@@ -778,7 +787,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
             ),
             const SizedBox(height: 8),
             const Text(
-              'Comparte con todo tu curso los archivos o enlaces que te envíe un profesor.',
+              'Guarda acá las guías, apuntes o enlaces que te envíe un profesor.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
             ),
@@ -798,7 +807,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     );
   }
 
-  Widget _buildMaterialCard(TeachingMaterial material) {
+  Widget _buildMaterialCard(StudyFile material) {
     final primaryColor = Theme.of(context).primaryColor;
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
     final canDelete = material.userId.isNotEmpty && material.userId == currentUserId;
@@ -808,7 +817,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _openFileLink(material.openUrl, fileName: material.title),
+        onTap: () => _openFileLink(material.openUrl, fileName: material.name),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
@@ -816,10 +825,10 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: material.materialColor.withValues(alpha: 0.12),
+                  color: material.fileColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(material.materialIcon, color: material.materialColor, size: 26),
+                child: Icon(material.fileIcon, color: material.fileColor, size: 26),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -827,7 +836,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      material.title,
+                      material.name,
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -852,8 +861,13 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                         ),
                         const SizedBox(width: 8),
                         Expanded(
+                          // El material ya no se comparte con el curso, así que
+                          // el autor sobra: siempre es el propio usuario.
                           child: Text(
-                            'Subido por ${material.userName}',
+                            [
+                              DateFormat('d MMM y', 'es').format(material.createdAt),
+                              if (material.formattedSize.isNotEmpty) material.formattedSize,
+                            ].join(' · '),
                             style: TextStyle(
                               fontSize: 11,
                               color: context.isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
@@ -879,13 +893,13 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     );
   }
 
-  Future<void> _confirmDeleteMaterial(TeachingMaterial material) async {
+  Future<void> _confirmDeleteMaterial(StudyFile material) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('¿Eliminar material?'),
-        content: Text('"${material.title}" dejará de verse para todo el curso.'),
+        content: Text('"${material.name}" se quitará de tu material docente.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -900,7 +914,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       ),
     );
     if (confirmed == true && material.id != null) {
-      await _teachingMaterialService.deleteMaterial(material.id!);
+      await _studyFileService.deleteFile(material.id!);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('✅ Material eliminado')),
@@ -940,16 +954,13 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     }
   }
 
-  String? _currentUserDisplayName(User user) =>
-      user.userMetadata?['full_name'] as String? ?? user.email;
 
   Future<void> _addMaterialFile() async {
     final messenger = ScaffoldMessenger.of(context);
     final user = Supabase.instance.client.auth.currentUser;
-    final career = CareerService().getSelectedCareer();
-    if (user == null || career == null) {
+    if (user == null) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Debes tener una carrera seleccionada para publicar material.')),
+        const SnackBar(content: Text('Debes iniciar sesión para guardar material.')),
       );
       return;
     }
@@ -990,29 +1001,27 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         bytes: bytes,
         mimeType: file.extension.isNotEmpty ? file.extension : 'application/octet-stream',
         subject: details['subject']!,
+        // Fuera de la carpeta de trabajos, para que el escaneo de Drive no
+        // registre las guías también como archivos personales.
+        subfolder: GoogleDriveService.teachingMaterialFolderName,
       );
-      // Los compañeros de curso no son dueños de este Drive: sin hacerlo
-      // público por link, no podrían abrir el archivo.
-      await GoogleDriveService().makeFilePubliclySharable(uploadRes.fileId);
 
-      final material = TeachingMaterial(
-        careerId: career.id,
+      final material = StudyFile(
         subject: details['subject']!,
-        title: details['name']!,
-        type: 'file',
+        name: details['name']!,
         driveFileId: uploadRes.fileId,
         driveLink: uploadRes.webViewLink,
         mimeType: file.extension,
         sizeBytes: file.size,
         userId: user.id,
-        userName: _currentUserDisplayName(user) ?? 'Usuario',
+        category: StudyFileCategory.guia,
       );
-      await _teachingMaterialService.addMaterial(material);
+      await _studyFileService.saveFile(material);
 
       if (mounted) {
         messenger.showSnackBar(
           const SnackBar(
-            content: Text('✅ Material publicado para el curso'),
+            content: Text('✅ Material guardado'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -1034,11 +1043,10 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
 
   Future<void> _addMaterialLink() async {
     final user = Supabase.instance.client.auth.currentUser;
-    final career = CareerService().getSelectedCareer();
-    if (user == null || career == null) {
+    if (user == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Debes tener una carrera seleccionada para publicar material.')),
+          const SnackBar(content: Text('Debes iniciar sesión para guardar material.')),
         );
       }
       return;
@@ -1138,16 +1146,14 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                   onPressed: () async {
                     if (!formKey.currentState!.validate()) return;
                     try {
-                      final material = TeachingMaterial(
-                        careerId: career.id,
+                      final material = StudyFile(
                         subject: selectedSubject,
-                        title: titleController.text.trim(),
-                        type: 'link',
+                        name: titleController.text.trim(),
                         externalUrl: urlController.text.trim(),
                         userId: user.id,
-                        userName: _currentUserDisplayName(user) ?? 'Usuario',
+                        category: StudyFileCategory.guia,
                       );
-                      await _teachingMaterialService.addMaterial(material);
+                      await _studyFileService.saveFile(material);
                       if (ctx.mounted) Navigator.pop(ctx, true);
                     } catch (e) {
                       if (ctx.mounted) {
@@ -1174,7 +1180,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     if (saved == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✅ Material publicado para el curso'),
+          content: Text('✅ Material guardado'),
           backgroundColor: AppColors.success,
         ),
       );

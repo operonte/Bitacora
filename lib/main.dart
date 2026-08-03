@@ -24,7 +24,6 @@ import 'services/sync_service.dart';
 import 'services/career_service.dart';
 import 'services/meeting_service.dart';
 import 'services/study_file_service.dart';
-import 'services/teaching_material_service.dart';
 import 'services/google_drive_service.dart';
 import 'services/task_progress_service.dart';
 import 'services/supabase_service.dart';
@@ -60,12 +59,12 @@ Future<void> main() async {
 
     final meetingService = MeetingService();
     await meetingService.init();
+    // Limpia las reuniones puntuales ya vencidas. Es irreversible, ver
+    // MeetingService.pastMeetingRetention.
+    await meetingService.purgePastMeetings();
 
     final studyFileService = StudyFileService();
     await studyFileService.init();
-
-    final teachingMaterialService = TeachingMaterialService();
-    await teachingMaterialService.init();
 
     final themeProvider = ThemeProvider();
     await themeProvider.initialize();
@@ -88,7 +87,6 @@ Future<void> main() async {
           ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
           ChangeNotifierProvider<MeetingService>.value(value: meetingService),
           ChangeNotifierProvider<StudyFileService>.value(value: studyFileService),
-          ChangeNotifierProvider<TeachingMaterialService>.value(value: teachingMaterialService),
         ],
         child: const BitacoraApp(),
       ),

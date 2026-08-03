@@ -19,10 +19,56 @@ class MeetingsScreen extends StatefulWidget {
 class _MeetingsScreenState extends State<MeetingsScreen> {
   final MeetingService _meetingService = MeetingService();
 
+  /// null = todas las carreras. Se conserva mientras viva la pantalla; no se
+  /// persiste a propósito, para que al volver siempre veas todo y no te
+  /// pierdas una reunión por un filtro que dejaste puesto hace días.
+  String? _careerFilter;
+
   @override
   void initState() {
     super.initState();
     _meetingService.syncFromSupabase();
+  }
+
+  /// Desplegable de carrera. Solo se muestra si hay más de una opción real:
+  /// con una sola carrera el filtro no filtraría nada y sería solo ruido.
+  Widget? _buildCareerFilter() {
+    final used = _meetingService.usedCareerIds;
+    if (used.length < 2) return null;
+
+    final careers = CareerService().getCareers();
+    String labelFor(String id) {
+      if (id == MeetingService.noCareerFilter) return 'Sin carrera';
+      for (final c in careers) {
+        if (c.id == id) return c.name;
+      }
+      return id;
+    }
+
+    final options = used.toList()..sort((a, b) => labelFor(a).compareTo(labelFor(b)));
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DropdownButtonFormField<String?>(
+        initialValue: _careerFilter,
+        isDense: true,
+        decoration: InputDecoration(
+          labelText: 'Carrera',
+          prefixIcon: const Icon(Icons.school_outlined, size: 20),
+          isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        items: [
+          const DropdownMenuItem<String?>(
+            value: null,
+            child: Text('Todas las carreras'),
+          ),
+          for (final id in options)
+            DropdownMenuItem<String?>(value: id, child: Text(labelFor(id))),
+        ],
+        onChanged: (value) => setState(() => _careerFilter = value),
+      ),
+    );
   }
 
   Future<void> _launchMeetingUrl(String url) async {
@@ -64,21 +110,28 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
     return ListenableBuilder(
       listenable: _meetingService,
       builder: (context, _) {
-        final allMeetings = _meetingService.getMeetings();
+        // Sin filtro para decidir el estado vacío: si no hay ninguna reunión
+        // corresponde el mensaje de bienvenida, pero si solo el filtro las
+        // esconde hay que dejar el desplegable a la vista para poder soltarlo.
+        final hasAnyMeeting = _meetingService.getMeetings().isNotEmpty;
+        final meetings = _meetingService.getMeetings(careerId: _careerFilter);
 
         final bodyContent = SizedBox(
           width: double.infinity,
           height: double.infinity,
-          child: allMeetings.isEmpty
+          child: !hasAnyMeeting
               ? _buildEmptyMeetingsState()
               : RefreshIndicator(
                   onRefresh: () => _meetingService.syncFromSupabase(),
                   child: SubjectGroupList<Meeting>(
-                    items: allMeetings,
+                    items: meetings,
                     subjectOf: (m) => m.subject,
                     countLabelOf: (count) => '$count ${count == 1 ? 'reunión' : 'reuniones'}',
                     itemBuilder: _buildMeetingCard,
                     dateOf: (m) => m.effectiveDate,
+                    header: _buildCareerFilter(),
+                    searchHint: 'Buscar reunión o materia',
+                    searchTextOf: (m) => '${m.title} ${m.subject} ${m.professor}',
                   ),
                 ),
         );
@@ -95,7 +148,7 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                 Row(
                   children: [
                     const Text('Reuniones'),
-                    if (allMeetings.isNotEmpty) ...[
+                    if (meetings.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -104,7 +157,7 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          '${allMeetings.length}',
+                          '${meetings.length}',
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,

@@ -285,15 +285,23 @@ CREATE POLICY "active_sessions_own" ON public.active_sessions
 -- ============================================================
 -- TABLA: study_files (Metadatos de archivos personales de estudio)
 -- ============================================================
+-- Guarda dos categorías: 'trabajo' (trabajos que sube el estudiante) y 'guia'
+-- (material docente). Son lo mismo salvo por la categoría, así que comparten
+-- tabla, política RLS y ruta de sincronización. Los campos de Drive son
+-- opcionales porque un material puede ser un enlace externo.
 CREATE TABLE IF NOT EXISTS public.study_files (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     subject TEXT NOT NULL,
-    drive_file_id TEXT NOT NULL,
-    mime_type TEXT NOT NULL,
-    size_bytes BIGINT NOT NULL,
+    drive_file_id TEXT,
+    mime_type TEXT,
+    size_bytes BIGINT,
     drive_link TEXT DEFAULT '',
     user_id TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'trabajo'
+      CHECK (category IN ('trabajo', 'guia')),
+    description TEXT,
+    external_url TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -317,6 +325,7 @@ CREATE INDEX IF NOT EXISTS idx_task_progress_user_id ON public.task_progress(use
 CREATE INDEX IF NOT EXISTS idx_meetings_user_id ON public.meetings(user_id);
 CREATE INDEX IF NOT EXISTS idx_active_sessions_user_id ON public.active_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_study_files_user_id ON public.study_files(user_id);
+CREATE INDEX IF NOT EXISTS idx_study_files_user_category ON public.study_files(user_id, category);
 
 -- ============================================================
 -- REALTIME (para streams en Flutter)

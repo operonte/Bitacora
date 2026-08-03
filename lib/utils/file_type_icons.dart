@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Icono y color según la extensión de un archivo. Compartido entre
-/// [StudyFile] y [TeachingMaterial], que muestran archivos subidos a Drive
+/// [StudyFile], que muestra archivos subidos a Drive
 /// con el mismo criterio visual.
 IconData iconForFileExtension(String extension) {
   final ext = extension.toLowerCase();

@@ -27,6 +27,13 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
 
   String _selectedSubject = '';
   String _selectedType = 'Zoom';
+
+  /// Carrera a la que pertenece la reunión. null = "Sin carrera". Antes se
+  /// tomaba en silencio de la carrera activa al guardar y no había forma de
+  /// corregirla; ahora se elige acá y por eso se pueden reasignar las que ya
+  /// existen simplemente editándolas.
+  String? _selectedCareerId;
+
   bool _isRecurrent = false;
   DateTime _meetingDate = DateTime.now().add(const Duration(hours: 2));
   TimeOfDay _meetingTime = const TimeOfDay(hour: 14, minute: 0);
@@ -84,7 +91,42 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
       _linkController.text = m.meetingLink ?? '';
       _meetingDate = m.meetingDate;
       _meetingTime = TimeOfDay.fromDateTime(m.meetingDate);
+      // Solo aceptar la carrera guardada si el usuario sigue perteneciendo a
+      // ella; si no, el Dropdown recibiría un value que no está entre sus
+      // items y Flutter lanza.
+      final saved = m.careerId;
+      final known = CareerService().careerIds;
+      _selectedCareerId = (saved != null && known.contains(saved)) ? saved : null;
+    } else {
+      _selectedCareerId = CareerService().getSelectedCareer()?.id;
     }
+  }
+
+  Widget _buildCareerField() {
+    final careers = CareerService().getCareers();
+    if (careers.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: DropdownButtonFormField<String?>(
+        initialValue: _selectedCareerId,
+        decoration: const InputDecoration(
+          labelText: 'Carrera',
+          prefixIcon: Icon(Icons.school_outlined),
+          border: OutlineInputBorder(),
+          helperText: 'Sirve para filtrar las reuniones en Mi área',
+        ),
+        items: [
+          const DropdownMenuItem<String?>(
+            value: null,
+            child: Text('Sin carrera'),
+          ),
+          for (final c in careers)
+            DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
+        ],
+        onChanged: (value) => setState(() => _selectedCareerId = value),
+      ),
+    );
   }
 
   Future<void> _loadSubjects() async {
@@ -174,7 +216,6 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final career = CareerService().getSelectedCareer();
       final dt = DateTime(
         _meetingDate.year,
         _meetingDate.month,
@@ -193,7 +234,7 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
         type: _selectedType,
         isRecurrent: _isRecurrent,
         meetingLink: _linkController.text.trim().isEmpty ? null : _linkController.text.trim(),
-        careerId: career?.id,
+        careerId: _selectedCareerId,
         userId: user.id,
       );
 
@@ -327,6 +368,7 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
               onChanged: (v) => setState(() => _selectedType = v!),
             ),
             const SizedBox(height: 16),
+            _buildCareerField(),
             TextFormField(
               controller: _linkController,
               decoration: const InputDecoration(

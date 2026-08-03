@@ -74,6 +74,12 @@ class GoogleDriveService {
 
   static const _tokenKey = 'google_drive_access_token';
 
+  /// Subcarpeta donde va el material docente, dentro de la carpeta de cada
+  /// asignatura. Separarlo de los trabajos no es solo orden: como
+  /// [scanBitacoraFolderFiles] registra automáticamente lo que encuentra,
+  /// tener las guías en la misma carpeta las duplicaba en "Mis tareas".
+  static const String teachingMaterialFolderName = 'Material docente';
+
   // El token de acceso a Drive se guarda cifrado (Keystore/Keychain vía
   // flutter_secure_storage), igual que la clave de cifrado de Hive — antes
   // se guardaba en texto plano con SharedPreferences.
@@ -169,6 +175,7 @@ class GoogleDriveService {
     required Uint8List bytes,
     required String mimeType,
     String? subject,
+    String? subfolder,
   }) async {
     final token = await getOrRequestToken();
 
@@ -191,6 +198,7 @@ class GoogleDriveService {
         bytes: bytes,
         mimeType: mimeType,
         subject: subject,
+        subfolder: subfolder,
       );
     } on _DriveAuthExpiredException {
       // El token venció justo antes/durante la subida: pedir uno nuevo
@@ -209,6 +217,7 @@ class GoogleDriveService {
         bytes: bytes,
         mimeType: mimeType,
         subject: subject,
+        subfolder: subfolder,
       );
     }
   }
@@ -219,8 +228,9 @@ class GoogleDriveService {
     required Uint8List bytes,
     required String mimeType,
     String? subject,
+    String? subfolder,
   }) async {
-    final folderId = await _getOrCreateSubjectFolder(token, subject);
+    final folderId = await _getOrCreateSubjectFolder(token, subject, subfolder: subfolder);
     final effectiveMimeType = _resolveMimeType(mimeType);
 
     final metadata = {
@@ -362,6 +372,11 @@ class GoogleDriveService {
       if (rootFolderId == null) return [];
 
       // 1. Obtener todas las subcarpetas dentro de "Bitácora" (Mapeo: folderId -> subjectName)
+      //
+      // Solo se baja un nivel, y de eso depende que el material docente no se
+      // registre como trabajo: vive en `<asignatura>/Material docente/`, un
+      // nivel más abajo, así que su carpeta nunca entra en folderMap y sus
+      // archivos quedan fuera de la consulta del paso 2.
       final folderMap = <String, String>{rootFolderId: 'General'};
 
       final subfoldersResp = await http.get(
@@ -452,17 +467,42 @@ class GoogleDriveService {
     return false;
   }
 
-  /// Busca o crea la carpeta de la asignatura dentro de la carpeta "Bitácora".
-  Future<String?> _getOrCreateSubjectFolder(String token, String? subject) async {
+  /// Busca o crea la carpeta destino: `Bitácora/<asignatura>`, y dentro de
+  /// ella `<subfolder>` si se pide (el material docente va a
+  /// [teachingMaterialFolderName] para no mezclarse con los trabajos).
+  ///
+  /// Si algún nivel falla, devuelve el último que sí resolvió en vez de
+  /// abortar: mejor que el archivo quede una carpeta más arriba a que la
+  /// subida entera se pierda.
+  Future<String?> _getOrCreateSubjectFolder(
+    String token,
+    String? subject, {
+    String? subfolder,
+  }) async {
     final rootFolderId = await _getOrCreateBitacoraFolder(token);
     if (rootFolderId == null) return null;
     if (subject == null || subject.trim().isEmpty) return rootFolderId;
 
-    final sanitizedSubject = subject.trim();
+    final subjectFolderId =
+        await _getOrCreateChildFolder(token, subject.trim(), rootFolderId) ??
+            rootFolderId;
+
+    if (subfolder == null || subfolder.trim().isEmpty) return subjectFolderId;
+
+    return await _getOrCreateChildFolder(token, subfolder.trim(), subjectFolderId) ??
+        subjectFolderId;
+  }
+
+  /// Busca una carpeta [name] dentro de [parentId] y la crea si no existe.
+  Future<String?> _getOrCreateChildFolder(
+    String token,
+    String name,
+    String parentId,
+  ) async {
     try {
       // Escapar comillas simples para la query de Drive API
-      final escapedSubject = sanitizedSubject.replaceAll("'", "\\'");
-      final query = "name = '$escapedSubject' and '$rootFolderId' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+      final escapedName = name.replaceAll("'", "\\'");
+      final query = "name = '$escapedName' and '$parentId' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
 
       final searchResp = await http.get(
         Uri.parse(
@@ -481,7 +521,6 @@ class GoogleDriveService {
         }
       }
 
-      // Crear subcarpeta de la asignatura
       final createResp = await http.post(
         Uri.parse('https://www.googleapis.com/drive/v3/files'),
         headers: {
@@ -489,9 +528,9 @@ class GoogleDriveService {
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
-          'name': sanitizedSubject,
+          'name': name,
           'mimeType': 'application/vnd.google-apps.folder',
-          'parents': [rootFolderId],
+          'parents': [parentId],
         }),
       );
 
@@ -499,7 +538,7 @@ class GoogleDriveService {
       if (createResp.statusCode == 200 || createResp.statusCode == 201) {
         final id = (jsonDecode(createResp.body) as Map<String, dynamic>)['id'] as String?;
         Logger.info(
-          'Carpeta de asignatura "$sanitizedSubject" creada en Google Drive. ID: $id',
+          'Carpeta "$name" creada en Google Drive. ID: $id',
           tag: 'GoogleDriveService',
         );
         return id;
@@ -508,11 +547,11 @@ class GoogleDriveService {
       rethrow;
     } catch (e) {
       Logger.warning(
-        'Error al buscar/crear carpeta de asignatura "$sanitizedSubject": $e',
+        'Error al buscar/crear carpeta "$name": $e',
         tag: 'GoogleDriveService',
       );
     }
-    return rootFolderId;
+    return null;
   }
 
   /// Busca o crea la carpeta "Bitácora" en "Mi unidad".

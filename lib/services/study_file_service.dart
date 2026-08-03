@@ -11,22 +11,64 @@ class StudyFileService extends ChangeNotifier {
   StudyFileService._internal();
 
   static const String _boxName = 'study_files_box';
+
+  /// Caja del antiguo TeachingMaterialService. Su contenido se absorbe una
+  /// sola vez en [init] y después se borra.
+  static const String _legacyMaterialsBoxName = 'teaching_materials_box';
+
   Box? _filesBox;
 
   Future<void> init() async {
     try {
       _filesBox = await Hive.openBox(_boxName);
+      await _migrateLegacyTeachingMaterials();
       Logger.info('StudyFileService inicializado', tag: 'StudyFileService');
     } catch (e) {
       Logger.error('Error inicializando StudyFileService: $e', error: e, tag: 'StudyFileService');
     }
   }
 
-  List<StudyFile> getFiles() {
+  /// El material docente vivía en su propia caja y su propio modelo. Ahora es
+  /// un StudyFile con category 'guia'; esto arrastra lo que hubiera quedado
+  /// guardado localmente para que el usuario no lo pierda de vista.
+  Future<void> _migrateLegacyTeachingMaterials() async {
+    if (!await Hive.boxExists(_legacyMaterialsBoxName)) return;
+
+    try {
+      final legacyBox = await Hive.openBox(_legacyMaterialsBoxName);
+      var migrated = 0;
+
+      for (final value in legacyBox.values) {
+        if (value is! Map) continue;
+        final map = Map<String, dynamic>.from(value);
+        // El modelo viejo usaba 'title' donde éste usa 'name'; fromMap ya
+        // contempla los dos, solo hay que marcar la categoría.
+        map['category'] = StudyFileCategory.guia;
+        final file = StudyFile.fromMap(map);
+        if (file.id == null) continue;
+        await _filesBox?.put(file.id, file.toMap());
+        migrated++;
+      }
+
+      await legacyBox.deleteFromDisk();
+      if (migrated > 0) {
+        Logger.info('Material docente migrado a archivos de estudio: $migrated', tag: 'StudyFileService');
+      }
+    } catch (e) {
+      Logger.warning('No se pudo migrar la caché de material docente: $e', tag: 'StudyFileService');
+    }
+  }
+
+  /// Archivos en caché de la categoría pedida, del usuario actual.
+  ///
+  /// El filtro por usuario importa: la caja de Hive sobrevive al cierre de
+  /// sesión, así que sin él una cuenta vería los archivos de la anterior.
+  List<StudyFile> getFiles({String category = StudyFileCategory.trabajo}) {
     if (_filesBox == null) return [];
     try {
-      final raw = _filesBox!.values.toList();
-      return raw
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+
+      return _filesBox!.values
           .map((e) {
             if (e is Map) {
               return StudyFile.fromMap(Map<String, dynamic>.from(e));
@@ -34,11 +76,24 @@ class StudyFileService extends ChangeNotifier {
             return null;
           })
           .whereType<StudyFile>()
-          .toList();
+          .where((f) => f.category == category)
+          .where((f) => userId == null || f.userId.isEmpty || f.userId == userId)
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     } catch (e) {
       Logger.error('Error parseando archivos de estudio: $e', tag: 'StudyFileService');
       return [];
     }
+  }
+
+  /// Todos los archivos en caché, sin filtrar por categoría. Para la
+  /// sincronización, que trabaja sobre el conjunto completo.
+  List<StudyFile> _allCachedFiles() {
+    if (_filesBox == null) return [];
+    return _filesBox!.values
+        .map((e) => e is Map ? StudyFile.fromMap(Map<String, dynamic>.from(e)) : null)
+        .whereType<StudyFile>()
+        .toList();
   }
 
   Future<void> saveFile(StudyFile file) async {
@@ -100,7 +155,7 @@ class StudyFileService extends ChangeNotifier {
     if (user == null) return;
     try {
       // 1. Subir metadatos locales a Supabase
-      final localFiles = getFiles();
+      final localFiles = _allCachedFiles();
       for (final f in localFiles) {
         try {
           final payload = f.toMap();
@@ -163,26 +218,32 @@ class StudyFileService extends ChangeNotifier {
     await syncFromSupabase();
 
     try {
-      final currentFiles = getFiles();
+      final currentFiles = _allCachedFiles();
       final driveService = GoogleDriveService();
 
-      // 2. Verificar existencia de archivos en Google Drive (Borrados externos)
+      // 2. Verificar existencia de archivos en Google Drive (Borrados externos).
+      //    Los enlaces externos no tienen archivo en Drive, se saltan.
       for (final sf in currentFiles) {
-        if (sf.driveFileId.isNotEmpty) {
-          final existsInDrive = await driveService.checkFileExists(sf.driveFileId);
+        final driveId = sf.driveFileId;
+        if (driveId != null && driveId.isNotEmpty) {
+          final existsInDrive = await driveService.checkFileExists(driveId);
           if (!existsInDrive) {
             Logger.info('Archivo "${sf.name}" fue eliminado externamente de Drive.', tag: 'StudyFileService');
-            await deleteFile(sf.driveFileId);
+            await deleteFile(driveId);
             final subjectName = sf.subject.isNotEmpty ? sf.subject : 'General';
             onNotify?.call('Se eliminó "${sf.name}" de $subjectName');
           }
         }
       }
 
-      // 3. Escanear archivos en carpetas de Drive (Nuevos subidos directamente)
+      // 3. Escanear archivos en carpetas de Drive (Nuevos subidos directamente).
+      //    scanBitacoraFolderFiles ignora la subcarpeta de material docente,
+      //    porque si no las guías se registrarían además como trabajos.
       final driveFiles = await driveService.scanBitacoraFolderFiles();
-      final updatedFiles = getFiles();
-      final existingDriveIds = updatedFiles.map((f) => f.driveFileId).toSet();
+      final existingDriveIds = _allCachedFiles()
+          .map((f) => f.driveFileId)
+          .whereType<String>()
+          .toSet();
 
       for (final df in driveFiles) {
         final driveId = df['drive_file_id'] as String;
@@ -195,6 +256,7 @@ class StudyFileService extends ChangeNotifier {
             sizeBytes: df['size_bytes'],
             driveLink: df['drive_link'],
             userId: user.id,
+            category: StudyFileCategory.trabajo,
           );
           await saveFile(newStudyFile);
           onNotify?.call('Detectado nuevo archivo en Drive: "${newStudyFile.name}" en ${newStudyFile.subject}');

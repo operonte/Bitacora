@@ -12,6 +12,15 @@ class MeetingService extends ChangeNotifier {
   MeetingService._internal();
 
   static const String _boxName = 'meetings_box';
+
+  /// Cuánto sobrevive una reunión puntual después de su fecha antes de que
+  /// [purgePastMeetings] la borre. Margen para poder consultarla al día
+  /// siguiente; súbelo o bájalo acá.
+  static const Duration pastMeetingRetention = Duration(days: 7);
+
+  /// Valor de [Meeting.careerId] que representa "sin carrera" en el filtro.
+  static const String noCareerFilter = '__sin_carrera__';
+
   Box? _meetingBox;
 
   Future<void> init() async {
@@ -23,7 +32,11 @@ class MeetingService extends ChangeNotifier {
     }
   }
 
-  List<Meeting> getMeetings() {
+  /// Reuniones en caché, más próxima primero.
+  ///
+  /// [careerId] filtra por carrera: null trae todas, [noCareerFilter] trae
+  /// solo las que no tienen carrera asignada.
+  List<Meeting> getMeetings({String? careerId}) {
     if (_meetingBox == null) return [];
     try {
       final raw = _meetingBox!.values.toList();
@@ -35,6 +48,12 @@ class MeetingService extends ChangeNotifier {
             return null;
           })
           .whereType<Meeting>()
+          .where((m) {
+            if (careerId == null) return true;
+            final id = m.careerId;
+            if (careerId == noCareerFilter) return id == null || id.isEmpty;
+            return id == careerId;
+          })
           .toList();
 
       meetings.sort((a, b) => a.effectiveDate.compareTo(b.effectiveDate));
@@ -43,6 +62,47 @@ class MeetingService extends ChangeNotifier {
       Logger.error('Error parseando reuniones: $e', tag: 'MeetingService');
       return [];
     }
+  }
+
+  /// Carreras que aparecen entre las reuniones guardadas, para armar el
+  /// filtro sin ofrecer opciones que no seleccionarían nada.
+  Set<String> get usedCareerIds => getMeetings()
+      .map((m) => (m.careerId == null || m.careerId!.isEmpty)
+          ? noCareerFilter
+          : m.careerId!)
+      .toSet();
+
+  /// Borra las reuniones puntuales que llevan más de [pastMeetingRetention]
+  /// vencidas. Las recurrentes nunca entran acá: su [Meeting.effectiveDate]
+  /// avanza sola a la próxima semana, así que siempre está en el futuro.
+  ///
+  /// Es irreversible y no hay papelera, por eso cada borrado se registra.
+  Future<int> purgePastMeetings() async {
+    if (_meetingBox == null) return 0;
+
+    final cutoff = DateTime.now().subtract(pastMeetingRetention);
+    final expired = getMeetings()
+        .where((m) => !m.isRecurrent && m.effectiveDate.isBefore(cutoff))
+        .toList();
+
+    var deleted = 0;
+    for (final meeting in expired) {
+      final id = meeting.id;
+      if (id == null || id.isEmpty) continue;
+      try {
+        await deleteMeeting(id);
+        Logger.info(
+          'Reunión vencida eliminada: "${meeting.title}" del ${meeting.effectiveDate}',
+          tag: 'MeetingService',
+        );
+        deleted++;
+      } catch (e) {
+        Logger.warning('No se pudo eliminar la reunión vencida "${meeting.title}": $e', tag: 'MeetingService');
+      }
+    }
+
+    if (deleted > 0) notifyListeners();
+    return deleted;
   }
 
   Future<void> saveMeeting(Meeting meeting) async {
