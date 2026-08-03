@@ -14,6 +14,47 @@ const _googleClientId =
 
 class _DriveAuthExpiredException implements Exception {}
 
+// Algunos llamadores pasan solo la extensión del archivo (p. ej. "pdf")
+// en vez de un MIME type real, porque file_picker no expone el MIME type
+// en todas las plataformas. Google Drive rechaza con 400 un mimeType que
+// no tenga forma "tipo/subtipo", así que esto normaliza ambos casos.
+const _extensionMimeTypes = <String, String>{
+  'pdf': 'application/pdf',
+  'doc': 'application/msword',
+  'docx':
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'xls': 'application/vnd.ms-excel',
+  'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'ppt': 'application/vnd.ms-powerpoint',
+  'pptx':
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'txt': 'text/plain',
+  'csv': 'text/csv',
+  'rtf': 'application/rtf',
+  'png': 'image/png',
+  'jpg': 'image/jpeg',
+  'jpeg': 'image/jpeg',
+  'gif': 'image/gif',
+  'webp': 'image/webp',
+  'svg': 'image/svg+xml',
+  'zip': 'application/zip',
+  'rar': 'application/vnd.rar',
+  '7z': 'application/x-7z-compressed',
+  'mp4': 'video/mp4',
+  'mp3': 'audio/mpeg',
+  'json': 'application/json',
+  'xml': 'application/xml',
+  'html': 'text/html',
+  'htm': 'text/html',
+};
+
+String _resolveMimeType(String mimeType) {
+  final trimmed = mimeType.trim();
+  if (trimmed.contains('/')) return trimmed;
+  final ext = trimmed.toLowerCase().replaceFirst('.', '');
+  return _extensionMimeTypes[ext] ?? 'application/octet-stream';
+}
+
 class DriveUploadResult {
   final String fileId;
   final String webViewLink;
@@ -103,6 +144,19 @@ class GoogleDriveService {
     return token;
   }
 
+  /// Pide un token nuevo saltándose el cache (Supabase providerToken /
+  /// storage), a diferencia de [getOrRequestToken]. Se usa al reintentar
+  /// tras un 401: en Web, el providerToken de Supabase no se refresca solo,
+  /// así que reusar [getOrRequestToken] devolvería el mismo token vencido.
+  Future<String?> _requestFreshToken() async {
+    final token = await requestDriveTokenPlatform(_googleClientId);
+    if (token != null && token.isNotEmpty) {
+      await persistToken(token);
+      return token;
+    }
+    return null;
+  }
+
   /// Sube el archivo al Google Drive del usuario.
   /// Si se especifica [subject], el archivo se guardará dentro de una carpeta con el nombre
   /// de la asignatura (creándola si no existe) dentro de la carpeta "Bitácora".
@@ -143,7 +197,7 @@ class GoogleDriveService {
       // (renovación silenciosa en móvil, sin pedirle nada al usuario) y
       // reintentar una única vez antes de rendirse.
       await clearToken();
-      final freshToken = await getOrRequestToken();
+      final freshToken = await _requestFreshToken();
       if (freshToken == null || freshToken.isEmpty) {
         throw Exception(
           'El acceso a Google Drive expiró. Intenta subir el archivo nuevamente.',
@@ -167,8 +221,7 @@ class GoogleDriveService {
     String? subject,
   }) async {
     final folderId = await _getOrCreateSubjectFolder(token, subject);
-    final effectiveMimeType =
-        mimeType.isNotEmpty ? mimeType : 'application/octet-stream';
+    final effectiveMimeType = _resolveMimeType(mimeType);
 
     final metadata = {
       'name': fileName,
@@ -420,6 +473,7 @@ class GoogleDriveService {
         headers: {'Authorization': 'Bearer $token'},
       );
 
+      if (searchResp.statusCode == 401) throw _DriveAuthExpiredException();
       if (searchResp.statusCode == 200) {
         final files = (jsonDecode(searchResp.body)['files'] as List?) ?? [];
         if (files.isNotEmpty) {
@@ -441,6 +495,7 @@ class GoogleDriveService {
         }),
       );
 
+      if (createResp.statusCode == 401) throw _DriveAuthExpiredException();
       if (createResp.statusCode == 200 || createResp.statusCode == 201) {
         final id = (jsonDecode(createResp.body) as Map<String, dynamic>)['id'] as String?;
         Logger.info(
@@ -449,6 +504,8 @@ class GoogleDriveService {
         );
         return id;
       }
+    } on _DriveAuthExpiredException {
+      rethrow;
     } catch (e) {
       Logger.warning(
         'Error al buscar/crear carpeta de asignatura "$sanitizedSubject": $e',
@@ -470,6 +527,7 @@ class GoogleDriveService {
         headers: {'Authorization': 'Bearer $token'},
       );
 
+      if (searchResp.statusCode == 401) throw _DriveAuthExpiredException();
       if (searchResp.statusCode == 200) {
         final files =
             (jsonDecode(searchResp.body)['files'] as List?) ?? [];
@@ -488,6 +546,7 @@ class GoogleDriveService {
         }),
       );
 
+      if (createResp.statusCode == 401) throw _DriveAuthExpiredException();
       if (createResp.statusCode == 200 || createResp.statusCode == 201) {
         final id =
             (jsonDecode(createResp.body) as Map<String, dynamic>)['id']
@@ -498,6 +557,8 @@ class GoogleDriveService {
         );
         return id;
       }
+    } on _DriveAuthExpiredException {
+      rethrow;
     } catch (e) {
       Logger.warning(
         'Error al buscar/crear carpeta Bitácora: $e',
