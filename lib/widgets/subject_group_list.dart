@@ -10,6 +10,13 @@ class SubjectGroupList<T> extends StatelessWidget {
   final Widget Function(T item) itemBuilder;
   final String Function(int count) countLabelOf;
   final EdgeInsetsGeometry padding;
+  /// Si se provee, las carpetas se ordenan por fecha en vez de
+  /// alfabéticamente por materia: la fecha representativa de cada carpeta es
+  /// la más próxima (ascendente, ej. reuniones) o la más reciente
+  /// (descendente, ej. archivos recién subidos) entre sus items, según
+  /// [dateDescending].
+  final DateTime? Function(T item)? dateOf;
+  final bool dateDescending;
 
   const SubjectGroupList({
     super.key,
@@ -18,6 +25,8 @@ class SubjectGroupList<T> extends StatelessWidget {
     required this.itemBuilder,
     required this.countLabelOf,
     this.padding = const EdgeInsets.fromLTRB(16, 12, 16, 100),
+    this.dateOf,
+    this.dateDescending = false,
   });
 
   Map<String, List<T>> _grouped() {
@@ -26,7 +35,34 @@ class SubjectGroupList<T> extends StatelessWidget {
       final subject = subjectOf(item).isNotEmpty ? subjectOf(item) : 'General';
       map.putIfAbsent(subject, () => []).add(item);
     }
-    final sortedKeys = map.keys.toList()..sort();
+    final sortedKeys = map.keys.toList();
+    final dateOfFn = dateOf;
+    if (dateOfFn != null) {
+      DateTime representativeOf(String key) {
+        final dates = map[key]!.map(dateOfFn).whereType<DateTime>();
+        if (dates.isEmpty) {
+          return dateDescending ? DateTime(0) : DateTime(9999);
+        }
+        return dateDescending
+            ? dates.reduce((a, b) => a.isAfter(b) ? a : b)
+            : dates.reduce((a, b) => a.isBefore(b) ? a : b);
+      }
+
+      sortedKeys.sort((a, b) => dateDescending
+          ? representativeOf(b).compareTo(representativeOf(a))
+          : representativeOf(a).compareTo(representativeOf(b)));
+
+      for (final list in map.values) {
+        list.sort((a, b) {
+          final dateA = dateOfFn(a);
+          final dateB = dateOfFn(b);
+          if (dateA == null || dateB == null) return 0;
+          return dateDescending ? dateB.compareTo(dateA) : dateA.compareTo(dateB);
+        });
+      }
+    } else {
+      sortedKeys.sort();
+    }
     return {for (final key in sortedKeys) key: map[key]!};
   }
 

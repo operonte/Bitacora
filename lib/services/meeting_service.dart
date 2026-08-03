@@ -37,7 +37,7 @@ class MeetingService extends ChangeNotifier {
           .whereType<Meeting>()
           .toList();
 
-      meetings.sort((a, b) => a.meetingDate.compareTo(b.meetingDate));
+      meetings.sort((a, b) => a.effectiveDate.compareTo(b.effectiveDate));
       return meetings;
     } catch (e) {
       Logger.error('Error parseando reuniones: $e', tag: 'MeetingService');
@@ -165,7 +165,7 @@ class MeetingService extends ChangeNotifier {
     for (final meeting in getMeetings()) {
       if (meeting.id == null) continue;
       try {
-        if (meeting.meetingDate.isAfter(DateTime.now())) {
+        if (meeting.effectiveDate.isAfter(DateTime.now())) {
           await NotificationService().scheduleMeetingReminder(meeting);
         } else {
           await NotificationService().cancelMeetingReminder(meeting.id!);

@@ -210,27 +210,45 @@ class NotificationService {
 
   // ==================== RECORDATORIO DE REUNIONES ====================
 
-  /// Programa un recordatorio 30 minutos antes de una reunión, si la
-  /// preferencia está activada. Cancela cualquier recordatorio previo de
-  /// la misma reunión primero (para que reprogramar por una edición no
-  /// duplique avisos).
+  /// Programa dos recordatorios para una reunión, igual que para tareas
+  /// (mañana del día + 2 horas antes), si la preferencia está activada.
+  /// Cancela cualquier recordatorio previo de la misma reunión primero
+  /// (para que reprogramar por una edición no duplique avisos).
   Future<void> scheduleMeetingReminder(Meeting meeting) async {
     if (meeting.id == null) return;
     await cancelMeetingReminder(meeting.id!);
 
     if (!await isMeetingReminderEnabled) return;
 
+    final baseId = meetingIdToNotificationId(meeting.id!);
+    final date = meeting.effectiveDate;
+    final time = '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+
+    // Aviso la mañana del mismo día de la reunión (8:00 am).
+    final morningOf = DateTime(date.year, date.month, date.day, 8, 0);
+    if (morningOf.isBefore(date)) {
+      await _scheduleReminder(
+        id: baseId,
+        title: '📹 Reunión hoy',
+        body: '${meeting.title} — ${meeting.subject} a las $time',
+        scheduledTime: morningOf,
+      );
+    }
+
+    // Aviso 2 horas antes.
     await _scheduleReminder(
-      id: meetingIdToNotificationId(meeting.id!),
-      title: '📹 Reunión en 30 minutos',
+      id: baseId + 1000000,
+      title: '📹 Reunión en 2 horas',
       body: '${meeting.title} — ${meeting.subject}',
-      scheduledTime: meeting.meetingDate.subtract(const Duration(minutes: 30)),
+      scheduledTime: date.subtract(const Duration(hours: 2)),
     );
   }
 
-  /// Cancela el recordatorio de una reunión específica.
+  /// Cancela los recordatorios de una reunión específica.
   Future<void> cancelMeetingReminder(String meetingId) async {
-    await _notifications.cancel(meetingIdToNotificationId(meetingId));
+    final baseId = meetingIdToNotificationId(meetingId);
+    await _notifications.cancel(baseId);
+    await _notifications.cancel(baseId + 1000000);
   }
 
   /// Sincroniza todas las notificaciones locales con la lista actual de tareas

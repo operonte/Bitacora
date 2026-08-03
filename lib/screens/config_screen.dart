@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
@@ -18,7 +20,7 @@ class ConfigScreen extends StatefulWidget {
   State<ConfigScreen> createState() => _ConfigScreenState();
 }
 
-class _ConfigScreenState extends State<ConfigScreen> {
+class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver {
   final CareerService _careerService = CareerService();
   final NotificationService _notifService = NotificationService();
   final AuthService _authService = AuthService();
@@ -28,13 +30,52 @@ class _ConfigScreenState extends State<ConfigScreen> {
   bool _notif2h = true;
   bool _notifMeeting = true;
 
+  // Estado real a nivel de sistema operativo — los switches de arriba solo
+  // controlan la preferencia dentro de la app, pero si Android bloqueó el
+  // permiso o la app está bajo optimización de batería, el recordatorio
+  // jamás llega aunque el switch esté prendido.
+  PermissionStatus? _notifPermStatus;
+  PermissionStatus? _alarmPermStatus;
+  PermissionStatus? _batteryPermStatus;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadData();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // El usuario puede volver de Ajustes del sistema tras cambiar un
+    // permiso: refrescar el estado mostrado sin que tenga que reabrir.
+    if (state == AppLifecycleState.resumed) {
+      _loadPermissionStatuses();
+    }
+  }
+
+  Future<void> _loadPermissionStatuses() async {
+    if (kIsWeb) return;
+    final notif = await Permission.notification.status;
+    final alarm = await Permission.scheduleExactAlarm.status;
+    final battery = await Permission.ignoreBatteryOptimizations.status;
+    if (mounted) {
+      setState(() {
+        _notifPermStatus = notif;
+        _alarmPermStatus = alarm;
+        _batteryPermStatus = battery;
+      });
+    }
+  }
+
   Future<void> _loadData() async {
+    await _loadPermissionStatuses();
     // Sincronizar automáticamente materias y profesores desde Supabase
     try {
       await _careerService.reloadCareerWithUpdatedSubjects();
@@ -224,7 +265,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
                   activeThumbColor: AppColors.primary,
                   secondary: const Icon(Icons.video_camera_front_outlined),
                   title: const Text('Aviso de reuniones'),
-                  subtitle: const Text('30 minutos antes de cada reunión'),
+                  subtitle: const Text('La mañana del día y 2 horas antes'),
                   onChanged: (v) async {
                     setState(() => _notifMeeting = v);
                     await _notifService.setMeetingReminderEnabled(v);
@@ -233,6 +274,11 @@ class _ConfigScreenState extends State<ConfigScreen> {
               ],
             ),
           ),
+
+          if (!kIsWeb) ...[
+            const SizedBox(height: 12),
+            _buildPermissionStatusCard(),
+          ],
 
           const SizedBox(height: 24),
 
@@ -566,6 +612,98 @@ class _ConfigScreenState extends State<ConfigScreen> {
     }
     await _loadData();
     _showSnack('Saliste de ${career.name}', Colors.orange);
+  }
+
+  Future<void> _fixPermission(Permission permission) async {
+    final current = await permission.status;
+    if (current.isPermanentlyDenied) {
+      await openAppSettings();
+    } else {
+      await permission.request();
+    }
+    await _loadPermissionStatuses();
+  }
+
+  Widget _buildPermissionStatusCard() {
+    final rows = <Widget>[];
+
+    void addRow({
+      required String title,
+      required String okSubtitle,
+      required String badSubtitle,
+      required PermissionStatus? status,
+      required Permission permission,
+    }) {
+      if (rows.isNotEmpty) rows.add(const Divider(height: 1));
+      final granted = status?.isGranted ?? false;
+      rows.add(
+        ListTile(
+          leading: Icon(
+            granted ? Icons.check_circle : Icons.error_outline,
+            color: granted ? AppColors.success : AppColors.error,
+          ),
+          title: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          subtitle: Text(
+            granted ? okSubtitle : badSubtitle,
+            style: const TextStyle(fontSize: 12),
+          ),
+          trailing: granted
+              ? null
+              : TextButton(
+                  onPressed: () => _fixPermission(permission),
+                  child: const Text('Arreglar'),
+                ),
+        ),
+      );
+    }
+
+    addRow(
+      title: 'Permiso de notificaciones',
+      okSubtitle: 'Concedido',
+      badSubtitle: 'Sin esto, ningún aviso llega — actívalo',
+      status: _notifPermStatus,
+      permission: Permission.notification,
+    );
+    addRow(
+      title: 'Alarmas exactas',
+      okSubtitle: 'Concedido',
+      badSubtitle: 'Los avisos pueden llegar tarde o no llegar a tiempo',
+      status: _alarmPermStatus,
+      permission: Permission.scheduleExactAlarm,
+    );
+    addRow(
+      title: 'Optimización de batería',
+      okSubtitle: 'Exenta — la app puede avisar en segundo plano',
+      badSubtitle: 'El sistema puede matar la app y perder el aviso',
+      status: _batteryPermStatus,
+      permission: Permission.ignoreBatteryOptimizations,
+    );
+
+    final allGranted = [_notifPermStatus, _alarmPermStatus, _batteryPermStatus]
+        .every((s) => s?.isGranted ?? false);
+
+    return Card(
+      color: allGranted ? null : AppColors.error.withValues(alpha: 0.06),
+      child: Column(
+        children: [
+          ListTile(
+            dense: true,
+            leading: Icon(
+              allGranted ? Icons.verified_outlined : Icons.warning_amber_rounded,
+              color: allGranted ? AppColors.success : AppColors.error,
+            ),
+            title: Text(
+              allGranted
+                  ? 'Notificaciones listas para avisarte'
+                  : 'Revisa esto para no perderte avisos',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ),
+          const Divider(height: 1),
+          ...rows,
+        ],
+      ),
+    );
   }
 
   Widget _sectionHeader(BuildContext context, String label, IconData icon) {

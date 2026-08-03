@@ -78,6 +78,7 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     subjectOf: (m) => m.subject,
                     countLabelOf: (count) => '$count ${count == 1 ? 'reunión' : 'reuniones'}',
                     itemBuilder: _buildMeetingCard,
+                    dateOf: (m) => m.effectiveDate,
                   ),
                 ),
         );
@@ -323,7 +324,7 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     const Icon(Icons.access_time_rounded, size: 15, color: AppColors.textSecondary),
                     const SizedBox(width: 6),
                     Text(
-                      _formatMeetingDate(meeting.meetingDate),
+                      _formatMeetingDate(meeting.effectiveDate),
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,

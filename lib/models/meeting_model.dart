@@ -31,6 +31,19 @@ class Meeting {
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
+  /// Para reuniones semanales cuya fecha guardada ya pasó, calcula la
+  /// próxima ocurrencia (mismo día de la semana y hora, N semanas después).
+  /// Las no recurrentes o aún futuras devuelven [meetingDate] tal cual.
+  DateTime get effectiveDate {
+    if (!isRecurrent) return meetingDate;
+    var next = meetingDate;
+    final now = DateTime.now();
+    while (!next.isAfter(now)) {
+      next = next.add(const Duration(days: 7));
+    }
+    return next;
+  }
+
   /// Detecta automáticamente el tipo efectivo basado en el enlace si existe
   String get effectiveType {
     if (meetingLink != null && meetingLink!.isNotEmpty) {

@@ -514,6 +514,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
             subjectOf: (f) => f.subject,
             countLabelOf: (count) => '$count ${count == 1 ? 'archivo' : 'archivos'}',
             itemBuilder: _buildFileCard,
+            dateOf: (f) => f.createdAt,
+            dateDescending: true,
           ),
         );
       },
@@ -729,6 +731,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
             subjectOf: (m) => m.subject,
             countLabelOf: (count) => '$count ${count == 1 ? 'material' : 'materiales'}',
             itemBuilder: _buildMaterialCard,
+            dateOf: (m) => m.createdAt,
+            dateDescending: true,
           ),
         );
       },
