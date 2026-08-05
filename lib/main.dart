@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -38,6 +39,10 @@ Future<void> main() async {
   try {
     // Inicializar Supabase (reemplaza Firebase)
     await SupabaseService.initialize();
+
+    // Sin esto, DateFormat(..., 'es') (task_card, area_personal_screen)
+    // revienta con LocaleDataException apenas se usa.
+    await initializeDateFormatting('es');
 
     Supabase.instance.client.auth.onAuthStateChange.listen((data) {
       final token = data.session?.providerToken;
