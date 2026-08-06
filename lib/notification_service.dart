@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
@@ -16,6 +18,14 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+
+  // Canal usado por los recordatorios de tareas/reuniones (24h, 2h, mañana
+  // de la reunión). Android trata cada canal como un interruptor
+  // independiente del permiso general: el usuario puede haberlo silenciado
+  // sin tocar el permiso de notificaciones. Debe coincidir exactamente con
+  // el id usado en _scheduleReminder más abajo.
+  static const taskReminderChannelId = 'task_smart_reminders';
+  static const _packageName = 'com.operonte.bitacora';
 
   // Claves de preferencias
   static const _key24h = 'notif_24h_enabled';
@@ -150,6 +160,27 @@ class NotificationService {
   }) async {
     if (scheduledTime.isBefore(DateTime.now())) return;
 
+    // Desde Android 14, SCHEDULE_EXACT_ALARM viene denegado por defecto para
+    // apps que no son de alarma/calendario — Bitácora no lo es, así que no
+    // hay que asumirlo concedido solo porque está en el manifest. Se
+    // confirma en runtime ANTES de pedir el modo exacto, en vez de
+    // intentarlo a ciegas y recién reaccionar si el sistema lo rechaza
+    // (recomendación oficial: developer.android.com/about/versions/14/
+    // changes/schedule-exact-alarms).
+    //
+    // OJO: AndroidScheduleMode.alarmClock (setAlarmClock, lo que usa una app
+    // Reloj real) NO es la alternativa acá — el plugin lanza una
+    // SecurityException nativa sin try/catch cuando el permiso no está
+    // realmente concedido, y eso tronaba la app entera sin que ningún catch
+    // de Dart pudiera atraparlo (github.com/MaikuB/flutter_local_notifications/
+    // issues/2248). Para una app de recordatorios de tareas (no un reloj de
+    // alarma), exactAllowWhileIdle con este chequeo previo es el patrón
+    // correcto.
+    final canBeExact = await Permission.scheduleExactAlarm.isGranted;
+    final mode = canBeExact
+        ? AndroidScheduleMode.exactAllowWhileIdle
+        : AndroidScheduleMode.inexact;
+
     try {
       await _notifications.zonedSchedule(
         id,
@@ -158,7 +189,7 @@ class NotificationService {
         tz.TZDateTime.from(scheduledTime, tz.local),
         const NotificationDetails(
           android: AndroidNotificationDetails(
-            'task_smart_reminders',
+            taskReminderChannelId,
             'Recordatorios Inteligentes',
             channelDescription:
                 'Alertas 24h y 2h antes del vencimiento de tareas',
@@ -166,15 +197,18 @@ class NotificationService {
             priority: Priority.high,
           ),
         ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: mode,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
-      Logger.info('Recordatorio programado: $title a las $scheduledTime',
+      Logger.info('Recordatorio programado ($mode): $title a las $scheduledTime',
           tag: 'Notif');
     } catch (e) {
       Logger.error('Error al programar recordatorio', error: e, tag: 'Notif');
-      // Fallback inexacto
+      if (mode == AndroidScheduleMode.inexact) return;
+
+      // El intento exacto falló de forma inesperada pese al chequeo previo:
+      // último recurso, inexacto.
       try {
         await _notifications.zonedSchedule(
           id,
@@ -183,7 +217,7 @@ class NotificationService {
           tz.TZDateTime.from(scheduledTime, tz.local),
           const NotificationDetails(
             android: AndroidNotificationDetails(
-              'task_smart_reminders',
+              taskReminderChannelId,
               'Recordatorios Inteligentes',
               channelDescription:
                   'Alertas 24h y 2h antes del vencimiento de tareas',
@@ -274,6 +308,12 @@ class NotificationService {
   // ==================== RECORDATORIO DIARIO ====================
 
   Future<void> scheduleDailyReminder() async {
+    final canBeExact = await Permission.scheduleExactAlarm.isGranted;
+    if (!canBeExact) {
+      await _scheduleDailyReminderInexact();
+      return;
+    }
+
     try {
       await _notifications.zonedSchedule(
         0,
@@ -296,29 +336,33 @@ class NotificationService {
       );
     } catch (e) {
       Logger.error('Error recordatorio diario', error: e, tag: 'Notif');
-      try {
-        await _notifications.zonedSchedule(
-          0,
-          'Recordatorio de Tareas',
-          'Revisa tus tareas pendientes para hoy',
-          _nextInstanceOf8AM(),
-          const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'daily_reminder_channel',
-              'Recordatorios Diarios',
-              channelDescription: 'Recordatorio diario de tareas',
-              importance: Importance.high,
-              priority: Priority.high,
-            ),
+      await _scheduleDailyReminderInexact();
+    }
+  }
+
+  Future<void> _scheduleDailyReminderInexact() async {
+    try {
+      await _notifications.zonedSchedule(
+        0,
+        'Recordatorio de Tareas',
+        'Revisa tus tareas pendientes para hoy',
+        _nextInstanceOf8AM(),
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'daily_reminder_channel',
+            'Recordatorios Diarios',
+            channelDescription: 'Recordatorio diario de tareas',
+            importance: Importance.high,
+            priority: Priority.high,
           ),
-          androidScheduleMode: AndroidScheduleMode.inexact,
-          uiLocalNotificationDateInterpretation:
-              UILocalNotificationDateInterpretation.absoluteTime,
-          matchDateTimeComponents: DateTimeComponents.time,
-        );
-      } catch (e2) {
-        Logger.error('Fallback diario también falló', error: e2, tag: 'Notif');
-      }
+        ),
+        androidScheduleMode: AndroidScheduleMode.inexact,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    } catch (e) {
+      Logger.error('Fallback diario también falló', error: e, tag: 'Notif');
     }
   }
 
@@ -338,6 +382,52 @@ class NotificationService {
 
   Future<void> cancelAllNotifications() async {
     await _notifications.cancelAll();
+  }
+
+  /// Indica si el canal de recordatorios de tareas está silenciado a nivel
+  /// de sistema. El permiso general de notificaciones puede estar concedido
+  /// y aun así este canal puntual estar apagado — Android los trata como
+  /// interruptores independientes. Si el canal todavía no fue creado (nunca
+  /// se programó un recordatorio), no hay nada que revisar todavía.
+  Future<bool> isTaskReminderChannelBlocked() async {
+    final androidPlugin = _notifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin == null) return false;
+    final channels = await androidPlugin.getNotificationChannels();
+    if (channels == null) return false;
+    for (final channel in channels) {
+      if (channel.id == taskReminderChannelId) {
+        return channel.importance == Importance.none;
+      }
+    }
+    return false;
+  }
+
+  /// Abre directamente la pantalla de Ajustes de Android para el canal de
+  /// recordatorios de tareas — no la pantalla general de la app. Así el
+  /// usuario no tiene que encontrar el canal correcto a mano entre varios.
+  Future<void> openTaskReminderChannelSettings() async {
+    const intent = AndroidIntent(
+      action: 'android.settings.CHANNEL_NOTIFICATION_SETTINGS',
+      arguments: {
+        'android.provider.extra.APP_PACKAGE': _packageName,
+        'android.provider.extra.CHANNEL_ID': taskReminderChannelId,
+      },
+    );
+    await intent.launch();
+  }
+
+  /// Diagnóstico: programa una notificación real a 1 minuto, por el mismo
+  /// camino (zonedSchedule) que usan los recordatorios de tareas/reuniones.
+  /// A diferencia de [showImmediateNotification], esto sirve para aislar si
+  /// el problema está en la entrega inmediata o en la alarma programada.
+  Future<void> scheduleTestNotification() async {
+    await _scheduleReminder(
+      id: 2100000000,
+      title: '⏱️ Notificación programada de prueba',
+      body: 'Si ves esto, la programación de alarmas funciona correctamente.',
+      scheduledTime: DateTime.now().add(const Duration(minutes: 1)),
+    );
   }
 
   Future<void> showImmediateNotification(

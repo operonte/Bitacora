@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../colors.dart';
+import '../providers/theme_provider.dart';
 import '../services/career_service.dart';
 import '../services/admin_auth_service.dart';
 import 'administration_screen.dart';
@@ -18,8 +20,9 @@ class _CareerSelectionScreenState extends State<CareerSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final primaryColor = context.watch<ThemeProvider>().primaryColor;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Seleccionar Carrera'),
       ),
@@ -29,31 +32,31 @@ class _CareerSelectionScreenState extends State<CareerSelectionScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Logo o título
-            const Icon(Icons.school, size: 80, color: AppColors.primary),
+            Icon(Icons.school, size: 80, color: primaryColor),
             const SizedBox(height: 32),
-            const Text(
+            Text(
               'Bitácora',
               style: TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
-                color: AppColors.primary,
+                color: primaryColor,
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Selecciona tu carrera para comenzar',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+              style: TextStyle(fontSize: 16, color: context.textSecondaryColor),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 48),
 
             // Opción para ingresar con clave de acceso
-            const Text(
+            Text(
               'Ingresa tu clave de acceso',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: AppColors.primary,
+                color: primaryColor,
               ),
             ),
             const SizedBox(height: 16),
@@ -67,13 +70,10 @@ class _CareerSelectionScreenState extends State<CareerSelectionScreen> {
                     TextFormField(
                       controller: _accessKeyController,
                       obscureText: true,
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         labelText: 'Clave de Acceso',
                         hintText: 'Ingresa la clave de tu carrera',
-                        prefixIcon: const Icon(Icons.key),
-                        border: const OutlineInputBorder(),
-                        filled: true,
-                        fillColor: Colors.grey[50],
+                        prefixIcon: Icon(Icons.key),
                       ),
                       onFieldSubmitted: (_) => _validateAccessKey(),
                     ),
@@ -83,7 +83,7 @@ class _CareerSelectionScreenState extends State<CareerSelectionScreen> {
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _validateAccessKey,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
+                          backgroundColor: primaryColor,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),

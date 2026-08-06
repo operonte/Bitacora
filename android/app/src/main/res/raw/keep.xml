@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sin esto, shrinkResources descarta el ícono usado por las notificaciones
+  (@mipmap/ic_launcher) en el build de release. Cuando la alarma dispara, el
+  sistema busca un recurso que ya no existe y la notificación nunca se
+  muestra, fallando en silencio. Requerido por flutter_local_notifications.
+-->
+<resources
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@mipmap/*,@drawable/*,@raw/*" />

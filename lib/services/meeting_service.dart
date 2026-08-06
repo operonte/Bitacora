@@ -172,8 +172,16 @@ class MeetingService extends ChangeNotifier {
     try {
       await SupabaseDbService().registerCareerMemberships();
 
-      // 1. Subir o actualizar todas las reuniones locales a Supabase
-      final localMeetings = getMeetings();
+      // 1. Subir o actualizar las reuniones locales PROPIAS a Supabase.
+      //
+      // Desde que la caché también guarda las reuniones que otros
+      // compartieron con la carrera, hay que excluirlas: reenviarlas con
+      // payload['user_id'] = user.id se las robaría a su dueño (y la RLS de
+      // update las rechazaría igual). userId vacío = creada offline, todavía
+      // sin dueño asignado, así que esa sí es propia.
+      final localMeetings = getMeetings()
+          .where((m) => m.userId.isEmpty || m.userId == user.id)
+          .toList();
       for (final m in localMeetings) {
         if (m.id == null) continue;
         try {
@@ -194,19 +202,40 @@ class MeetingService extends ChangeNotifier {
         }
       }
 
-      // 2. Traer la lista oficial desde Supabase y hacer un MERGE seguro
-      final List<dynamic> response = await Supabase.instance.client
-          .from('meetings')
-          .select()
-          .eq('user_id', user.id);
+      // 2. Traer la lista oficial desde Supabase y hacer un MERGE seguro.
+      //
+      // Sin filtro por user_id a propósito: la política RLS meetings_select
+      // ya decide qué puede ver este usuario (las suyas + las compartidas de
+      // las carreras a las que pertenece). Filtrar acá por user_id volvería
+      // a dejar fuera las reuniones que otros compartieron con su carrera.
+      final List<dynamic> response =
+          await Supabase.instance.client.from('meetings').select();
 
+      final remoteIds = <String>{};
       for (final item in response) {
         if (item is Map) {
           final m = Meeting.fromMap(Map<String, dynamic>.from(item));
           if (m.id != null) {
+            remoteIds.add(m.id!);
             await _meetingBox?.put(m.id, m.toMap());
           }
         }
+      }
+
+      // Una reunión compartida que su dueño volvió privada (o borró) sigue
+      // en la caché local de los demás miembros: ya no viene en la respuesta,
+      // así que hay que sacarla. Solo se purgan las ajenas — las propias
+      // pueden ser locales aún no subidas.
+      final staleShared = getMeetings()
+          .where((m) =>
+              m.id != null &&
+              m.userId.isNotEmpty &&
+              m.userId != user.id &&
+              !remoteIds.contains(m.id))
+          .toList();
+      for (final m in staleShared) {
+        await _meetingBox?.delete(m.id);
+        await NotificationService().cancelMeetingReminder(m.id!);
       }
 
       // Los recordatorios locales son por dispositivo: si esta reunión se

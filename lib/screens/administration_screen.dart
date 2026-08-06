@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../colors.dart';
 import '../models/career_model.dart';
 import '../models/subject_model.dart';
+import '../notification_service.dart';
 import '../services/career_supabase_service.dart';
 
 /// Pantalla de administración para gestionar carreras y asignaturas.
@@ -659,14 +660,80 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
     );
   }
 
+  Widget _buildDebugSection() {
+    final amberBg = context.isDark ? Colors.amber.shade900 : Colors.amber.shade50;
+    final textColor = context.textColor;
+
+    return Card(
+      color: amberBg,
+      elevation: 2,
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.bug_report, color: Colors.deepOrange),
+                const SizedBox(width: 8),
+                Text(
+                  'Debug',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16, color: textColor),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: () async {
+                await NotificationService().showImmediateNotification(
+                  '🔔 Notificación de prueba',
+                  'Si ves esto, las notificaciones funcionan correctamente.',
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Notificación de prueba enviada'),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.notifications_active),
+              label: const Text('Probar notificación'),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: () async {
+                await NotificationService().scheduleTestNotification();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Programada para dentro de 1 minuto — espera y revisa'),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.timer_outlined),
+              label: const Text('Probar notificación programada (1 min)'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Administración'),
       ),
-      body: StreamBuilder<List<Career>>(
+      body: Column(
+        children: [
+          _buildDebugSection(),
+          Expanded(
+            child: StreamBuilder<List<Career>>(
         stream: _careerService.getCareersStream(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -752,6 +819,9 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
             },
           );
         },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showCreateCareerDialog,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/meeting_model.dart';
 import '../services/meeting_service.dart';
@@ -294,6 +295,12 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
     final typeColor = _getTypeColor(effectiveType);
     final hasLink = meeting.meetingLink != null && meeting.meetingLink!.isNotEmpty;
 
+    // Una reunión compartida por otro miembro se ve pero no se toca: la RLS
+    // rechaza el update/delete igual, así que ofrecer los botones solo
+    // llevaría a un error confuso.
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    final isOwn = uid == null || meeting.userId.isEmpty || meeting.userId == uid;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -340,21 +347,31 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  tooltip: 'Editar',
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => AddMeetingScreen(meeting: meeting),
+                if (isOwn) ...[
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    tooltip: 'Editar',
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AddMeetingScreen(meeting: meeting),
+                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.error),
-                  tooltip: 'Eliminar',
-                  onPressed: () => _confirmDeleteMeeting(meeting),
-                ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.error),
+                    tooltip: 'Eliminar',
+                    onPressed: () => _confirmDeleteMeeting(meeting),
+                  ),
+                ] else
+                  const Tooltip(
+                    message: 'Compartida por otro miembro de la carrera',
+                    child: Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(Icons.groups_outlined,
+                          size: 18, color: AppColors.textSecondary),
+                    ),
+                  ),
               ],
             ),
             if (meeting.description.isNotEmpty) ...[

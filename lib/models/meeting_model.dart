@@ -13,6 +13,12 @@ class Meeting {
   final String? careerId;
   final String userId;
   final bool isCompleted;
+
+  /// Privada (solo la ve quien la creó) o compartida con los miembros de
+  /// [careerId]. Compartir es explícito: por defecto es privada para no
+  /// publicar algo personal al grupo sin querer. Una reunión compartida
+  /// siempre necesita carrera, si no no tendría con quién compartirse.
+  final bool isPrivate;
   final DateTime createdAt;
 
   Meeting({
@@ -28,8 +34,16 @@ class Meeting {
     this.careerId,
     required this.userId,
     this.isCompleted = false,
+    this.isPrivate = true,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
+
+  /// Hora a la que una reunión recurrente deja de contar como "la de hoy" y
+  /// pasa a mostrarse como la de la semana siguiente. Sin esto el salto
+  /// ocurría apenas terminaba la hora de la reunión, y una reunión del
+  /// miércoles a las 10:00 desaparecía del tope de la lista a las 10:01 del
+  /// mismo miércoles.
+  static const int rolloverHour = 23;
 
   /// Para reuniones semanales cuya fecha guardada ya pasó, calcula la
   /// próxima ocurrencia (mismo día de la semana y hora, N semanas después).
@@ -38,10 +52,22 @@ class Meeting {
     if (!isRecurrent) return meetingDate;
     var next = meetingDate;
     final now = DateTime.now();
-    while (!next.isAfter(now)) {
+    while (!_stillCurrent(next, now)) {
       next = next.add(const Duration(days: 7));
     }
     return next;
+  }
+
+  /// Una ocurrencia sigue siendo la vigente hasta [rolloverHour] de su propio
+  /// día, aunque su hora ya haya pasado.
+  static bool _stillCurrent(DateTime occurrence, DateTime now) {
+    final rollover = DateTime(
+      occurrence.year,
+      occurrence.month,
+      occurrence.day,
+      rolloverHour,
+    );
+    return now.isBefore(rollover);
   }
 
   /// Detecta automáticamente el tipo efectivo basado en el enlace si existe
@@ -67,6 +93,7 @@ class Meeting {
       'is_recurrent': isRecurrent,
       'user_id': userId,
       'is_completed': isCompleted,
+      'is_private': isPrivate,
       'created_at': createdAt.toIso8601String(),
     };
 
@@ -97,6 +124,9 @@ class Meeting {
       careerId: map['career_id']?.toString(),
       userId: map['user_id'] ?? '',
       isCompleted: map['is_completed'] ?? false,
+      // Ausente en filas viejas (previas a la migración): se asume privada,
+      // que es como se comportaban antes de existir esta opción.
+      isPrivate: map['is_private'] ?? true,
       createdAt: map['created_at'] != null
           ? DateTime.parse(map['created_at'])
           : DateTime.now(),
@@ -116,6 +146,7 @@ class Meeting {
     String? careerId,
     String? userId,
     bool? isCompleted,
+    bool? isPrivate,
     DateTime? createdAt,
   }) {
     return Meeting(
@@ -131,6 +162,7 @@ class Meeting {
       careerId: careerId ?? this.careerId,
       userId: userId ?? this.userId,
       isCompleted: isCompleted ?? this.isCompleted,
+      isPrivate: isPrivate ?? this.isPrivate,
       createdAt: createdAt ?? this.createdAt,
     );
   }

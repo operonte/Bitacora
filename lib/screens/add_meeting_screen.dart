@@ -34,6 +34,11 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
   /// existen simplemente editándolas.
   String? _selectedCareerId;
 
+  /// Privada = solo la ve quien la creó. Compartida = la ven los miembros de
+  /// [_selectedCareerId]. Arranca privada a propósito: publicar al grupo es
+  /// una decisión consciente, no el default.
+  bool _isPrivate = true;
+
   bool _isRecurrent = false;
   DateTime _meetingDate = DateTime.now().add(const Duration(hours: 2));
   TimeOfDay _meetingTime = const TimeOfDay(hour: 14, minute: 0);
@@ -97,6 +102,8 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
       final saved = m.careerId;
       final known = CareerService().careerIds;
       _selectedCareerId = (saved != null && known.contains(saved)) ? saved : null;
+      // Si se perdió la carrera, compartirla dejaría de tener sentido.
+      _isPrivate = m.isPrivate || _selectedCareerId == null;
     } else {
       _selectedCareerId = CareerService().getSelectedCareer()?.id;
     }
@@ -124,7 +131,41 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
           for (final c in careers)
             DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
         ],
-        onChanged: (value) => setState(() => _selectedCareerId = value),
+        onChanged: (value) => setState(() {
+          _selectedCareerId = value;
+          // Sin carrera no hay grupo con quién compartir.
+          if (value == null) _isPrivate = true;
+        }),
+      ),
+    );
+  }
+
+  /// Elección de visibilidad. Solo tiene sentido con una carrera elegida:
+  /// sin carrera no hay grupo destinatario, así que se oculta.
+  Widget _buildVisibilityField() {
+    if (_selectedCareerId == null) return const SizedBox.shrink();
+
+    final careerName = CareerService()
+        .getCareers()
+        .where((c) => c.id == _selectedCareerId)
+        .map((c) => c.name)
+        .firstOrNull;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: SwitchListTile(
+          value: !_isPrivate,
+          onChanged: (v) => setState(() => _isPrivate = !v),
+          secondary: Icon(_isPrivate ? Icons.lock_outline : Icons.groups_outlined),
+          title: Text(_isPrivate ? 'Reunión privada' : 'Reunión compartida'),
+          subtitle: Text(
+            _isPrivate
+                ? 'Solo tú la ves'
+                : 'La ven los miembros de ${careerName ?? 'la carrera'}',
+          ),
+        ),
       ),
     );
   }
@@ -236,6 +277,9 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
         meetingLink: _linkController.text.trim().isEmpty ? null : _linkController.text.trim(),
         careerId: _selectedCareerId,
         userId: user.id,
+        // Sin carrera no hay grupo destinatario: la restricción
+        // meetings_shared_needs_career_chk lo rechazaría en la base.
+        isPrivate: _selectedCareerId == null ? true : _isPrivate,
       );
 
       await MeetingService().saveMeeting(meeting);
@@ -369,6 +413,7 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
             ),
             const SizedBox(height: 16),
             _buildCareerField(),
+            _buildVisibilityField(),
             TextFormField(
               controller: _linkController,
               decoration: const InputDecoration(

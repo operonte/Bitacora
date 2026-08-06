@@ -37,6 +37,7 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
   PermissionStatus? _notifPermStatus;
   PermissionStatus? _alarmPermStatus;
   PermissionStatus? _batteryPermStatus;
+  bool _reminderChannelBlocked = false;
 
   @override
   void initState() {
@@ -65,11 +66,13 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
     final notif = await Permission.notification.status;
     final alarm = await Permission.scheduleExactAlarm.status;
     final battery = await Permission.ignoreBatteryOptimizations.status;
+    final channelBlocked = await _notifService.isTaskReminderChannelBlocked();
     if (mounted) {
       setState(() {
         _notifPermStatus = notif;
         _alarmPermStatus = alarm;
         _batteryPermStatus = battery;
+        _reminderChannelBlocked = channelBlocked;
       });
     }
   }
@@ -686,8 +689,39 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
       permission: Permission.ignoreBatteryOptimizations,
     );
 
+    // Canal de recordatorios: no es un permiso de permission_handler, así
+    // que va aparte — Android puede silenciar este canal puntual aunque el
+    // permiso general esté concedido.
+    if (rows.isNotEmpty) rows.add(const Divider(height: 1));
+    rows.add(
+      ListTile(
+        leading: Icon(
+          _reminderChannelBlocked ? Icons.error_outline : Icons.check_circle,
+          color: _reminderChannelBlocked ? AppColors.error : AppColors.success,
+        ),
+        title: const Text('Aviso de recordatorios',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        subtitle: Text(
+          _reminderChannelBlocked
+              ? 'Silenciado — los avisos de tareas nunca sonarán'
+              : 'Concedido',
+          style: const TextStyle(fontSize: 12),
+        ),
+        trailing: _reminderChannelBlocked
+            ? TextButton(
+                onPressed: () async {
+                  await _notifService.openTaskReminderChannelSettings();
+                  await _loadPermissionStatuses();
+                },
+                child: const Text('Arreglar'),
+              )
+            : null,
+      ),
+    );
+
     final allGranted = [_notifPermStatus, _alarmPermStatus, _batteryPermStatus]
-        .every((s) => s?.isGranted ?? false);
+            .every((s) => s?.isGranted ?? false) &&
+        !_reminderChannelBlocked;
 
     return Card(
       color: allGranted ? null : AppColors.error.withValues(alpha: 0.06),
