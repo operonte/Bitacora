@@ -42,6 +42,10 @@ END $$;
 -- Se separa por operación: cualquier miembro LEE las compartidas, pero solo
 -- el dueño puede modificarlas o borrarlas.
 DROP POLICY IF EXISTS "meetings_own" ON public.meetings;
+-- Creada a mano en el dashboard, nunca estuvo en el repo. Es FOR ALL con
+-- auth.uid() = user_id: un subconjunto de lo que ya conceden las políticas
+-- de abajo, así que no expone nada, pero duplica reglas y confunde.
+DROP POLICY IF EXISTS "permitir_gestion_reuniones" ON public.meetings;
 DROP POLICY IF EXISTS "meetings_select" ON public.meetings;
 DROP POLICY IF EXISTS "meetings_insert" ON public.meetings;
 DROP POLICY IF EXISTS "meetings_update" ON public.meetings;
@@ -82,6 +86,7 @@ FROM   information_schema.columns
 WHERE  table_schema = 'public' AND table_name = 'meetings'
 ORDER  BY ordinal_position;
 
-SELECT polname, cmd
-FROM   pg_policy p JOIN pg_class c ON c.oid = p.polrelid
-WHERE  c.relname = 'meetings';
+SELECT policyname, cmd, qual
+FROM   pg_policies
+WHERE  schemaname = 'public' AND tablename = 'meetings'
+ORDER  BY policyname;
