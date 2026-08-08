@@ -302,6 +302,9 @@ CREATE TABLE IF NOT EXISTS public.study_files (
       CHECK (category IN ('trabajo', 'guia')),
     description TEXT,
     external_url TEXT,
+    -- Solo etiqueta para filtrar por carrera. No decide quién ve qué: la
+    -- política study_files_own sigue dejando cada archivo a su dueño.
+    career_id TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -326,6 +329,7 @@ CREATE INDEX IF NOT EXISTS idx_meetings_user_id ON public.meetings(user_id);
 CREATE INDEX IF NOT EXISTS idx_active_sessions_user_id ON public.active_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_study_files_user_id ON public.study_files(user_id);
 CREATE INDEX IF NOT EXISTS idx_study_files_user_category ON public.study_files(user_id, category);
+CREATE INDEX IF NOT EXISTS idx_study_files_user_career ON public.study_files(user_id, career_id);
 
 -- ============================================================
 -- REALTIME (para streams en Flutter)

@@ -54,4 +54,18 @@ class InputSanitizer {
     clean = clean.replaceAll(RegExp(r'[\u0000-\u001F\u007F-\u009F]'), '');
     return clean;
   }
+
+  /// Esquemas permitidos para abrir un enlace guardado por el usuario
+  /// (reunión, material docente, archivo con enlace externo).
+  static const _safeUrlSchemes = {'http', 'https'};
+
+  /// True si [url] es segura para pasarle a url_launcher. Sin este chequeo,
+  /// un enlace guardado como "javascript:..." u otro esquema no-web se
+  /// pasaría a launchUrl tal cual — url_launcher suele ignorarlos en Android,
+  /// pero eso depende de la plataforma y no es una garantía del código.
+  static bool isSafeExternalUrl(String url) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return false;
+    return _safeUrlSchemes.contains(uri.scheme.toLowerCase());
+  }
 }

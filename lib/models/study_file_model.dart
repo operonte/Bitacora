@@ -30,6 +30,12 @@ class StudyFile {
   final String category;
   final String? description;
   final String? externalUrl;
+
+  /// Carrera a la que pertenece el archivo, solo para poder filtrarlo. No
+  /// cambia quién lo ve: los archivos siguen siendo privados de quien los
+  /// sube (política study_files_own). Null en los subidos antes de que
+  /// existiera este campo, que aparecen como "Sin carrera".
+  final String? careerId;
   final DateTime createdAt;
 
   StudyFile({
@@ -44,6 +50,7 @@ class StudyFile {
     this.category = StudyFileCategory.trabajo,
     this.description,
     this.externalUrl,
+    this.careerId,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -66,6 +73,7 @@ class StudyFile {
       'category': category,
       'description': description,
       'external_url': externalUrl,
+      'career_id': careerId,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -87,6 +95,7 @@ class StudyFile {
       category: StudyFileCategory.parse(map['category']),
       description: _nullIfEmpty(map['description']),
       externalUrl: _nullIfEmpty(map['external_url']),
+      careerId: _nullIfEmpty(map['career_id']),
       createdAt: _parseDate(map['created_at']),
     );
   }
@@ -103,6 +112,7 @@ class StudyFile {
     String? category,
     String? description,
     String? externalUrl,
+    String? careerId,
     DateTime? createdAt,
   }) {
     return StudyFile(
@@ -117,6 +127,7 @@ class StudyFile {
       category: category ?? this.category,
       description: description ?? this.description,
       externalUrl: externalUrl ?? this.externalUrl,
+      careerId: careerId ?? this.careerId,
       createdAt: createdAt ?? this.createdAt,
     );
   }

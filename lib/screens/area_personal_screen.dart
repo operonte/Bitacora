@@ -9,6 +9,7 @@ import '../services/study_file_service.dart';
 import '../services/google_drive_service.dart';
 import '../services/career_service.dart';
 import '../utils/file_security_validator.dart';
+import '../utils/input_sanitizer.dart';
 import '../utils/custom_file_picker.dart';
 import '../widgets/subject_group_list.dart';
 import 'meetings_screen.dart';
@@ -28,6 +29,12 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   late TabController _tabController;
   final StudyFileService _studyFileService = StudyFileService();
   bool _isUploading = false;
+
+  /// Filtro de carrera de cada pestaña, por separado: null = todas. No se
+  /// persiste, igual que en reuniones, para no esconder archivos por un
+  /// filtro que quedó puesto de la sesión anterior.
+  String? _filesCareerFilter;
+  String? _materialsCareerFilter;
 
   @override
   void initState() {
@@ -117,6 +124,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         subject: customSubject,
       );
 
+      final customCareerId = details['careerId'] ?? '';
+
       final studyFile = StudyFile(
         name: customName,
         subject: customSubject,
@@ -125,6 +134,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         sizeBytes: file.size,
         driveLink: uploadRes.webViewLink,
         userId: user.id,
+        careerId: customCareerId.isEmpty ? null : customCareerId,
       );
 
       await _studyFileService.saveFile(studyFile);
@@ -152,17 +162,25 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     }
   }
 
-  Future<Map<String, String>?> _showFileDetailsDialog(String originalName) async {
-    final careers = CareerService().getCareers();
-    final List<String> subjects = ['General'];
-    for (final c in careers) {
+  /// Materias que se pueden elegir para [careerId]. Con una carrera elegida
+  /// solo se ofrecen las suyas: mezclar las de todas dejaba guardar un
+  /// archivo de Informática con una asignatura de Teología. Sin carrera se
+  /// ofrecen todas, porque ahí no hay nada que acote.
+  List<String> _subjectsForCareer(String? careerId) {
+    final subjects = <String>['General'];
+    for (final c in CareerService().getCareers()) {
+      if (careerId != null && c.id != careerId) continue;
       for (final s in c.predefinedSubjects) {
-        if (!subjects.contains(s.name)) {
-          subjects.add(s.name);
-        }
+        if (!subjects.contains(s.name)) subjects.add(s.name);
       }
     }
-    
+    return subjects;
+  }
+
+  Future<Map<String, String>?> _showFileDetailsDialog(String originalName) async {
+    final careers = CareerService().getCareers();
+    String? selectedCareerId = CareerService().getSelectedCareer()?.id;
+    List<String> subjects = _subjectsForCareer(selectedCareerId);
     String selectedSubject = subjects.length > 1 ? subjects[1] : 'General';
 
     final nameController = TextEditingController(text: originalName);
@@ -210,20 +228,60 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                           return null;
                         },
                       ),
+                      if (careers.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String?>(
+                          initialValue: careers.any((c) => c.id == selectedCareerId)
+                              ? selectedCareerId
+                              : null,
+                          decoration: InputDecoration(
+                            labelText: 'Carrera',
+                            prefixIcon: const Icon(Icons.workspace_premium_outlined),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('Sin carrera'),
+                            ),
+                            for (final c in careers)
+                              DropdownMenuItem<String?>(
+                                value: c.id,
+                                child: Text(c.name, overflow: TextOverflow.ellipsis),
+                              ),
+                          ],
+                          onChanged: (val) => setDialogState(() {
+                            selectedCareerId = val;
+                            // La materia elegida puede no existir en la
+                            // carrera nueva: se recalcula la lista y, si ya
+                            // no calza, se vuelve a la primera.
+                            subjects = _subjectsForCareer(val);
+                            if (!subjects.contains(selectedSubject)) {
+                              selectedSubject =
+                                  subjects.length > 1 ? subjects[1] : subjects.first;
+                            }
+                          }),
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       DropdownButtonFormField<String>(
-                        initialValue: subjects.contains(selectedSubject) ? selectedSubject : subjects.first,
+                        initialValue: subjects.contains(selectedSubject)
+                            ? selectedSubject
+                            : subjects.first,
                         decoration: InputDecoration(
                           labelText: 'Asignatura / Materia',
                           prefixIcon: const Icon(Icons.school_outlined),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
-                        items: subjects.map((sub) {
-                          return DropdownMenuItem<String>(
-                            value: sub,
-                            child: Text(sub, overflow: TextOverflow.ellipsis),
-                          );
-                        }).toList(),
+                        items: subjects
+                            .map((sub) => DropdownMenuItem<String>(
+                                  value: sub,
+                                  child:
+                                      Text(sub, overflow: TextOverflow.ellipsis),
+                                ))
+                            .toList(),
                         onChanged: (val) {
                           if (val != null) {
                             setDialogState(() => selectedSubject = val);
@@ -245,6 +303,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                       Navigator.pop(ctx, {
                         'name': nameController.text.trim(),
                         'subject': selectedSubject,
+                        // Cadena vacía = sin carrera; el mapa no admite nulos.
+                        'careerId': selectedCareerId ?? '',
                       });
                     }
                   },
@@ -382,6 +442,15 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       return;
     }
 
+    // El enlace externo lo escribe el usuario, así que no se le pasa a
+    // launchUrl sin comprobar el esquema: solo http/https.
+    if (!InputSanitizer.isSafeExternalUrl(url)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El enlace no es válido (solo se admite http o https).')),
+      );
+      return;
+    }
+
     final uri = Uri.tryParse(url);
     if (uri == null) return;
 
@@ -501,20 +570,75 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     );
   }
 
+  /// Desplegable de carrera de una pestaña de archivos. Igual que en
+  /// reuniones, solo se muestra si hay más de una opción real: con una sola
+  /// carrera el filtro no filtraría nada y sería solo ruido.
+  Widget? _buildFilesCareerFilter({
+    required String category,
+    required String? value,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final used = _studyFileService.usedCareerIds(category);
+    if (used.length < 2) return null;
+
+    final careers = CareerService().getCareers();
+    String labelFor(String id) {
+      if (id == StudyFileService.noCareerFilter) return 'Sin carrera';
+      for (final c in careers) {
+        if (c.id == id) return c.name;
+      }
+      return id;
+    }
+
+    final options = used.toList()
+      ..sort((a, b) => labelFor(a).compareTo(labelFor(b)));
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DropdownButtonFormField<String?>(
+        initialValue: value,
+        isDense: true,
+        decoration: InputDecoration(
+          labelText: 'Carrera',
+          prefixIcon: const Icon(Icons.school_outlined, size: 20),
+          isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        items: [
+          const DropdownMenuItem<String?>(
+            value: null,
+            child: Text('Todas las carreras'),
+          ),
+          for (final id in options)
+            DropdownMenuItem<String?>(value: id, child: Text(labelFor(id))),
+        ],
+        onChanged: onChanged,
+      ),
+    );
+  }
+
   Widget _buildFilesTab(dynamic career) {
     return ListenableBuilder(
       listenable: _studyFileService,
       builder: (context, _) {
-        final allFiles = _studyFileService.getFiles();
-
-        if (allFiles.isEmpty) {
+        // El vacío se decide sin el filtro puesto: si hay archivos pero el
+        // filtro no selecciona ninguno, hay que seguir mostrando el
+        // desplegable para poder quitarlo.
+        if (_studyFileService.getFiles().isEmpty) {
           return _buildEmptyFilesState();
         }
+
+        final files = _studyFileService.getFiles(careerId: _filesCareerFilter);
 
         return RefreshIndicator(
           onRefresh: () => _syncAndCleanFiles(),
           child: SubjectGroupList<StudyFile>(
-            items: allFiles,
+            items: files,
+            header: _buildFilesCareerFilter(
+              category: StudyFileCategory.trabajo,
+              value: _filesCareerFilter,
+              onChanged: (v) => setState(() => _filesCareerFilter = v),
+            ),
             subjectOf: (f) => f.subject,
             countLabelOf: (count) => '$count ${count == 1 ? 'archivo' : 'archivos'}',
             itemBuilder: _buildFileCard,
@@ -662,7 +786,12 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                   ],
                 ),
               ),
-              // Acciones: Compartir y Eliminar
+              // Acciones: Editar, Compartir y Eliminar
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 20),
+                tooltip: 'Editar',
+                onPressed: () => _showEditFileDialog(file),
+              ),
               IconButton(
                 icon: Icon(Icons.share_rounded, size: 20, color: primaryColor),
                 tooltip: 'Compartir',
@@ -678,6 +807,199 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         ),
       ),
     );
+  }
+
+  /// Edita los datos de un archivo ya subido: nombre, materia, carrera y
+  /// —en el material docente— descripción. No toca el archivo en Drive, solo
+  /// sus metadatos, así que sirve para corregir una carrera mal asignada sin
+  /// tener que volver a subirlo. Es además la única forma de ponerle carrera
+  /// a los archivos subidos antes de que ese campo existiera.
+  Future<void> _showEditFileDialog(StudyFile file) async {
+    final careers = CareerService().getCareers();
+    String? selectedCareerId =
+        careers.any((c) => c.id == file.careerId) ? file.careerId : null;
+    List<String> subjects = _subjectsForCareer(selectedCareerId);
+    // La materia guardada puede no estar en la carrera (archivo viejo, mal
+    // clasificado, o carrera de la que el usuario se salió): se agrega para
+    // no perderla al abrir el desplegable.
+    if (file.subject.isNotEmpty && !subjects.contains(file.subject)) {
+      subjects.insert(1, file.subject);
+    }
+
+    String selectedSubject =
+        subjects.contains(file.subject) ? file.subject : subjects.first;
+
+    final nameController = TextEditingController(text: file.name);
+    final descriptionController =
+        TextEditingController(text: file.description ?? '');
+    final formKey = GlobalKey<FormState>();
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final primaryColor = Theme.of(context).primaryColor;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  Icon(Icons.edit_outlined, color: primaryColor),
+                  const SizedBox(width: 10),
+                  const Text('Editar',
+                      style: TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextFormField(
+                        controller: nameController,
+                        decoration: InputDecoration(
+                          labelText: 'Nombre',
+                          prefixIcon: const Icon(Icons.description_outlined),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                        validator: (val) =>
+                            (val == null || val.trim().isEmpty)
+                                ? 'Ingresa un nombre'
+                                : null,
+                      ),
+                      if (file.isGuia) ...[
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: descriptionController,
+                          maxLines: 2,
+                          decoration: InputDecoration(
+                            labelText: 'Descripción (opcional)',
+                            prefixIcon: const Icon(Icons.notes_rounded),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ],
+                      if (careers.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String?>(
+                          initialValue: selectedCareerId,
+                          decoration: InputDecoration(
+                            labelText: 'Carrera',
+                            prefixIcon:
+                                const Icon(Icons.workspace_premium_outlined),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('Sin carrera'),
+                            ),
+                            for (final c in careers)
+                              DropdownMenuItem<String?>(
+                                value: c.id,
+                                child: Text(c.name,
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                          ],
+                          onChanged: (val) => setDialogState(() {
+                            selectedCareerId = val;
+                            subjects = _subjectsForCareer(val);
+                            if (!subjects.contains(selectedSubject)) {
+                              selectedSubject = subjects.length > 1
+                                  ? subjects[1]
+                                  : subjects.first;
+                            }
+                          }),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        initialValue: subjects.contains(selectedSubject)
+                            ? selectedSubject
+                            : subjects.first,
+                        decoration: InputDecoration(
+                          labelText: 'Asignatura / Materia',
+                          prefixIcon: const Icon(Icons.school_outlined),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                        items: subjects
+                            .map((sub) => DropdownMenuItem<String>(
+                                  value: sub,
+                                  child: Text(sub,
+                                      overflow: TextOverflow.ellipsis),
+                                ))
+                            .toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setDialogState(() => selectedSubject = val);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton.icon(
+                  onPressed: () async {
+                    if (!formKey.currentState!.validate()) return;
+                    final description = descriptionController.text.trim();
+                    try {
+                      await _studyFileService.saveFile(
+                        StudyFile.fromMap({
+                          ...file.toMap(),
+                          'name': nameController.text.trim(),
+                          'subject': selectedSubject,
+                          'career_id': selectedCareerId,
+                          // Vacío borra la descripción; solo el material
+                          // docente muestra el campo, el resto la conserva.
+                          'description':
+                              file.isGuia ? description : file.description,
+                        }),
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx, true);
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(
+                            content: Text('Error al guardar: $e'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  style: FilledButton.styleFrom(backgroundColor: primaryColor),
+                  icon: const Icon(Icons.check_rounded, size: 18),
+                  label: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cambios guardados'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    }
   }
 
   Future<void> _confirmDelete(StudyFile file) async {
@@ -724,17 +1046,26 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     return ListenableBuilder(
       listenable: _studyFileService,
       builder: (context, _) {
-        final materials =
-            _studyFileService.getFiles(category: StudyFileCategory.guia);
-
-        if (materials.isEmpty) {
+        if (_studyFileService
+            .getFiles(category: StudyFileCategory.guia)
+            .isEmpty) {
           return _buildEmptyMaterialsState();
         }
+
+        final materials = _studyFileService.getFiles(
+          category: StudyFileCategory.guia,
+          careerId: _materialsCareerFilter,
+        );
 
         return RefreshIndicator(
           onRefresh: () => _studyFileService.syncFromSupabase(),
           child: SubjectGroupList<StudyFile>(
             items: materials,
+            header: _buildFilesCareerFilter(
+              category: StudyFileCategory.guia,
+              value: _materialsCareerFilter,
+              onChanged: (v) => setState(() => _materialsCareerFilter = v),
+            ),
             subjectOf: (m) => m.subject,
             countLabelOf: (count) => '$count ${count == 1 ? 'material' : 'materiales'}',
             itemBuilder: _buildMaterialCard,
@@ -880,12 +1211,18 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                   ],
                 ),
               ),
-              if (canDelete)
+              if (canDelete) ...[
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 20),
+                  tooltip: 'Editar',
+                  onPressed: () => _showEditFileDialog(material),
+                ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline_rounded, size: 20, color: AppColors.error),
                   tooltip: 'Eliminar',
                   onPressed: () => _confirmDeleteMaterial(material),
                 ),
+              ],
             ],
           ),
         ),
@@ -1006,6 +1343,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         subfolder: GoogleDriveService.teachingMaterialFolderName,
       );
 
+      final materialCareerId = details['careerId'] ?? '';
       final material = StudyFile(
         subject: details['subject']!,
         name: details['name']!,
@@ -1015,6 +1353,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         sizeBytes: file.size,
         userId: user.id,
         category: StudyFileCategory.guia,
+        careerId: materialCareerId.isEmpty ? null : materialCareerId,
       );
       await _studyFileService.saveFile(material);
 
@@ -1053,12 +1392,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     }
 
     final careers = CareerService().getCareers();
-    final List<String> subjects = ['General'];
-    for (final c in careers) {
-      for (final s in c.predefinedSubjects) {
-        if (!subjects.contains(s.name)) subjects.add(s.name);
-      }
-    }
+    String? selectedCareerId = CareerService().getSelectedCareer()?.id;
+    List<String> subjects = _subjectsForCareer(selectedCareerId);
     String selectedSubject = subjects.length > 1 ? subjects[1] : 'General';
 
     final titleController = TextEditingController();
@@ -1115,22 +1450,60 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                           return null;
                         },
                       ),
+                      if (careers.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String?>(
+                          initialValue: careers.any((c) => c.id == selectedCareerId)
+                              ? selectedCareerId
+                              : null,
+                          decoration: InputDecoration(
+                            labelText: 'Carrera',
+                            prefixIcon: const Icon(Icons.workspace_premium_outlined),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('Sin carrera'),
+                            ),
+                            for (final c in careers)
+                              DropdownMenuItem<String?>(
+                                value: c.id,
+                                child: Text(c.name, overflow: TextOverflow.ellipsis),
+                              ),
+                          ],
+                          onChanged: (val) => setDialogState(() {
+                            selectedCareerId = val;
+                            subjects = _subjectsForCareer(val);
+                            if (!subjects.contains(selectedSubject)) {
+                              selectedSubject = subjects.length > 1
+                                  ? subjects[1]
+                                  : subjects.first;
+                            }
+                          }),
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       DropdownButtonFormField<String>(
-                        initialValue: subjects.contains(selectedSubject) ? selectedSubject : subjects.first,
+                        initialValue: subjects.contains(selectedSubject)
+                            ? selectedSubject
+                            : subjects.first,
                         decoration: InputDecoration(
                           labelText: 'Asignatura / Materia',
                           prefixIcon: const Icon(Icons.school_outlined),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        items: subjects.map((sub) {
-                          return DropdownMenuItem<String>(
-                            value: sub,
-                            child: Text(sub, overflow: TextOverflow.ellipsis),
-                          );
-                        }).toList(),
+                        items: subjects
+                            .map((sub) => DropdownMenuItem<String>(
+                                  value: sub,
+                                  child: Text(sub, overflow: TextOverflow.ellipsis),
+                                ))
+                            .toList(),
                         onChanged: (val) {
-                          if (val != null) setDialogState(() => selectedSubject = val);
+                          if (val != null) {
+                            setDialogState(() => selectedSubject = val);
+                          }
                         },
                       ),
                     ],
@@ -1152,6 +1525,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                         externalUrl: urlController.text.trim(),
                         userId: user.id,
                         category: StudyFileCategory.guia,
+                        careerId: selectedCareerId,
                       );
                       await _studyFileService.saveFile(material);
                       if (ctx.mounted) Navigator.pop(ctx, true);

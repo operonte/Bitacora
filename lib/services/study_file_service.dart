@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/study_file_model.dart';
+import '../utils/input_sanitizer.dart';
 import '../utils/logger.dart';
 import 'google_drive_service.dart';
 
@@ -63,7 +64,13 @@ class StudyFileService extends ChangeNotifier {
   ///
   /// El filtro por usuario importa: la caja de Hive sobrevive al cierre de
   /// sesión, así que sin él una cuenta vería los archivos de la anterior.
-  List<StudyFile> getFiles({String category = StudyFileCategory.trabajo}) {
+  /// Valor de [StudyFile.careerId] que representa "sin carrera" en el filtro.
+  static const String noCareerFilter = '__sin_carrera__';
+
+  List<StudyFile> getFiles({
+    String category = StudyFileCategory.trabajo,
+    String? careerId,
+  }) {
     if (_filesBox == null) return [];
     try {
       final userId = Supabase.instance.client.auth.currentUser?.id;
@@ -78,6 +85,12 @@ class StudyFileService extends ChangeNotifier {
           .whereType<StudyFile>()
           .where((f) => f.category == category)
           .where((f) => userId == null || f.userId.isEmpty || f.userId == userId)
+          .where((f) {
+            if (careerId == null) return true;
+            final id = f.careerId;
+            if (careerId == noCareerFilter) return id == null || id.isEmpty;
+            return id == careerId;
+          })
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     } catch (e) {
@@ -85,6 +98,15 @@ class StudyFileService extends ChangeNotifier {
       return [];
     }
   }
+
+  /// Carreras que aparecen entre los archivos de [category], para armar el
+  /// filtro sin ofrecer opciones que no seleccionarían nada.
+  Set<String> usedCareerIds(String category) =>
+      getFiles(category: category)
+          .map((f) => (f.careerId == null || f.careerId!.isEmpty)
+              ? noCareerFilter
+              : f.careerId!)
+          .toSet();
 
   /// Todos los archivos en caché, sin filtrar por categoría. Para la
   /// sincronización, que trabaja sobre el conjunto completo.
@@ -96,10 +118,26 @@ class StudyFileService extends ChangeNotifier {
         .toList();
   }
 
+  /// Único punto de guardado de archivos (subida, edición y enlaces): a
+  /// diferencia de tareas y reuniones, que sanitizan en la pantalla, acá se
+  /// hace en el servicio para que cubra los tres flujos sin repetir la
+  /// llamada en cada uno.
   Future<void> saveFile(StudyFile file) async {
     final user = Supabase.instance.client.auth.currentUser;
     final fileId = file.id ?? DateTime.now().millisecondsSinceEpoch.toString();
-    final fileToSave = StudyFile.fromMap({...file.toMap(), 'id': fileId});
+    final sanitizedName = InputSanitizer.sanitizeText(
+      file.name,
+      maxLength: InputSanitizer.maxTitleLength,
+    );
+    final fileToSave = StudyFile.fromMap({
+      ...file.toMap(),
+      'id': fileId,
+      // Un nombre que quede vacío tras sanitizar (era solo HTML/scripts)
+      // rompería la lista y las tarjetas, que asumen texto no vacío.
+      'name': sanitizedName.isEmpty ? file.name.trim() : sanitizedName,
+      if (file.description != null)
+        'description': InputSanitizer.sanitizeText(file.description!),
+    });
 
     if (user != null) {
       try {
@@ -115,6 +153,15 @@ class StudyFileService extends ChangeNotifier {
     }
 
     await _filesBox?.put(fileId, fileToSave.toMap());
+    notifyListeners();
+  }
+
+  /// Vacía la caché local de archivos. Se llama al cerrar sesión: la caja de
+  /// Hive sobrevive al logout, y si queda con los archivos de la cuenta
+  /// anterior, la siguiente los ve y —peor— el escaneo de Drive los da por
+  /// borrados porque no están en el Drive de la cuenta nueva.
+  Future<void> clearCache() async {
+    await _filesBox?.clear();
     notifyListeners();
   }
 
@@ -186,8 +233,12 @@ class StudyFileService extends ChangeNotifier {
         }
       }
 
-      // Eliminar de Hive archivos que ya no existan en Supabase
-      if (_filesBox != null && response.isNotEmpty) {
+      // Eliminar de Hive archivos que ya no existan en Supabase.
+      //
+      // Sin condicionar a que la respuesta traiga algo: antes esto se saltaba
+      // cuando la cuenta no tenía ningún archivo, que es justo el caso en que
+      // la caché quedaba llena de los archivos de la sesión anterior.
+      if (_filesBox != null) {
         final keysToRemove = <dynamic>[];
         for (final key in _filesBox!.keys) {
           final val = _filesBox!.get(key);
@@ -218,7 +269,11 @@ class StudyFileService extends ChangeNotifier {
     await syncFromSupabase();
 
     try {
-      final currentFiles = _allCachedFiles();
+      // Solo los archivos de esta cuenta: preguntarle al Drive de la sesión
+      // actual por archivos de otra cuenta siempre da "no existe", y el
+      // borrado de abajo se disparaba en cascada con un aviso por archivo.
+      final currentFiles =
+          _allCachedFiles().where((f) => f.userId == user.id).toList();
       final driveService = GoogleDriveService();
 
       // 2. Verificar existencia de archivos en Google Drive (Borrados externos).

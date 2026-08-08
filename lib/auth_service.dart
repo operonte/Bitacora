@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/logger.dart';
 import 'services/local_cache_service.dart';
 import 'services/google_drive_service.dart';
+import 'services/study_file_service.dart';
+import 'services/meeting_service.dart';
 
 const _webClientId =
     '651071616802-1pgjc8uu88a58m5999noa0uits5n6s1j.apps.googleusercontent.com';
@@ -13,6 +15,17 @@ class AuthService {
   final SupabaseClient _client = Supabase.instance.client;
 
   AuthService();
+
+  /// Cliente nativo de Google. Se construye igual en todos lados para que
+  /// cerrar sesión afecte a la misma sesión que después inicia sesión.
+  GoogleSignIn _buildGoogleSignIn() => GoogleSignIn(
+        serverClientId: _webClientId,
+        scopes: const [
+          'email',
+          'profile',
+          'https://www.googleapis.com/auth/drive.file',
+        ],
+      );
 
   /// Stream estable de sesión de usuario.
   Stream<AuthState> get authStateChanges => _client.auth.onAuthStateChange;
@@ -42,14 +55,18 @@ class AuthService {
         );
       } else {
         // En Móvil (Android): Login 100% Nativo sin abrir navegador ni URLs
-        final googleSignIn = GoogleSignIn(
-          serverClientId: _webClientId,
-          scopes: [
-            'email',
-            'profile',
-            'https://www.googleapis.com/auth/drive.file',
-          ],
-        );
+        final googleSignIn = _buildGoogleSignIn();
+
+        // Sin esto, signIn() reutiliza en silencio la última cuenta usada y
+        // nunca muestra el selector. Equivale al prompt=select_account que
+        // ya se pasa en la rama web: quien tiene varias cuentas de Google en
+        // el teléfono tiene que poder elegir con cuál entra.
+        try {
+          await googleSignIn.signOut();
+        } catch (e) {
+          Logger.warning('No se pudo limpiar la sesión de Google previa: $e',
+              tag: 'AuthService');
+        }
 
         final googleUser = await googleSignIn.signIn();
         if (googleUser == null) {
@@ -86,7 +103,21 @@ class AuthService {
   Future<void> signOut() async {
     try {
       await LocalCacheService().clearAllCache();
+      // clearAllCache solo vacía tareas, materias y metadatos. Sin esto la
+      // caja de archivos quedaba con los de la cuenta anterior.
+      await StudyFileService().clearCache();
+      await MeetingService().clearCache();
       await GoogleDriveService.clearToken();
+      // Cerrar solo la sesión de Supabase dejaba viva la de Google, así que
+      // el siguiente inicio volvía a entrar con la misma cuenta sin preguntar.
+      if (!kIsWeb) {
+        try {
+          await _buildGoogleSignIn().signOut();
+        } catch (e) {
+          Logger.warning('No se pudo cerrar la sesión de Google: $e',
+              tag: 'AuthService');
+        }
+      }
       await _client.auth.signOut();
       Logger.auth('Sesión cerrada exitosamente');
     } catch (e) {

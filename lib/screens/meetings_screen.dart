@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/meeting_model.dart';
+import '../utils/input_sanitizer.dart';
 import '../services/meeting_service.dart';
 import '../widgets/subject_group_list.dart';
 import 'add_meeting_screen.dart';
@@ -73,7 +74,20 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
   }
 
   Future<void> _launchMeetingUrl(String url) async {
-    final uri = Uri.parse(url.startsWith('http') ? url : 'https://$url');
+    // Desde que las reuniones se comparten, este enlace puede haberlo escrito
+    // otro miembro de la carrera: se comprueba el esquema antes de abrirlo.
+    // El prefijo https:// cubre el caso normal de pegar "meet.google.com/...".
+    final normalized = url.startsWith('http') ? url : 'https://$url';
+    if (!InputSanitizer.isSafeExternalUrl(normalized)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('El enlace de la reunión no es válido.')),
+        );
+      }
+      return;
+    }
+
+    final uri = Uri.parse(normalized);
     try {
       if (!await canLaunchUrl(uri)) {
         if (mounted) {

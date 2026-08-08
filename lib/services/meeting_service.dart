@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/meeting_model.dart';
 import '../utils/logger.dart';
 import '../notification_service.dart';
+import 'career_service.dart';
 import 'supabase_db_service.dart';
 
 class MeetingService extends ChangeNotifier {
@@ -48,6 +49,12 @@ class MeetingService extends ChangeNotifier {
             return null;
           })
           .whereType<Meeting>()
+          // Nunca mostrar reuniones de carreras a las que el usuario ya no
+          // pertenece: al salir de una carrera su caché local sobrevive, y
+          // sin esto seguían apareciendo agrupadas bajo el id crudo de una
+          // carrera que ni siquiera se puede resolver a un nombre. Es el
+          // mismo criterio que ya se aplicaba a las tareas.
+          .where((m) => CareerService().matchesAnyCareer(m.careerId))
           .where((m) {
             if (careerId == null) return true;
             final id = m.careerId;
@@ -103,6 +110,14 @@ class MeetingService extends ChangeNotifier {
 
     if (deleted > 0) notifyListeners();
     return deleted;
+  }
+
+  /// Vacía la caché local de reuniones. Igual que con los archivos, la caja
+  /// sobrevive al cierre de sesión y sin esto la cuenta siguiente vería las
+  /// reuniones de la anterior hasta la primera sincronización.
+  Future<void> clearCache() async {
+    await _meetingBox?.clear();
+    notifyListeners();
   }
 
   Future<void> saveMeeting(Meeting meeting) async {

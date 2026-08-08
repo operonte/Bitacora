@@ -1,6 +1,7 @@
 import 'package:bitacora/utils/logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:bitacora/models/career_model.dart';
 import 'package:bitacora/models/subject_model.dart';
 import 'package:bitacora/utils/hive_box_helper.dart';
@@ -85,6 +86,21 @@ class CareerService extends ChangeNotifier {
   /// Ids de todas las carreras del usuario.
   List<String> get careerIds => getCareers().map((c) => c.id).toList();
 
+  /// Carrera que contiene la materia [subjectName], o null si ninguna la
+  /// tiene o si más de una comparte ese nombre (ahí no se puede decidir sin
+  /// preguntar). Sirve para proponer una carrera por defecto al subir un
+  /// archivo, no para decidirla en silencio.
+  String? careerIdForSubject(String subjectName) {
+    final needle = subjectName.trim().toLowerCase();
+    if (needle.isEmpty) return null;
+    final matches = getCareers()
+        .where((c) => c.predefinedSubjects
+            .any((s) => s.name.trim().toLowerCase() == needle))
+        .map((c) => c.id)
+        .toSet();
+    return matches.length == 1 ? matches.first : null;
+  }
+
   /// Indica si el usuario pertenece a la carrera [careerId].
   bool isMember(String? careerId) {
     if (careerId == null || careerId.isEmpty) return true;
@@ -124,8 +140,15 @@ class CareerService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Quita una carrera de las membresías del usuario.
+  /// Quita una carrera de las membresías del usuario, local y remotamente.
+  ///
+  /// La baja en `user_careers` es lo que realmente revoca el acceso: mientras
+  /// esa fila exista, las políticas RLS siguen dejando leer las reuniones y
+  /// tareas compartidas de la carrera aunque el usuario ya no la vea en su
+  /// lista local. Antes solo se borraba en local y el acceso quedaba abierto.
   Future<void> removeCareer(String careerId) async {
+    await _revokeRemoteMembership(careerId);
+
     final careers = getCareers()..removeWhere((c) => c.id == careerId);
     await _careerBox?.put(_careersKey, careers.map((c) => c.toMap()).toList());
 
@@ -139,6 +162,27 @@ class CareerService extends ChangeNotifier {
     }
     Logger.info('Carrera removida: $careerId');
     notifyListeners();
+  }
+
+  /// Borra la membresía en Supabase. La política user_careers_delete_own ya
+  /// permite que cada usuario elimine las suyas.
+  Future<void> _revokeRemoteMembership(String careerId) async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      await Supabase.instance.client
+          .from('user_careers')
+          .delete()
+          .eq('user_id', uid)
+          .eq('career_id', careerId);
+    } catch (e) {
+      // Si falla (offline), la carrera igual desaparece en local, pero el
+      // acceso remoto sigue vigente hasta que se reintente.
+      Logger.warning(
+        'No se pudo revocar la membresía remota de $careerId: $e',
+        tag: 'CareerService',
+      );
+    }
   }
 
   /// Carga las carreras creadas/modificadas en el admin (Supabase) y las deja

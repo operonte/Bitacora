@@ -7,9 +7,20 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     
+    <!--
+      allowBackup=false a propósito: la copia automática de Android respalda
+      los datos cifrados de la app, pero NO la clave que vive en el Keystore.
+      Al restaurarla en otro dispositivo (o tras reinstalar) los datos quedan
+      indescifrables y el arranque moría con BadPaddingException/BAD_DECRYPT.
+      No se pierde nada: tareas, materias y reuniones viven en Supabase y se
+      vuelven a bajar al iniciar sesión.
+    -->
     <application
         android:label="bitacora"
         android:name="${applicationName}"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
