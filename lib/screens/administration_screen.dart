@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../colors.dart';
+import '../services/admin_auth_service.dart';
+import 'admin/admins_screen.dart';
+import 'admin/career_members_screen.dart';
+import 'admin/career_subjects_screen.dart';
 import '../models/career_model.dart';
-import '../models/subject_model.dart';
-import '../notification_service.dart';
 import '../services/career_supabase_service.dart';
 
 /// Pantalla de administración para gestionar carreras y asignaturas.
@@ -248,479 +250,253 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
     );
   }
 
-  void _showDeleteCareerDialog(Career career) {
-    showDialog(
+  /// Borrar una carrera no es solo borrar una fila: `user_careers` tiene
+  /// borrado en cascada, así que expulsa de golpe a todos sus miembros y deja
+  /// huérfanas sus tareas, reuniones y archivos compartidos.
+  ///
+  /// Antes el diálogo solo decía "no se puede deshacer", que es cierto y no
+  /// dice nada. Ahora se le pregunta al servidor qué cuelga de esa carrera, se
+  /// muestra, y hay que escribir su nombre para confirmar.
+  Future<void> _showDeleteCareerDialog(Career career) async {
+    CareerImpact? impacto;
+    try {
+      impacto = await AdminAuthService.careerImpact(career.id);
+    } catch (_) {
+      // Sin el detalle igual se puede borrar, pero se avisa que se está
+      // decidiendo a ciegas.
+    }
+
+    if (!mounted) return;
+
+    final nombreController = TextEditingController();
+    final confirmado = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar Carrera'),
-        content: Text(
-          '¿Estás seguro de que deseas eliminar la carrera "${career.name}"? Esta acción no se puede deshacer.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                await _careerService.deleteCareer(career.id);
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('✅ Carrera eliminada exitosamente'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al eliminar carrera: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showCareerSubjects(Career career) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Materias de ${career.name}'),
-        content: StreamBuilder<Career?>(
-          stream: _careerService.getCareerStream(career.id),
-          initialData: career,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            final currentCareer = snapshot.data;
-            if (currentCareer == null) {
-              return const Text('Carrera no encontrada');
-            }
-
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (currentCareer.predefinedSubjects.isEmpty)
-                  const Text('No hay materias registradas')
-                else
-                  ...currentCareer.predefinedSubjects.map(
-                    (subject) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          const Text('• '),
-                          Expanded(child: Text(subject.name)),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.edit,
-                              size: 20,
-                              color: Colors.blue,
-                            ),
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _showEditSubjectDialog(currentCareer, subject);
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.delete,
-                              size: 20,
-                              color: Colors.red,
-                            ),
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _showDeleteSubjectDialog(currentCareer, subject);
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _showAddSubjectDialog(currentCareer);
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('Agregar Materia'),
-                ),
-              ],
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAddSubjectDialog(Career career) {
-    final nameController = TextEditingController();
-    final professorController = TextEditingController();
-    final descriptionController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Agregar Materia'),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Eliminar carrera'),
+          content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextFormField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre de la materia *',
-                    border: OutlineInputBorder(),
+                Text('Vas a eliminar "${career.name}".'),
+                const SizedBox(height: 12),
+                if (impacto == null)
+                  const Text(
+                    'No se pudo consultar qué contiene. Continúa solo si '
+                    'estás seguro.',
+                    style: TextStyle(fontSize: 13, color: AppColors.warning),
+                  )
+                else if (impacto.isEmpty)
+                  const Text(
+                    'No tiene miembros ni contenido compartido.',
+                    style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                  )
+                else ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _impactRow('${impacto.members} miembros',
+                            'pierden el acceso'),
+                        _impactRow('${impacto.tasks} tareas compartidas',
+                            'quedan sin carrera'),
+                        _impactRow('${impacto.meetings} reuniones',
+                            'quedan sin carrera'),
+                        _impactRow('${impacto.files} archivos',
+                            'quedan sin carrera'),
+                      ],
+                    ),
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'El nombre de la materia es obligatorio';
-                    }
-                    if (value.trim().length < 3) {
-                      return 'El nombre debe tener al menos 3 caracteres';
-                    }
-                    return null;
-                  },
-                ),
+                ],
                 const SizedBox(height: 16),
-                TextFormField(
-                  controller: professorController,
-                  decoration: const InputDecoration(
-                    labelText: 'Profesor *',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'El nombre del profesor es obligatorio';
-                    }
-                    if (value.trim().length < 3) {
-                      return 'El nombre debe tener al menos 3 caracteres';
-                    }
-                    return null;
-                  },
+                const Text(
+                  'No se puede deshacer. Escribe el nombre de la carrera para '
+                  'confirmar:',
+                  style: TextStyle(fontSize: 13),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Descripción (opcional)',
-                    border: OutlineInputBorder(),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: nombreController,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: career.name,
+                    border: const OutlineInputBorder(),
                   ),
-                  maxLines: 3,
+                  onChanged: (_) => setDialogState(() {}),
                 ),
               ],
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) {
-                return;
-              }
-
-              final name = nameController.text.trim();
-              final professor = professorController.text.trim();
-              final description = descriptionController.text.trim();
-
-              final subject = Subject(
-                id: 'subject_${DateTime.now().millisecondsSinceEpoch}',
-                name: name,
-                professor: professor,
-                description: description.isEmpty ? null : description,
-                userId: 'admin',
-                userName: 'Administrador',
-                createdAt: DateTime.now(),
-              );
-
-              try {
-                await _careerService.addSubjectToCareer(career.id, subject);
-                if (context.mounted) {
-                  // No cerramos el diálogo para permitir agregar más materias
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('✅ Materia agregada exitosamente'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al agregar materia: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Agregar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showEditSubjectDialog(Career career, Subject subject) {
-    final nameController = TextEditingController(text: subject.name);
-    final professorController = TextEditingController(text: subject.professor);
-    final descriptionController = TextEditingController(
-      text: subject.description ?? '',
-    );
-    final formKey = GlobalKey<FormState>();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Editar Materia'),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre de la materia *',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'El nombre de la materia es obligatorio';
-                    }
-                    if (value.trim().length < 3) {
-                      return 'El nombre debe tener al menos 3 caracteres';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: professorController,
-                  decoration: const InputDecoration(
-                    labelText: 'Profesor *',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'El nombre del profesor es obligatorio';
-                    }
-                    if (value.trim().length < 3) {
-                      return 'El nombre debe tener al menos 3 caracteres';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Descripción (opcional)',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                ),
-              ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
             ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) {
-                return;
-              }
-
-              final name = nameController.text.trim();
-              final professor = professorController.text.trim();
-              final description = descriptionController.text.trim();
-
-              final updatedSubject = Subject(
-                id: subject.id,
-                name: name,
-                professor: professor,
-                description: description.isEmpty ? null : description,
-                userId: subject.userId,
-                userName: subject.userName,
-                createdAt: subject.createdAt,
-              );
-
-              try {
-                await _careerService.updateSubjectInCareer(
-                  career.id,
-                  updatedSubject,
-                );
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('✅ Materia actualizada exitosamente'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al actualizar materia: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDeleteSubjectDialog(Career career, Subject subject) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar Materia'),
-        content: Text(
-          '¿Estás seguro de que deseas eliminar la materia "${subject.name}"?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                await _careerService.removeSubjectFromCareer(
-                  career.id,
-                  (subject.id != null && subject.id!.isNotEmpty)
-                      ? subject.id!
-                      : subject.name,
-                );
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('✅ Materia eliminada exitosamente'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al eliminar materia: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDebugSection() {
-    final amberBg = context.isDark ? Colors.amber.shade900 : Colors.amber.shade50;
-    final textColor = context.textColor;
-
-    return Card(
-      color: amberBg,
-      elevation: 2,
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.bug_report, color: Colors.deepOrange),
-                const SizedBox(width: 8),
-                Text(
-                  'Debug',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16, color: textColor),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: () async {
-                await NotificationService().showImmediateNotification(
-                  '🔔 Notificación de prueba',
-                  'Si ves esto, las notificaciones funcionan correctamente.',
-                );
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Notificación de prueba enviada'),
-                    ),
-                  );
-                }
-              },
-              icon: const Icon(Icons.notifications_active),
-              label: const Text('Probar notificación'),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: () async {
-                await NotificationService().scheduleTestNotification();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Programada para dentro de 1 minuto — espera y revisa'),
-                    ),
-                  );
-                }
-              },
-              icon: const Icon(Icons.timer_outlined),
-              label: const Text('Probar notificación programada (1 min)'),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+              onPressed: nombreController.text.trim().toLowerCase() ==
+                      career.name.trim().toLowerCase()
+                  ? () => Navigator.pop(ctx, true)
+                  : null,
+              child: const Text('Eliminar'),
             ),
           ],
         ),
       ),
     );
+
+    nombreController.dispose();
+    if (confirmado != true) return;
+
+    try {
+      await _careerService.deleteCareer(career.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Carrera "${career.name}" eliminada'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo eliminar: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  static Widget _impactRow(String cantidad, String consecuencia) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Text(
+          '• $cantidad $consecuencia',
+          style: const TextStyle(fontSize: 13),
+        ),
+      );
+
+  void _openSubjects(Career career) => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CareerSubjectsScreen(career: career),
+        ),
+      );
+
+  void _openMembers(Career career) => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CareerMembersScreen(career: career),
+        ),
+      );
+
+  Future<void> _showChangePasswordDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final nuevaController = TextEditingController();
+    final repetirController = TextEditingController();
+    var obscure = true;
+
+    final cambiada = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Cambiar contraseña'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Es la que se escribe en el campo de clave de acceso para '
+                  'entrar acá. Se guarda cifrada en el servidor.',
+                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: nuevaController,
+                  obscureText: obscure,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: 'Contraseña nueva',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscure
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined),
+                      onPressed: () =>
+                          setDialogState(() => obscure = !obscure),
+                    ),
+                  ),
+                  validator: (val) =>
+                      (val == null || val.length < AdminAuthService.minPasswordLength)
+                          ? 'Mínimo ${AdminAuthService.minPasswordLength} caracteres'
+                          : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: repetirController,
+                  obscureText: obscure,
+                  decoration: const InputDecoration(
+                    labelText: 'Repetir',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (val) =>
+                      val != nuevaController.text ? 'No coinciden' : null,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (!formKey.currentState!.validate()) return;
+                try {
+                  await AdminAuthService.setPassword(nuevaController.text);
+                  if (ctx.mounted) Navigator.pop(ctx, true);
+                } catch (e) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(
+                        content: Text(e.toString().replaceAll('Exception: ', '')),
+                        backgroundColor: AppColors.error,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    nuevaController.dispose();
+    repetirController.dispose();
+
+    if (cambiada == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Contraseña actualizada'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    }
   }
 
   @override
@@ -728,12 +504,23 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Administración'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.shield_outlined),
+            tooltip: 'Administradores',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminsScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.password_outlined),
+            tooltip: 'Cambiar contraseña de administrador',
+            onPressed: _showChangePasswordDialog,
+          ),
+        ],
       ),
-      body: Column(
-        children: [
-          _buildDebugSection(),
-          Expanded(
-            child: StreamBuilder<List<Career>>(
+      body: StreamBuilder<List<Career>>(
         stream: _careerService.getCareersStream(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -787,7 +574,13 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
             itemCount: careers.length,
             itemBuilder: (context, index) {
               final career = careers[index];
-              final isPredefined = Careers.all.any((c) => c.id == career.id);
+              // La etiqueta "(predefinida)" salía siempre: se calculaba con
+              // `Careers.all`, que fusiona las definidas en el código con las
+              // que vienen de Supabase, así que cualquier carrera cargada del
+              // servidor quedaba marcada como predefinida. Se compara contra
+              // las del código y nada más.
+              final isPredefined =
+                  Careers.predefined.any((c) => c.id == career.id);
               return Card(
                 elevation: 4,
                 margin: const EdgeInsets.only(bottom: 16),
@@ -795,33 +588,64 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                   leading: const Icon(Icons.work, color: AppColors.primary),
                   title: Text(career.name),
                   subtitle: Text(
-                    '${career.predefinedSubjects.length} materias${isPredefined ? ' (predefinida)' : ' (personalizada)'}',
+                    '${career.predefinedSubjects.length} materias'
+                    '${isPredefined ? ' · definida en la app' : ' · creada aquí'}',
                   ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.blue),
-                        onPressed: () => _showEditCareerDialog(career),
-                        tooltip: 'Editar',
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'materias':
+                          _openSubjects(career);
+                        case 'miembros':
+                          _openMembers(career);
+                        case 'editar':
+                          _showEditCareerDialog(career);
+                        case 'eliminar':
+                          _showDeleteCareerDialog(career);
+                      }
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: 'materias',
+                        child: ListTile(
+                          leading: Icon(Icons.menu_book_outlined),
+                          title: Text('Materias'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _showDeleteCareerDialog(career),
-                        tooltip: 'Eliminar',
+                      PopupMenuItem(
+                        value: 'miembros',
+                        child: ListTile(
+                          leading: Icon(Icons.group_outlined),
+                          title: Text('Miembros'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
                       ),
-                      const Icon(Icons.arrow_forward_ios),
+                      PopupMenuItem(
+                        value: 'editar',
+                        child: ListTile(
+                          leading: Icon(Icons.edit_outlined),
+                          title: Text('Editar'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'eliminar',
+                        child: ListTile(
+                          leading: Icon(Icons.delete_outline_rounded,
+                              color: AppColors.error),
+                          title: Text('Eliminar'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                     ],
                   ),
-                  onTap: () => _showCareerSubjects(career),
+                  onTap: () => _openSubjects(career),
                 ),
               );
             },
           );
         },
-            ),
-          ),
-        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showCreateCareerDialog,

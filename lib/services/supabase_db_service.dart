@@ -10,10 +10,24 @@ import 'task_progress_service.dart';
 import 'supabase_service.dart';
 import '../utils/logger.dart';
 
+/// La escritura llegó al servidor y fue rechazada: la fila no existe o las
+/// políticas RLS no dejan tocarla.
+///
+/// Se distingue de un fallo de red a propósito. Un corte de conexión se
+/// reintenta más tarde; esto no — reintentarlo dará exactamente el mismo
+/// resultado, así que no se encola y se le informa al usuario.
+class TaskWriteRejectedException implements Exception {
+  TaskWriteRejectedException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Servicio de base de datos usando Supabase.
 ///
-/// Reemplaza FirebaseService con llamadas a Supabase (PostgreSQL + RLS).
-/// Mantiene el mismo patrón offline-first con Hive como caché local.
+/// Consultas a Supabase (PostgreSQL + RLS) con patrón offline-first: Hive es
+/// la caché local y se pinta desde ahí antes de ir a la red.
 ///
 /// Tablas usadas:
 /// - tasks          → tareas personales del usuario
@@ -76,37 +90,16 @@ class SupabaseDbService {
     return map;
   }
 
-  /// Convierte una fila de Supabase en un Task
-  Task _rowToTask(Map<String, dynamic> row) {
-    return Task(
-      id: row['id']?.toString(),
-      title: row['title']?.toString() ?? 'Sin título',
-      description: row['description']?.toString() ?? 'Sin descripción',
-      subject: row['subject']?.toString() ?? 'Sin asignatura',
-      professor: row['professor']?.toString() ?? 'Sin profesor',
-      dueDate: DateTime.fromMillisecondsSinceEpoch(
-        (row['due_date'] as num).toInt(),
-      ),
-      isCompleted: row['is_completed'] as bool? ?? false,
-      isSubmitted: row['is_submitted'] as bool? ?? false,
-      type: (row['type']?.toString() ?? 'trabajo').toLowerCase(),
-      createdAt: DateTime.fromMillisecondsSinceEpoch(
-        (row['created_at'] as num).toInt(),
-      ),
-      tag: row['tag']?.toString(),
-      userId: row['user_id']?.toString() ?? '',
-      userName: row['user_name']?.toString() ?? 'Usuario',
-      careerId: row['career_id']?.toString(),
-      collaborators: List<String>.from(row['collaborators'] ?? []),
-      // Solo vienen en shared_tasks, y solo si alguien ya editó la tarea.
-      updatedByName: (row['updated_by_name'] as String?)?.trim().isEmpty ?? true
-          ? null
-          : row['updated_by_name'] as String?,
-      updatedAt: row['updated_at'] == null
-          ? null
-          : DateTime.tryParse(row['updated_at'].toString()),
-    );
-  }
+  /// Convierte una fila de Supabase en un Task.
+  ///
+  /// [isShared] lo decide la tabla de origen, no el contenido de la fila: una
+  /// tarea que vive en shared_tasks está compartida por definición.
+  ///
+  /// `Task.fromMap` entiende tanto el formato de la caché como el de las
+  /// columnas de Supabase, así que acá ya no hay una segunda copia de los
+  /// mismos campos con sus propios valores por defecto.
+  Task _rowToTask(Map<String, dynamic> row, {required bool isShared}) =>
+      Task.fromMap(row, row['id']?.toString(), isShared);
 
   /// Convierte un Subject al formato de columnas de Supabase
   Map<String, dynamic> _subjectToRow(Subject subject) {
@@ -139,61 +132,11 @@ class SupabaseDbService {
     );
   }
 
-  // ── Membresías de carrera ────────────────────────────────────
-
-  /// Comprueba que las carreras guardadas localmente tengan su membresía en
-  /// `user_careers`.
-  ///
-  /// Antes esta función escribía: hacía upsert en `careers` y se insertaba sola
-  /// en `user_careers`. Las dos cosas ya no están permitidas — `careers` es de
-  /// escritura exclusiva de administradores y las membresías las crea el RPC
-  /// `join_career`, que es el que valida la clave. Si el cliente pudiera
-  /// insertarse solo, la clave de carrera no serviría de nada.
-  ///
-  /// Queda como verificación: si falta una membresía, el usuario tiene que
-  /// volver a ingresar la clave de esa carrera.
-  Future<void> registerCareerMemberships() async {
-    final uid = _client.auth.currentUser?.id;
-    if (uid == null) return;
-
-    final userCareers = CareerService().getCareers();
-    if (userCareers.isEmpty) return;
-
-    try {
-      final rows = await _client
-          .from('user_careers')
-          .select('career_id')
-          .eq('user_id', uid);
-
-      final registered = rows
-          .map((r) => (r as Map)['career_id'] as String?)
-          .whereType<String>()
-          .toSet();
-
-      final missing = userCareers
-          .where((c) => !registered.contains(c.id))
-          .map((c) => c.id)
-          .toList();
-
-      if (missing.isNotEmpty) {
-        Logger.warning(
-          'Carreras locales sin membresía en el servidor: ${missing.join(', ')}. '
-          'El usuario debe reingresar la clave de acceso.',
-          tag: 'SupabaseDbService',
-        );
-      }
-    } catch (e) {
-      Logger.warning(
-        'Error verificando carreras del usuario: $e',
-        error: e,
-        tag: 'SupabaseDbService',
-      );
-    }
-  }
-
   // ── Helpers de tabla según careerId ─────────────────────────
 
-  bool _isShared(String? careerId) => Careers.isShared(careerId);
+  /// Nombre de la tabla donde vive una tarea según quién puede verla.
+  String _tableFor({required bool isShared}) =>
+      isShared ? 'shared_tasks' : 'tasks';
 
   // ── TASKS ────────────────────────────────────────────────────
 
@@ -212,12 +155,9 @@ class SupabaseDbService {
 
     final updatedTask = task.copyWith(careerId: effectiveCareerId);
 
-    // Registrar membresías de carrera en Supabase antes de insertar para cumplir con las políticas RLS
-    await registerCareerMemberships();
-
     Logger.database('Agregando tarea: ${updatedTask.title}');
-    final isSharedTask = _isShared(updatedTask.careerId);
-    final table = isSharedTask ? 'shared_tasks' : 'tasks';
+    final isSharedTask = updatedTask.isShared;
+    final table = _tableFor(isShared: isSharedTask);
     final row = _taskToRow(updatedTask, isShared: isSharedTask);
 
     if (!isSharedTask) {
@@ -260,9 +200,9 @@ class SupabaseDbService {
   /// llame decide qué hacer (usado también por SyncService para reintentos).
   Future<void> updateTaskRemote(Task task) async {
     Logger.database('Actualizando tarea: ${task.id}');
-    final isShared = _isShared(task.careerId);
-    final primaryTable = isShared ? 'shared_tasks' : 'tasks';
-    final secondaryTable = isShared ? 'tasks' : 'shared_tasks';
+    final isShared = task.isShared;
+    final primaryTable = _tableFor(isShared: isShared);
+    final secondaryTable = _tableFor(isShared: !isShared);
 
     // Campos de autoría: identifican a quien CREÓ la tarea, así que una
     // edición no puede tocarlos. Faltaba quitar user_name, y por eso al editar
@@ -275,16 +215,38 @@ class SupabaseDbService {
       r.remove('created_by');
     }
 
-    final row = _taskToRow(task, isShared: isShared);
-    stripAuthorFields(row);
+    // El `.select()` no es decorativo: PostgREST NO lanza cuando un update no
+    // toca ninguna fila — si RLS filtra la fila, responde 200 con la lista
+    // vacía. Sin comprobar cuántas filas volvieron, una edición que el
+    // servidor rechazó se guardaba en caché y la pantalla decía "✓ Tarea
+    // actualizada"; el cambio desaparecía en la siguiente sincronización.
+    Future<int> updateIn(String table, {required bool asShared}) async {
+      final row = _taskToRow(task, isShared: asShared);
+      stripAuthorFields(row);
+      final updated =
+          await _client.from(table).update(row).eq('id', task.id!).select('id');
+      return (updated as List).length;
+    }
 
-    try {
-      await _client.from(primaryTable).update(row).eq('id', task.id!);
-    } catch (errPrimary) {
-      Logger.warning('Falló update en $primaryTable ($errPrimary), intentando en $secondaryTable', tag: 'SupabaseDbService');
-      final secondaryRow = _taskToRow(task, isShared: !isShared);
-      stripAuthorFields(secondaryRow);
-      await _client.from(secondaryTable).update(secondaryRow).eq('id', task.id!);
+    var affected = await updateIn(primaryTable, asShared: isShared);
+
+    if (affected == 0) {
+      // La tarea puede estar en la otra tabla: una creada sin carrera activa
+      // vive en `tasks`, y al editarla con una carrera seleccionada su
+      // el interruptor de compartir cambió y ahora le toca la otra tabla.
+      // Antes esto se descubría por excepción; ahora, por filas afectadas.
+      Logger.warning(
+        'La tarea ${task.id} no está en $primaryTable, intentando en $secondaryTable',
+        tag: 'SupabaseDbService',
+      );
+      affected = await updateIn(secondaryTable, asShared: !isShared);
+    }
+
+    if (affected == 0) {
+      throw TaskWriteRejectedException(
+        'No se pudo guardar la tarea: ya no existe o no tienes permiso para '
+        'editarla.',
+      );
     }
 
     await _cache.cacheTask(task);
@@ -297,6 +259,10 @@ class SupabaseDbService {
     if (task.id == null) throw Exception('Task ID is required for update');
     try {
       await updateTaskRemote(task);
+    } on TaskWriteRejectedException {
+      // No se encola: el servidor ya decidió que no. Se propaga para que la
+      // pantalla lo diga en vez de fingir que guardó.
+      rethrow;
     } catch (e) {
       Logger.warning(
         'Error actualizando en Supabase, guardando en caché: $e',
@@ -308,25 +274,33 @@ class SupabaseDbService {
         'task',
         task.id!,
         'update',
-        careerId: task.careerId,
+        isShared: task.isShared,
       );
     }
   }
 
   /// Elimina la tarea directamente en Supabase. Lanza si falla.
-  Future<void> deleteTaskRemote(String taskId, {String? careerId}) async {
+  ///
+  /// [isShared] indica en qué tabla vive. Si no se sabe (una tarea que ya no
+  /// está en caché), se intenta en las dos: borrar de más no rompe nada,
+  /// porque el id solo existe en una.
+  Future<void> deleteTaskRemote(String taskId, {bool? isShared}) async {
     Logger.database('Eliminando tarea: $taskId');
-    final table = _isShared(careerId) ? 'shared_tasks' : 'tasks';
-    await _client.from(table).delete().eq('id', taskId);
+    final tablas = isShared == null
+        ? const ['tasks', 'shared_tasks']
+        : [_tableFor(isShared: isShared)];
+    for (final table in tablas) {
+      await _client.from(table).delete().eq('id', taskId);
+    }
     await _cache.removeCachedTask(taskId);
     Logger.database('Tarea eliminada exitosamente');
   }
 
   /// Elimina una tarea. Si falla la escritura remota, la marca para
   /// sincronizar más tarde — nunca lanza.
-  Future<void> deleteTask(String taskId, {String? careerId}) async {
+  Future<void> deleteTask(String taskId, {bool? isShared}) async {
     try {
-      await deleteTaskRemote(taskId, careerId: careerId);
+      await deleteTaskRemote(taskId, isShared: isShared);
     } catch (e) {
       Logger.warning(
         'Error eliminando en Supabase, marcando para sync',
@@ -338,7 +312,7 @@ class SupabaseDbService {
         'task',
         taskId,
         'delete',
-        careerId: careerId,
+        isShared: isShared,
       );
     }
   }
@@ -362,7 +336,7 @@ class SupabaseDbService {
 
       for (final row in personalRows) {
         try {
-          final task = _rowToTask(row);
+          final task = _rowToTask(row, isShared: false);
           if (task.id != null) existingIds.add(task.id!);
           tasks.add(task);
         } catch (e) {
@@ -374,62 +348,46 @@ class SupabaseDbService {
         }
       }
 
-      // Tareas compartidas de carreras del usuario
-      await registerCareerMemberships();
-      final sharedCareerIds = careerId != null
-          ? (_isShared(careerId) ? [careerId] : <String>[])
-          : CareerService().careerIds.where(_isShared).toList();
+      // Tareas compartidas.
+      //
+      // Una sola consulta, sin filtro por carrera: la política
+      // shared_tasks_member ya devuelve exactamente las de las carreras a las
+      // que el usuario pertenece más las que creó él. Antes se hacía una
+      // consulta por carrera y otra más de "red de seguridad" por created_by,
+      // o sea reimplementar en el cliente el filtro que el servidor ya aplica.
+      //
+      // [careerId] sigue acotando en memoria cuando se pide una carrera
+      // puntual, que es lo único que ese parámetro necesitaba.
+      // Si la lectura de compartidas falla, la caché NO se reemplaza: un corte
+      // de red de dos segundos vaciaba la caja y borraba todas las tareas de
+      // carrera hasta la siguiente sincronización exitosa.
+      var sharedFetchFailed = false;
 
-      for (final sharedCareerId in sharedCareerIds) {
-        try {
-          final sharedRows = await _client
-              .from('shared_tasks')
-              .select()
-              .eq('career_id', sharedCareerId)
-              .order('created_at', ascending: false);
-
-          for (final row in sharedRows) {
-            try {
-              final task = _rowToTask(row);
-              if (task.id != null && existingIds.contains(task.id)) continue;
-              if (task.id != null) existingIds.add(task.id!);
-              tasks.add(task);
-            } catch (e) {
-              Logger.error(
-                'Error parseando tarea compartida: $e',
-                error: e,
-                tag: 'SupabaseDbService',
-              );
-            }
-          }
-        } catch (e) {
-          Logger.warning(
-            'Error cargando tareas compartidas de $sharedCareerId',
-            error: e,
-            tag: 'SupabaseDbService',
-          );
-        }
-      }
-
-      // Red de seguridad: recuperar tareas compartidas creadas por este usuario
       try {
-        final mySharedRows = await _client
+        final sharedRows = await _client
             .from('shared_tasks')
             .select()
-            .eq('created_by', _uid)
             .order('created_at', ascending: false);
 
-        for (final row in mySharedRows) {
+        for (final row in sharedRows) {
           try {
-            final task = _rowToTask(row);
+            final task = _rowToTask(row, isShared: true);
+            if (careerId != null && task.careerId != careerId) continue;
             if (task.id != null && existingIds.contains(task.id)) continue;
             if (task.id != null) existingIds.add(task.id!);
             tasks.add(task);
-          } catch (_) {}
+          } catch (e) {
+            Logger.error(
+              'Error parseando tarea compartida: $e',
+              error: e,
+              tag: 'SupabaseDbService',
+            );
+          }
         }
       } catch (e) {
+        sharedFetchFailed = true;
         Logger.warning(
-          'Error cargando tareas creadas por el usuario en shared_tasks',
+          'Error cargando tareas compartidas',
           error: e,
           tag: 'SupabaseDbService',
         );
@@ -446,7 +404,21 @@ class SupabaseDbService {
         }
       }
 
-      await _cache.replaceCachedTasks(tasks);
+      if (sharedFetchFailed) {
+        // Fusionar en vez de reemplazar: lo que no se pudo leer sigue en la
+        // caja y el usuario conserva sus tareas.
+        await _cache.cacheTasks(tasks);
+        // Se devuelve la unión de lo leído y lo cacheado, para no dejar la
+        // pantalla más vacía de lo que estaba antes de refrescar.
+        for (final cachedTask in cachedTasks) {
+          if (cachedTask.id != null && !existingIds.contains(cachedTask.id)) {
+            tasks.add(cachedTask);
+            existingIds.add(cachedTask.id!);
+          }
+        }
+      } else {
+        await _cache.replaceCachedTasks(tasks);
+      }
       Logger.database('Tareas cargadas: ${tasks.length}');
 
       // Sincronizar progreso personal
@@ -513,8 +485,8 @@ class SupabaseDbService {
 
     // Escuchar tareas compartidas de carreras del usuario
     final sharedCareerIds = careerId != null
-        ? (_isShared(careerId) ? [careerId] : <String>[])
-        : CareerService().careerIds.where(_isShared).toList();
+        ? (Careers.isShared(careerId) ? [careerId] : <String>[])
+        : CareerService().careerIds.where(Careers.isShared).toList();
 
     final sharedSubs = sharedCareerIds.map((cId) {
       return _client
@@ -553,7 +525,7 @@ class SupabaseDbService {
     if (uid == null) return;
 
     final cached = _cache.getCachedTask(taskId);
-    final isShared = cached != null && _isShared(cached.careerId);
+    final isShared = cached?.isShared ?? false;
 
     if (isShared) {
       Logger.database('Actualizando estado de tarea compartida: $taskId');
@@ -564,11 +536,12 @@ class SupabaseDbService {
         isCompleted: isCompleted,
         isSubmitted: isSubmitted,
       );
-      final updated = cached.copyWith(
-        isCompleted: isCompleted,
-        isSubmitted: isSubmitted,
-      );
-      await _cache.cacheTask(updated);
+      if (cached != null) {
+        await _cache.cacheTask(cached.copyWith(
+          isCompleted: isCompleted,
+          isSubmitted: isSubmitted,
+        ));
+      }
     } else {
       try {
         Logger.database('Actualizando estado de tarea personal: $taskId');
@@ -607,7 +580,7 @@ class SupabaseDbService {
     final uid = currentUser?.id;
     if (uid == null) return;
 
-    final isShared = _isShared(task.careerId);
+    final isShared = task.isShared;
     final newCompleted = !task.isCompleted;
 
     if (isShared) {
@@ -758,24 +731,4 @@ class SupabaseDbService {
   }
 
   List<Subject> getSubjectsFromCache() => _cache.getCachedSubjects();
-
-  Future<List<Subject>> getPublicSubjects() async {
-    try {
-      Logger.database('Cargando materias públicas');
-      final rows = await _client
-          .from('subjects')
-          .select()
-          .eq('user_id', _uid)
-          .eq('visibility', SubjectVisibility.cursoCompleto.index)
-          .order('name');
-      return rows.map(_rowToSubject).toList();
-    } catch (e) {
-      Logger.warning(
-        'Error cargando materias públicas',
-        error: e,
-        tag: 'SupabaseDbService',
-      );
-      return [];
-    }
-  }
 }

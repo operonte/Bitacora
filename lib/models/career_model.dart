@@ -113,8 +113,8 @@ class Careers {
     ),
   ];
 
-  /// Carreras creadas desde el panel de administración (colección `careers`
-  /// en Firestore). Se cargan en runtime con [CareerService.loadRemoteCareers].
+  /// Carreras creadas desde el panel de administración (tabla `careers` en
+  /// Supabase). Se cargan en runtime con [CareerService.loadRemoteCareers].
   static List<Career> remote = [];
 
   /// Carreras definidas en el código (solo lectura).

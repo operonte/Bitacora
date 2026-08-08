@@ -5,6 +5,7 @@ import '../providers/app_state.dart';
 import '../models/task_model.dart';
 import '../widgets/task_card.dart';
 import '../widgets/staggered_entrance.dart';
+import '../widgets/task_search_dialog.dart';
 import 'add_task_screen.dart';
 import '../utils/error_handler.dart';
 import '../services/career_service.dart';
@@ -22,41 +23,10 @@ class DeliveredTasksScreen extends StatefulWidget {
 class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
   String _searchQuery = '';
 
-  void _showSearchDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Buscar en Entregadas'),
-        content: TextField(
-          autofocus: true,
-          controller: TextEditingController(text: _searchQuery),
-          decoration: InputDecoration(
-            hintText: 'Buscar por título, materia...',
-            border: const OutlineInputBorder(),
-            suffixIcon: _searchQuery.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      setState(() => _searchQuery = '');
-                      Navigator.pop(context);
-                    },
-                  )
-                : null,
-          ),
-          onChanged: (value) {
-            setState(() {
-              _searchQuery = value;
-            });
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _showSearchDialog() async {
+    final query = await TaskSearchDialog.show(context, _searchQuery);
+    if (query == null || !mounted) return;
+    setState(() => _searchQuery = query);
   }
 
   @override
@@ -67,13 +37,9 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
     final appState = context.watch<AppState>();
     final allDeliveredTasks = appState.deliveredTasks;
 
-    final deliveredTasks = allDeliveredTasks.where((task) {
-      if (_searchQuery.isEmpty) return true;
-      final q = _searchQuery.toLowerCase();
-      return task.title.toLowerCase().contains(q) ||
-          task.description.toLowerCase().contains(q) ||
-          task.subject.toLowerCase().contains(q);
-    }).toList();
+    final deliveredTasks = allDeliveredTasks
+        .where((task) => TaskSearchDialog.matches(task, _searchQuery))
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -339,7 +305,7 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
                 );
               } catch (e) {
                 if (context.mounted) {
-                  final appException = ErrorMessages.fromFirebaseError(e);
+                  final appException = ErrorMessages.fromBackendError(e);
                   ErrorHandler.showErrorSnackBar(context, appException);
                 }
               }

@@ -5,6 +5,7 @@ import '../providers/app_state.dart';
 import '../models/task_model.dart';
 import '../widgets/task_card.dart';
 import '../widgets/staggered_entrance.dart';
+import '../widgets/task_search_dialog.dart';
 import '../widgets/mascot_widget.dart';
 import '../providers/theme_provider.dart';
 import 'add_task_screen.dart';
@@ -42,13 +43,7 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
     // Filtrar tareas por materia y búsqueda
     final filteredTasks = allPendingTasks.where((task) {
       final matchesSubject = _selectedSubject == 'Todos' || task.subject == _selectedSubject;
-      
-      final matchesSearch = _searchQuery.isEmpty ||
-          task.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          task.description.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          task.subject.toLowerCase().contains(_searchQuery.toLowerCase());
-          
-      return matchesSubject && matchesSearch;
+      return matchesSubject && TaskSearchDialog.matches(task, _searchQuery);
     }).toList();
 
     return Scaffold(
@@ -254,41 +249,10 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
     );
   }
 
-  void _showSearchDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Buscar Tareas'),
-        content: TextField(
-          autofocus: true,
-          controller: TextEditingController(text: _searchQuery),
-          decoration: InputDecoration(
-            hintText: 'Escribe para buscar...',
-            border: const OutlineInputBorder(),
-            suffixIcon: _searchQuery.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      setState(() => _searchQuery = '');
-                      Navigator.pop(context);
-                    },
-                  )
-                : null,
-          ),
-          onChanged: (value) {
-            setState(() {
-              _searchQuery = value;
-            });
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _showSearchDialog() async {
+    final query = await TaskSearchDialog.show(context, _searchQuery);
+    if (query == null || !mounted) return;
+    setState(() => _searchQuery = query);
   }
 
   void _showTaskDetails(Task task) {
@@ -452,7 +416,7 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
                 );
               } catch (e) {
                 if (context.mounted) {
-                  final appException = ErrorMessages.fromFirebaseError(e);
+                  final appException = ErrorMessages.fromBackendError(e);
                   ErrorHandler.showErrorSnackBar(context, appException);
                 }
               }

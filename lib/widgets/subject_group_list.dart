@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Lista de tarjetas plegables agrupadas por materia, con encabezado
-/// "Materia · N <algo>" (ej. "Hebreo · 5 archivos"). Se usa en "Mis tareas"
+/// "Materia · N <algo>" (ej. "Hebreo · 5 archivos"). Se usa en "Mis archivos"
 /// (archivos), "Mis reuniones" y "Material docente" para que listas largas
 /// no se vuelvan una sola columna interminable de tarjetas.
 ///

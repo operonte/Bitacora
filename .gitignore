@@ -58,6 +58,12 @@ app.*.map.json
 *.keystore
 *.jks
 key.properties
+
+# Supabase CLI: estado local del proyecto vinculado. supabase/.temp/pooler-url
+# guarda la cadena de conexión a la base de producción, así que nunca se
+# versiona. El día que exista supabase/config.toml, ese sí puede commitearse.
+supabase/.temp/
+supabase/.branches/
 google-services.json
 GoogleService-Info.plist
 releases/

@@ -10,7 +10,7 @@ import '../utils/logger.dart';
 import 'encryption_service.dart';
 
 /// Servicio de caché local para soporte offline
-/// Usa Hive para almacenamiento local y maneja sincronización con Firebase
+/// Usa Hive para almacenamiento local y maneja sincronización con Supabase
 class LocalCacheService {
   static final LocalCacheService _instance = LocalCacheService._internal();
   factory LocalCacheService() => _instance;
@@ -51,26 +51,61 @@ class LocalCacheService {
     }
   }
 
-  /// Verifica si hay conexión a internet activa resolviendo un host
-  Future<bool> hasConnection() async {
+  /// Cuánto vale el último resultado de [hasConnection] antes de volver a
+  /// comprobar contra la red.
+  static const _connectionCacheTtl = Duration(seconds: 60);
+
+  bool? _lastConnectionResult;
+  DateTime? _lastConnectionCheck;
+
+  /// Verifica si hay conexión a internet activa resolviendo un host.
+  ///
+  /// El resultado se cachea [_connectionCacheTtl]. La llama `forceSync()`, que
+  /// llama `loadTasks()`, que se dispara con cada evento de Realtime y con
+  /// cada `notifyListeners()` de CareerService: sin caché eso era una consulta
+  /// DNS a un tercero por recarga y, sin conexión, 3 segundos de bloqueo cada
+  /// vez. El stream de conectividad invalida la caché en cuanto algo cambia,
+  /// así que recuperar la red se sigue detectando al instante.
+  Future<bool> hasConnection({bool force = false}) async {
+    final cached = _lastConnectionResult;
+    final checkedAt = _lastConnectionCheck;
+    if (!force &&
+        cached != null &&
+        checkedAt != null &&
+        DateTime.now().difference(checkedAt) < _connectionCacheTtl) {
+      return cached;
+    }
+    return _checkConnection();
+  }
+
+  Future<bool> _checkConnection() async {
     final result = await Connectivity().checkConnectivity();
-    if (result == ConnectivityResult.none) return false;
+    if (result == ConnectivityResult.none) return _rememberConnection(false);
 
     if (!kIsWeb) {
       try {
         final lookup = await InternetAddress.lookup('google.com')
             .timeout(const Duration(seconds: 3));
-        return lookup.isNotEmpty && lookup[0].rawAddress.isNotEmpty;
+        return _rememberConnection(
+          lookup.isNotEmpty && lookup[0].rawAddress.isNotEmpty,
+        );
       } catch (_) {
-        return false;
+        return _rememberConnection(false);
       }
     }
-    return true;
+    return _rememberConnection(true);
+  }
+
+  bool _rememberConnection(bool value) {
+    _lastConnectionResult = value;
+    _lastConnectionCheck = DateTime.now();
+    return value;
   }
 
   /// Handler para cambios de conectividad
   void _onConnectivityChanged(ConnectivityResult result) async {
-    final hasInternet = await hasConnection();
+    // El sistema acaba de decir que algo cambió: la caché ya no vale.
+    final hasInternet = await hasConnection(force: true);
     _connectionController.add(hasInternet);
     Logger.info(
       'Conectividad cambiada: ${hasInternet ? "Online" : "Offline"}',
@@ -213,11 +248,15 @@ class LocalCacheService {
   // ==================== SYNC & METADATA ====================
 
   /// Marca que hay cambios pendientes de sincronización
+  /// [isShared] solo aplica a tareas: dice en qué tabla vive, que es lo que
+  /// hace falta para reintentar un borrado cuando la tarea ya no está en
+  /// caché. Antes se guardaba careerId y se deducía de ahí, deducción que
+  /// dejó de ser válida al separar "de qué carrera es" de "quién la ve".
   Future<void> markPendingSync(
     String entityType,
     String entityId,
     String operation, {
-    String? careerId,
+    bool? isShared,
   }) async {
     final pending =
         _metadataBox?.get('pending_sync', defaultValue: <Map>[]) as List? ?? [];
@@ -225,7 +264,7 @@ class LocalCacheService {
       'type': entityType,
       'id': entityId,
       'operation': operation, // 'create', 'update', 'delete'
-      'careerId': careerId,
+      'isShared': isShared,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     });
     await _metadataBox?.put('pending_sync', pending);

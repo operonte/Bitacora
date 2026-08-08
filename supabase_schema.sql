@@ -20,11 +20,13 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   display_name        TEXT,
   email               TEXT,
   photo_url           TEXT,
-  admin_password_hash TEXT,
-  -- Flag de administrador. NO se deduce de admin_password_hash: el usuario
-  -- puede escribir su propia fila, así que usar ese campo como señal de
-  -- privilegio permite que cualquiera se ascienda solo. Ver el REVOKE de
-  -- más abajo, que impide escribir esta columna desde el cliente.
+  -- Única señal de privilegio. El REVOKE de más abajo impide escribirla desde
+  -- el cliente: si el usuario pudiera tocarla, cualquiera se ascendería solo.
+  --
+  -- Hubo una columna `admin_password_hash` que la app comparaba contra una
+  -- contraseña maestra compilada en el APK. Se eliminó en el endurecimiento 12
+  -- (mejora 2.2): el hash se extraía del instalador y se rompía fuera de
+  -- línea, y había que rotarlo a mano en cada filtración.
   is_admin            BOOLEAN NOT NULL DEFAULT FALSE,
   created_at          TIMESTAMPTZ DEFAULT NOW()
 );
@@ -32,7 +34,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- El privilegio de tabla domina sobre el de columna: hay que quitar UPDATE
 -- completo y reotorgarlo solo en las columnas que el usuario sí puede tocar.
 REVOKE UPDATE ON public.profiles FROM anon, authenticated;
-GRANT  UPDATE (display_name, email, photo_url, admin_password_hash)
+GRANT  UPDATE (display_name, email, photo_url)
   ON public.profiles TO authenticated;
 
 -- SECURITY DEFINER evita recursión de RLS al consultar profiles desde
@@ -72,10 +74,9 @@ CREATE TRIGGER on_auth_user_created
 CREATE TABLE IF NOT EXISTS public.careers (
   id                  TEXT PRIMARY KEY,
   name                TEXT NOT NULL,
-  -- OBSOLETA. La clave real vive hasheada en career_access_keys (ver
-  -- supabase_hardening_2.sql). Esta columna queda solo para que las apps
-  -- viejas no crasheen y se borra en la fase 3. No escribir nada acá.
-  access_key          TEXT NOT NULL DEFAULT '',
+  -- Sin access_key: la clave vive hasheada en career_access_keys desde la
+  -- migración 2, y la columna vacía que quedaba por compatibilidad se borró
+  -- en la migración 10.
   description         TEXT DEFAULT '',
   predefined_subjects JSONB DEFAULT '[]'::jsonb,
   created_at          TIMESTAMPTZ DEFAULT NOW(),
@@ -265,22 +266,9 @@ CREATE POLICY "meetings_own" ON public.meetings
   FOR ALL USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
--- ============================================================
--- TABLA: active_sessions (Control de 4 sesiones simultáneas Netflix-style)
--- ============================================================
-CREATE TABLE IF NOT EXISTS public.active_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    device_name TEXT NOT NULL,
-    device_id TEXT NOT NULL,
-    last_active TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE public.active_sessions ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "active_sessions_own" ON public.active_sessions
-  FOR ALL USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+-- active_sessions (límite de 4 dispositivos) se eliminó en la migración 10:
+-- la tabla existía pero ningún código la escribía ni la leía, así que solo
+-- acumulaba identificadores de dispositivo sin propósito.
 
 -- ============================================================
 -- TABLA: study_files (Metadatos de archivos personales de estudio)
@@ -319,15 +307,19 @@ CREATE POLICY "study_files_own" ON public.study_files
 -- ============================================================
 -- ÍNDICES B-TREE DE SEGURIDAD Y RENDIMIENTO (Evita Table Scan DoS)
 -- ============================================================
+-- Ojo: esta sección estuvo años en el repo sin haberse ejecutado nunca. Los
+-- índices reales se crean en supabase_hardening_11_indices.sql; acá quedan
+-- solo los que la base efectivamente tiene o va a tener tras esa migración.
+--
+-- No se declaran índices sobre user_careers ni task_progress: sus claves
+-- primarias compuestas —(user_id, career_id) y (user_id, task_id)— ya cubren
+-- las búsquedas que hacen las políticas RLS.
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON public.tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_shared_tasks_career_id ON public.shared_tasks(career_id);
 CREATE INDEX IF NOT EXISTS idx_shared_tasks_created_by ON public.shared_tasks(created_by);
-CREATE INDEX IF NOT EXISTS idx_user_careers_user_id ON public.user_careers(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_careers_career_id ON public.user_careers(career_id);
-CREATE INDEX IF NOT EXISTS idx_task_progress_user_id ON public.task_progress(user_id);
 CREATE INDEX IF NOT EXISTS idx_meetings_user_id ON public.meetings(user_id);
-CREATE INDEX IF NOT EXISTS idx_active_sessions_user_id ON public.active_sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_study_files_user_id ON public.study_files(user_id);
+CREATE INDEX IF NOT EXISTS idx_meetings_career_shared ON public.meetings(career_id) WHERE is_private = false;
+CREATE INDEX IF NOT EXISTS idx_subjects_user_id ON public.subjects(user_id);
 CREATE INDEX IF NOT EXISTS idx_study_files_user_category ON public.study_files(user_id, category);
 CREATE INDEX IF NOT EXISTS idx_study_files_user_career ON public.study_files(user_id, career_id);
 

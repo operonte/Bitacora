@@ -5,6 +5,7 @@ import '../providers/app_state.dart';
 import '../models/task_model.dart';
 import '../widgets/task_card.dart';
 import '../widgets/staggered_entrance.dart';
+import '../widgets/task_search_dialog.dart';
 import 'add_task_screen.dart';
 import '../colors.dart';
 import '../utils/error_handler.dart';
@@ -20,13 +21,26 @@ class OverdueTasksScreen extends StatefulWidget {
 }
 
 class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
+  String _searchQuery = '';
+
+  Future<void> _showSearchDialog() async {
+    final query = await TaskSearchDialog.show(context, _searchQuery);
+    if (query == null || !mounted) return;
+    setState(() => _searchQuery = query);
+  }
+
   @override
   Widget build(BuildContext context) {
     final career = CareerService().getSelectedCareer();
     final careerName = career?.name ?? '';
 
     final appState = context.watch<AppState>();
-    final overdueTasks = appState.overdueTasks;
+    // Vencidas es justo donde se acumulan las tareas de todo el semestre, así
+    // que es la pantalla que más necesitaba buscador y la única que no lo
+    // tenía.
+    final overdueTasks = appState.overdueTasks
+        .where((task) => TaskSearchDialog.matches(task, _searchQuery))
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -69,6 +83,16 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: Icon(
+              Icons.search,
+              color: _searchQuery.isNotEmpty
+                  ? Theme.of(context).primaryColor
+                  : null,
+            ),
+            onPressed: _showSearchDialog,
+            tooltip: 'Buscar',
+          ),
           IconButton(
             icon: const Icon(Icons.info_outline),
             onPressed: () => _showAppInfo(),
@@ -123,13 +147,28 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
             )
           : overdueTasks.isEmpty
               ? Center(
-                  child: Text(
-                    'No hay tareas vencidas',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: context.textSecondaryColor,
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _searchQuery.isEmpty
+                            ? 'No hay tareas vencidas'
+                            : 'Sin resultados para tu búsqueda',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: context.textSecondaryColor,
+                        ),
+                      ),
+                      if (_searchQuery.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        TextButton.icon(
+                          onPressed: () => setState(() => _searchQuery = ''),
+                          icon: const Icon(Icons.clear_rounded, size: 20),
+                          label: const Text('Limpiar búsqueda'),
+                        ),
+                      ],
+                    ],
                   ),
                 )
               : RefreshIndicator(
@@ -370,7 +409,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
                 );
               } catch (e) {
                 if (context.mounted) {
-                  final appException = ErrorMessages.fromFirebaseError(e);
+                  final appException = ErrorMessages.fromBackendError(e);
                   ErrorHandler.showErrorSnackBar(context, appException);
                 }
               }
@@ -412,7 +451,7 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
                 );
               } catch (e) {
                 if (context.mounted) {
-                  final appException = ErrorMessages.fromFirebaseError(e);
+                  final appException = ErrorMessages.fromBackendError(e);
                   ErrorHandler.showErrorSnackBar(context, appException);
                 }
               }

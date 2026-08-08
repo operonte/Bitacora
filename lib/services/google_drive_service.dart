@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/logger.dart';
+import 'career_service.dart';
 import '../utils/drive_token_stub.dart'
     if (dart.library.html) '../utils/drive_token_web.dart';
 
@@ -48,11 +49,57 @@ const _extensionMimeTypes = <String, String>{
   'htm': 'text/html',
 };
 
+/// Normaliza un nombre de carpeta para compararlo: minúsculas, sin tildes y
+/// sin espacios de sobra.
+///
+/// Hace falta porque el nombre de la carpeta lo escribe una persona y el de
+/// la carrera viene de la base: "Teologia" en Drive y "Teología" en la app son
+/// la misma cosa, y sin esto la app crearía una carpeta duplicada al lado.
+String normalizeFolderName(String value) {
+  const acentos = {
+    'á': 'a', 'à': 'a', 'ä': 'a', 'â': 'a',
+    'é': 'e', 'è': 'e', 'ë': 'e', 'ê': 'e',
+    'í': 'i', 'ì': 'i', 'ï': 'i', 'î': 'i',
+    'ó': 'o', 'ò': 'o', 'ö': 'o', 'ô': 'o',
+    'ú': 'u', 'ù': 'u', 'ü': 'u', 'û': 'u',
+    'ñ': 'n', 'ç': 'c',
+  };
+  final lower = value.trim().toLowerCase();
+  final buffer = StringBuffer();
+  for (final ch in lower.split('')) {
+    buffer.write(acentos[ch] ?? ch);
+  }
+  return buffer.toString();
+}
+
 String _resolveMimeType(String mimeType) {
   final trimmed = mimeType.trim();
   if (trimmed.contains('/')) return trimmed;
   final ext = trimmed.toLowerCase().replaceFirst('.', '');
   return _extensionMimeTypes[ext] ?? 'application/octet-stream';
+}
+
+/// Una carpeta de Drive tal como la devuelve el listado.
+class _DriveFolder {
+  final String id;
+  final String name;
+  const _DriveFolder(this.id, this.name);
+}
+
+/// Qué representa una carpeta dentro de `Bitácora`, deducido de su posición en
+/// el árbol. Es lo que se le asigna a cualquier archivo que aparezca dentro.
+class _DriveFolderMeaning {
+  final String subject;
+  final String? career;
+
+  /// `trabajo` o `guia`, en los mismos valores que StudyFileCategory.
+  final String category;
+
+  const _DriveFolderMeaning({
+    required this.subject,
+    this.career,
+    this.category = 'trabajo',
+  });
 }
 
 class DriveUploadResult {
@@ -77,7 +124,7 @@ class GoogleDriveService {
   /// Subcarpeta donde va el material docente, dentro de la carpeta de cada
   /// asignatura. Separarlo de los trabajos no es solo orden: como
   /// [scanBitacoraFolderFiles] registra automáticamente lo que encuentra,
-  /// tener las guías en la misma carpeta las duplicaba en "Mis tareas".
+  /// tener las guías en la misma carpeta las duplicaba en "Mis archivos".
   static const String teachingMaterialFolderName = 'Material docente';
 
   // El token de acceso a Drive se guarda cifrado (Keystore/Keychain vía
@@ -87,21 +134,42 @@ class GoogleDriveService {
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
 
-  /// Persiste el token de Drive de forma segura.
+  /// Token de Drive **en web**, y solo en memoria.
+  ///
+  /// En web `flutter_secure_storage` no tiene Keystore ni Keychain detrás: cae
+  /// a almacenamiento del navegador, o sea que el token de Google quedaba
+  /// escrito en el disco del equipo, legible por cualquiera con acceso a ese
+  /// perfil y sobreviviendo al cierre de la pestaña.
+  ///
+  /// El costo de no persistirlo es pequeño: Supabase ya devuelve un
+  /// `providerToken` con la sesión, y si no lo hay, GIS abre un popup. El
+  /// token muere al recargar la página, que es exactamente lo que se quiere en
+  /// un computador compartido.
+  static String? _webToken;
+
+  /// Guarda el token para reusarlo. En web solo en memoria (ver [_webToken]).
   static Future<void> persistToken(String token) async {
     if (token.isEmpty) return;
+
+    if (kIsWeb) {
+      _webToken = token;
+      return;
+    }
+
     await _secureStorage.write(key: _tokenKey, value: token);
     Logger.info('Token de Drive guardado de forma segura.', tag: 'GoogleDriveService');
   }
 
   /// Limpia el token al cerrar sesión.
   static Future<void> clearToken() async {
+    _webToken = null;
+    if (kIsWeb) return;
     await _secureStorage.delete(key: _tokenKey);
   }
 
   /// Obtiene el token disponible. Orden de prioridad:
   /// 1. Sesión activa de Supabase (providerToken)
-  /// 2. Token guardado en almacenamiento seguro
+  /// 2. Token ya obtenido antes (memoria en web, llavero del sistema si no)
   Future<String?> get _storedToken async {
     final sessionToken =
         Supabase.instance.client.auth.currentSession?.providerToken;
@@ -109,6 +177,7 @@ class GoogleDriveService {
       await persistToken(sessionToken);
       return sessionToken;
     }
+    if (kIsWeb) return _webToken;
     return _secureStorage.read(key: _tokenKey);
   }
 
@@ -174,6 +243,7 @@ class GoogleDriveService {
     required String fileName,
     required Uint8List bytes,
     required String mimeType,
+    String? career,
     String? subject,
     String? subfolder,
   }) async {
@@ -197,6 +267,7 @@ class GoogleDriveService {
         fileName: fileName,
         bytes: bytes,
         mimeType: mimeType,
+        career: career,
         subject: subject,
         subfolder: subfolder,
       );
@@ -216,6 +287,7 @@ class GoogleDriveService {
         fileName: fileName,
         bytes: bytes,
         mimeType: mimeType,
+        career: career,
         subject: subject,
         subfolder: subfolder,
       );
@@ -227,10 +299,12 @@ class GoogleDriveService {
     required String fileName,
     required Uint8List bytes,
     required String mimeType,
+    String? career,
     String? subject,
     String? subfolder,
   }) async {
-    final folderId = await _getOrCreateSubjectFolder(token, subject, subfolder: subfolder);
+    final folderId = await _getOrCreateSubjectFolder(token, subject,
+        career: career, subfolder: subfolder);
     final effectiveMimeType = _resolveMimeType(mimeType);
 
     final metadata = {
@@ -309,29 +383,39 @@ class GoogleDriveService {
     }
   }
 
-  /// Hace público el archivo en Drive.
-  Future<String> makeFilePubliclySharable(String fileId) async {
-    final token = await getOrRequestToken();
-    if (token != null && token.isNotEmpty && !fileId.contains('/')) {
-      try {
-        await http.post(
-          Uri.parse(
-            'https://www.googleapis.com/drive/v3/files/$fileId/permissions',
-          ),
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({'role': 'reader', 'type': 'anyone'}),
-        );
-      } catch (e) {
-        Logger.warning(
-          'No se pudo hacer público el archivo: $e',
-          tag: 'GoogleDriveService',
-        );
-      }
+  /// Renombra el archivo en Drive para que coincida con el nombre de la app.
+  ///
+  /// Sin esto el archivo quedaba con un nombre en Bitácora y otro en Drive,
+  /// para siempre: `saveFile()` solo escribía en Supabase y en Hive. Los
+  /// enlaces no dependen del nombre, así que era confuso, no roto.
+  ///
+  /// Best-effort: si falla, el renombrado local se conserva igual.
+  Future<bool> renameFile(String fileId, String newName) async {
+    if (fileId.isEmpty || fileId.contains('/') || newName.trim().isEmpty) {
+      return false;
     }
-    return 'https://drive.google.com/file/d/$fileId/view?usp=sharing';
+    final token = await getOrRequestToken();
+    if (token == null || token.isEmpty) return false;
+
+    try {
+      final response = await http.patch(
+        Uri.parse('https://www.googleapis.com/drive/v3/files/$fileId'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'name': newName.trim()}),
+      );
+      if (response.statusCode == 200) return true;
+      Logger.warning(
+        'No se pudo renombrar $fileId en Drive (${response.statusCode})',
+        tag: 'GoogleDriveService',
+      );
+    } catch (e) {
+      Logger.warning('Error renombrando $fileId en Drive: $e',
+          tag: 'GoogleDriveService');
+    }
+    return false;
   }
 
   /// Verifica si un archivo existe y no está en la papelera en Google Drive.
@@ -361,8 +445,33 @@ class GoogleDriveService {
     return true;
   }
 
-  /// Escanea la carpeta "Bitácora" y sus subcarpetas en Google Drive.
-  /// Devuelve los archivos encontrados con su metadato y asignatura asignada por carpeta.
+  /// Cuántas carpetas se preguntan por request al listar archivos. La consulta
+  /// va como `('a' in parents or 'b' in parents or ...)` dentro de la URL, y
+  /// Drive corta las consultas muy largas: con muchas asignaturas la petición
+  /// entera fallaba y no se detectaba ningún archivo.
+  static const int _maxParentsPerQuery = 20;
+
+  /// Lo que se sabe de una carpeta por dónde está colgada.
+  static const String _defaultSubject = 'General';
+
+  /// Escanea la carpeta "Bitácora" de Google Drive y devuelve los archivos que
+  /// encuentra, con la carrera, la asignatura y la categoría que les
+  /// corresponde **según la carpeta donde estén**.
+  ///
+  /// Esto es lo que permite arrastrar un archivo desde el computador a
+  /// `Bitácora/Teología/Griego/` y que la app lo registre solo, en su lugar.
+  ///
+  /// Estructuras que entiende:
+  ///
+  /// - `Bitácora/<carrera>/<asignatura>/` — trabajo de esa carrera y materia.
+  /// - `Bitácora/<carrera>/<asignatura>/Material docente/` — guía.
+  /// - `Bitácora/<carrera>/` — trabajo de la carrera, sin asignatura.
+  /// - `Bitácora/<asignatura>/` — esquema plano de versiones anteriores.
+  /// - `Bitácora/` — trabajo suelto, sin carrera ni asignatura.
+  ///
+  /// Una carpeta de primer nivel se toma por carrera si su nombre calza (ya
+  /// normalizado, ver [normalizeFolderName]) con alguna de las carreras del
+  /// usuario; si no, se trata como asignatura del esquema plano.
   Future<List<Map<String, dynamic>>> scanBitacoraFolderFiles() async {
     final token = await getOrRequestToken();
     if (token == null || token.isEmpty) return [];
@@ -371,78 +480,167 @@ class GoogleDriveService {
       final rootFolderId = await _getOrCreateBitacoraFolder(token);
       if (rootFolderId == null) return [];
 
-      // 1. Obtener todas las subcarpetas dentro de "Bitácora" (Mapeo: folderId -> subjectName)
-      //
-      // Solo se baja un nivel, y de eso depende que el material docente no se
-      // registre como trabajo: vive en `<asignatura>/Material docente/`, un
-      // nivel más abajo, así que su carpeta nunca entra en folderMap y sus
-      // archivos quedan fuera de la consulta del paso 2.
-      final folderMap = <String, String>{rootFolderId: 'General'};
+      final careerNames = {
+        for (final c in CareerService().getCareers())
+          normalizeFolderName(c.name): c.name
+      };
+      final materialFolder = normalizeFolderName(teachingMaterialFolderName);
 
-      final subfoldersResp = await http.get(
-        Uri.parse(
-          'https://www.googleapis.com/drive/v3/files'
-          '?q=${Uri.encodeComponent("'$rootFolderId' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false")}'
-          '&fields=files(id%2Cname)',
-        ),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      // folderId -> qué significa esa carpeta.
+      final folderMap = <String, _DriveFolderMeaning>{
+        rootFolderId: const _DriveFolderMeaning(subject: _defaultSubject),
+      };
 
-      if (subfoldersResp.statusCode == 200) {
-        final subfolders = (jsonDecode(subfoldersResp.body)['files'] as List?) ?? [];
-        for (final sf in subfolders) {
-          if (sf is Map && sf['id'] != null && sf['name'] != null) {
-            folderMap[sf['id'].toString()] = sf['name'].toString();
+      for (final nivel1 in await _listChildFolders(token, rootFolderId)) {
+        final carrera = careerNames[normalizeFolderName(nivel1.name)];
+
+        if (carrera == null) {
+          // Esquema plano: la carpeta es directamente una asignatura.
+          folderMap[nivel1.id] = _DriveFolderMeaning(subject: nivel1.name);
+          for (final nivel2 in await _listChildFolders(token, nivel1.id)) {
+            if (normalizeFolderName(nivel2.name) != materialFolder) continue;
+            folderMap[nivel2.id] = _DriveFolderMeaning(
+              subject: nivel1.name,
+              category: 'guia',
+            );
+          }
+          continue;
+        }
+
+        // Archivos sueltos en la raíz de la carrera: quedan sin asignatura,
+        // pero al menos con su carrera, en vez de no detectarse nunca.
+        folderMap[nivel1.id] =
+            _DriveFolderMeaning(subject: _defaultSubject, career: carrera);
+
+        for (final nivel2 in await _listChildFolders(token, nivel1.id)) {
+          folderMap[nivel2.id] =
+              _DriveFolderMeaning(subject: nivel2.name, career: carrera);
+
+          for (final nivel3 in await _listChildFolders(token, nivel2.id)) {
+            folderMap[nivel3.id] = _DriveFolderMeaning(
+              subject: nivel2.name,
+              career: carrera,
+              // Solo "Material docente" cambia la categoría. Cualquier otra
+              // subcarpeta que el usuario haya hecho para ordenarse sigue
+              // siendo trabajo de esa asignatura.
+              category: normalizeFolderName(nivel3.name) == materialFolder
+                  ? 'guia'
+                  : 'trabajo',
+            );
           }
         }
       }
 
-      // 2. Obtener todos los archivos en cualquiera de estas carpetas
-      final parentQueries = folderMap.keys.map((id) => "'$id' in parents").join(' or ');
-      final filesQuery = "($parentQueries) and mimeType != 'application/vnd.google-apps.folder' and trashed = false";
-
-      final filesResp = await http.get(
-        Uri.parse(
-          'https://www.googleapis.com/drive/v3/files'
-          '?q=${Uri.encodeComponent(filesQuery)}'
-          '&fields=files(id%2Cname%2CmimeType%2Csize%2Cparents)',
-        ),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-
-      if (filesResp.statusCode == 200) {
-        final rawFiles = (jsonDecode(filesResp.body)['files'] as List?) ?? [];
-        final result = <Map<String, dynamic>>[];
-
-        for (final f in rawFiles) {
-          if (f is Map && f['id'] != null) {
-            final fileId = f['id'].toString();
-            final parents = (f['parents'] as List?) ?? [];
-            String subject = 'General';
-
-            for (final p in parents) {
-              if (folderMap.containsKey(p.toString())) {
-                subject = folderMap[p.toString()]!;
-                break;
-              }
-            }
-
-            result.add({
-              'drive_file_id': fileId,
-              'name': f['name']?.toString() ?? 'Sin nombre',
-              'mime_type': f['mimeType']?.toString() ?? 'application/octet-stream',
-              'size_bytes': int.tryParse(f['size']?.toString() ?? '0') ?? 0,
-              'drive_link': 'https://drive.google.com/file/d/$fileId/view?usp=sharing',
-              'subject': subject,
-            });
-          }
-        }
-        return result;
-      }
+      return await _listFilesIn(token, folderMap);
     } catch (e) {
       Logger.error('Error escaneando carpetas de Drive: $e', tag: 'GoogleDriveService');
     }
     return [];
+  }
+
+  /// Subcarpetas directas de [parentId], siguiendo la paginación.
+  ///
+  /// Drive devuelve 100 resultados por página: sin recorrerlas todas, a partir
+  /// de la carpeta 101 la app dejaba de ver archivos sin avisar de nada.
+  Future<List<_DriveFolder>> _listChildFolders(
+    String token,
+    String parentId,
+  ) async {
+    final query =
+        "'$parentId' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+    final result = <_DriveFolder>[];
+    String? pageToken;
+
+    do {
+      final uri = Uri.parse(
+        'https://www.googleapis.com/drive/v3/files'
+        '?q=${Uri.encodeComponent(query)}'
+        '&pageSize=1000'
+        '&fields=nextPageToken%2Cfiles(id%2Cname)'
+        '${pageToken == null ? '' : '&pageToken=$pageToken'}',
+      );
+      final resp = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+      if (resp.statusCode != 200) return result;
+
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      for (final f in (body['files'] as List?) ?? []) {
+        if (f is Map && f['id'] != null && f['name'] != null) {
+          result.add(_DriveFolder(f['id'].toString(), f['name'].toString()));
+        }
+      }
+      pageToken = body['nextPageToken']?.toString();
+    } while (pageToken != null);
+
+    return result;
+  }
+
+  /// Archivos (no carpetas) que cuelgan de cualquiera de [folderMap], con el
+  /// significado de su carpeta ya resuelto.
+  Future<List<Map<String, dynamic>>> _listFilesIn(
+    String token,
+    Map<String, _DriveFolderMeaning> folderMap,
+  ) async {
+    final result = <Map<String, dynamic>>[];
+    final ids = folderMap.keys.toList();
+
+    for (var i = 0; i < ids.length; i += _maxParentsPerQuery) {
+      final lote = ids.sublist(
+        i,
+        (i + _maxParentsPerQuery).clamp(0, ids.length),
+      );
+      final parents = lote.map((id) => "'$id' in parents").join(' or ');
+      final query =
+          "($parents) and mimeType != 'application/vnd.google-apps.folder' and trashed = false";
+
+      String? pageToken;
+      do {
+        final uri = Uri.parse(
+          'https://www.googleapis.com/drive/v3/files'
+          '?q=${Uri.encodeComponent(query)}'
+          '&pageSize=1000'
+          '&fields=nextPageToken%2Cfiles(id%2Cname%2CmimeType%2Csize%2Cparents)'
+          '${pageToken == null ? '' : '&pageToken=$pageToken'}',
+        );
+        final resp =
+            await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+        if (resp.statusCode != 200) {
+          Logger.warning(
+            'Drive rechazó el listado de archivos (${resp.statusCode})',
+            tag: 'GoogleDriveService',
+          );
+          break;
+        }
+
+        final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        for (final f in (body['files'] as List?) ?? []) {
+          if (f is! Map || f['id'] == null) continue;
+          final fileId = f['id'].toString();
+
+          var meaning = const _DriveFolderMeaning(subject: _defaultSubject);
+          for (final p in (f['parents'] as List?) ?? []) {
+            final encontrada = folderMap[p.toString()];
+            if (encontrada != null) {
+              meaning = encontrada;
+              break;
+            }
+          }
+
+          result.add({
+            'drive_file_id': fileId,
+            'name': f['name']?.toString() ?? 'Sin nombre',
+            'mime_type': f['mimeType']?.toString() ?? 'application/octet-stream',
+            'size_bytes': int.tryParse(f['size']?.toString() ?? '0') ?? 0,
+            'drive_link': 'https://drive.google.com/file/d/$fileId/view?usp=sharing',
+            'subject': meaning.subject,
+            'career': meaning.career,
+            'category': meaning.category,
+          });
+        }
+        pageToken = body['nextPageToken']?.toString();
+      } while (pageToken != null);
+    }
+
+    return result;
   }
 
   /// Elimina el archivo del Drive del usuario.
@@ -467,9 +665,16 @@ class GoogleDriveService {
     return false;
   }
 
-  /// Busca o crea la carpeta destino: `Bitácora/<asignatura>`, y dentro de
-  /// ella `<subfolder>` si se pide (el material docente va a
-  /// [teachingMaterialFolderName] para no mezclarse con los trabajos).
+  /// Busca o crea la carpeta destino:
+  /// `Bitácora/<carrera>/<asignatura>/[<subfolder>]`.
+  ///
+  /// El nivel de carrera se agregó para que el Drive del estudiante quede
+  /// ordenado igual que su cabeza: primero la carrera, dentro las
+  /// asignaturas, y dentro de cada una el material docente separado de los
+  /// trabajos ([teachingMaterialFolderName]).
+  ///
+  /// Sin carrera se cae al esquema plano de antes (`Bitácora/<asignatura>`),
+  /// que es donde viven los archivos subidos por versiones anteriores.
   ///
   /// Si algún nivel falla, devuelve el último que sí resolvió en vez de
   /// abortar: mejor que el archivo quede una carpeta más arriba a que la
@@ -477,15 +682,24 @@ class GoogleDriveService {
   Future<String?> _getOrCreateSubjectFolder(
     String token,
     String? subject, {
+    String? career,
     String? subfolder,
   }) async {
     final rootFolderId = await _getOrCreateBitacoraFolder(token);
     if (rootFolderId == null) return null;
-    if (subject == null || subject.trim().isEmpty) return rootFolderId;
+
+    var parentId = rootFolderId;
+    if (career != null && career.trim().isNotEmpty) {
+      parentId =
+          await _getOrCreateChildFolder(token, career.trim(), parentId) ??
+              parentId;
+    }
+
+    if (subject == null || subject.trim().isEmpty) return parentId;
 
     final subjectFolderId =
-        await _getOrCreateChildFolder(token, subject.trim(), rootFolderId) ??
-            rootFolderId;
+        await _getOrCreateChildFolder(token, subject.trim(), parentId) ??
+            parentId;
 
     if (subfolder == null || subfolder.trim().isEmpty) return subjectFolderId;
 
@@ -500,9 +714,12 @@ class GoogleDriveService {
     String parentId,
   ) async {
     try {
-      // Escapar comillas simples para la query de Drive API
-      final escapedName = name.replaceAll("'", "\\'");
-      final query = "name = '$escapedName' and '$parentId' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+      // Se listan las carpetas hijas y se comparan normalizadas, en vez de
+      // preguntar por nombre exacto. Drive distingue tildes y mayúsculas: con
+      // una búsqueda exacta, una carpeta "Teologia" creada a mano no calzaba
+      // con la carrera "Teología" y la app creaba una segunda al lado.
+      final query =
+          "'$parentId' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
 
       final searchResp = await http.get(
         Uri.parse(
@@ -516,8 +733,13 @@ class GoogleDriveService {
       if (searchResp.statusCode == 401) throw _DriveAuthExpiredException();
       if (searchResp.statusCode == 200) {
         final files = (jsonDecode(searchResp.body)['files'] as List?) ?? [];
-        if (files.isNotEmpty) {
-          return files.first['id'] as String?;
+        final buscada = normalizeFolderName(name);
+        for (final f in files) {
+          if (f is Map &&
+              f['name'] != null &&
+              normalizeFolderName(f['name'].toString()) == buscada) {
+            return f['id'] as String?;
+          }
         }
       }
 

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/task_model.dart';
-import '../models/career_model.dart';
 import '../services/career_service.dart';
 import '../colors.dart';
 
@@ -171,21 +170,43 @@ class TaskCard extends StatelessWidget {
                                     color: AppColors.primary,
                                   ),
                                   const SizedBox(width: 4),
-                                  Text(
-                                    careerName,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w600,
+                                  Flexible(
+                                    child: Text(
+                                      careerName,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  // Quién la ve, de un vistazo: compartir es
+                                  // ahora una decisión y tiene que notarse.
+                                  Icon(
+                                    task.isShared
+                                        ? Icons.groups_outlined
+                                        : Icons.lock_outline,
+                                    size: 12,
+                                    color: subtextColor,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    task.isShared ? 'Compartida' : 'Privada',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: subtextColor,
+                                    ),
                                   ),
                                 ],
                               ),
                             ],
 
-                            // Autor de la tarea (en tareas de grupo compartidas)
-                            if (Careers.isShared(task.careerId)) ...[
+                            // Autor de la tarea. Se mira task.isShared, no si
+                            // hay carrera: ahora toda tarea tiene carrera y
+                            // solo algunas se publican al grupo.
+                            if (task.isShared) ...[
                               const SizedBox(height: 4),
                               Row(
                                 children: [

@@ -5,7 +5,6 @@ import '../models/meeting_model.dart';
 import '../utils/logger.dart';
 import '../notification_service.dart';
 import 'career_service.dart';
-import 'supabase_db_service.dart';
 
 class MeetingService extends ChangeNotifier {
   static final MeetingService _instance = MeetingService._internal();
@@ -131,8 +130,6 @@ class MeetingService extends ChangeNotifier {
 
     if (user != null) {
       try {
-        await SupabaseDbService().registerCareerMemberships();
-
         final payload = meetingToSave.toMap();
         payload['user_id'] = user.id;
 
@@ -154,8 +151,11 @@ class MeetingService extends ChangeNotifier {
 
     await _meetingBox?.put(meetingId, meetingToSave.toMap());
 
+    // Se resincroniza la lista completa, no solo esta reunión: el resumen
+    // diario cuenta cuántas hay cada día, así que agregar una obliga a
+    // recalcularlo igual.
     try {
-      await NotificationService().scheduleMeetingReminder(meetingToSave);
+      await NotificationService().syncAllMeetingReminders(getMeetings());
     } catch (e) {
       Logger.warning('No se pudo programar el recordatorio de la reunión: $e', tag: 'MeetingService');
     }
@@ -166,6 +166,7 @@ class MeetingService extends ChangeNotifier {
   Future<void> deleteMeeting(String meetingId) async {
     await _meetingBox?.delete(meetingId);
     await NotificationService().cancelMeetingReminder(meetingId);
+    await NotificationService().syncAllMeetingReminders(getMeetings());
 
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null) {
@@ -185,8 +186,6 @@ class MeetingService extends ChangeNotifier {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
     try {
-      await SupabaseDbService().registerCareerMemberships();
-
       // 1. Subir o actualizar las reuniones locales PROPIAS a Supabase.
       //
       // Desde que la caché también guarda las reuniones que otros
@@ -255,28 +254,11 @@ class MeetingService extends ChangeNotifier {
 
       // Los recordatorios locales son por dispositivo: si esta reunión se
       // creó en otro teléfono, este no la tenía programada hasta ahora.
-      await _resyncAllReminders();
+      await NotificationService().syncAllMeetingReminders(getMeetings());
 
       notifyListeners();
     } catch (e) {
       Logger.warning('Falló sincronización de reuniones: $e', tag: 'MeetingService');
-    }
-  }
-
-  /// Reprograma el recordatorio de toda reunión futura y cancela el de las
-  /// que ya pasaron, para el dispositivo actual.
-  Future<void> _resyncAllReminders() async {
-    for (final meeting in getMeetings()) {
-      if (meeting.id == null) continue;
-      try {
-        if (meeting.effectiveDate.isAfter(DateTime.now())) {
-          await NotificationService().scheduleMeetingReminder(meeting);
-        } else {
-          await NotificationService().cancelMeetingReminder(meeting.id!);
-        }
-      } catch (e) {
-        Logger.warning('No se pudo reprogramar recordatorio de ${meeting.id}: $e', tag: 'MeetingService');
-      }
     }
   }
 }

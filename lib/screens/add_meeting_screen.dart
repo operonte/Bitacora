@@ -28,10 +28,10 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
   String _selectedSubject = '';
   String _selectedType = 'Zoom';
 
-  /// Carrera a la que pertenece la reunión. null = "Sin carrera". Antes se
-  /// tomaba en silencio de la carrera activa al guardar y no había forma de
-  /// corregirla; ahora se elige acá y por eso se pueden reasignar las que ya
-  /// existen simplemente editándolas.
+  /// Carrera a la que pertenece la reunión. Antes se tomaba en silencio de la
+  /// carrera activa al guardar y no había forma de corregirla; ahora se elige
+  /// acá, es lo primero del formulario, y de ella dependen las asignaturas que
+  /// se ofrecen más abajo.
   String? _selectedCareerId;
 
   /// Privada = solo la ve quien la creó. Compartida = la ven los miembros de
@@ -47,6 +47,15 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
   List<Subject> _subjects = [];
   List<Subject> _filteredSubjects = [];
 
+  /// Materias que creó el usuario. No están atadas a ninguna carrera —el
+  /// modelo Subject no guarda carrera— así que se ofrecen en todas.
+  List<Subject> _ownSubjects = [];
+
+  /// Fuerza a reconstruir el Autocomplete al cambiar de carrera: su
+  /// `initialValue` solo se lee cuando se construye, así que sin una key nueva
+  /// el campo seguiría mostrando una asignatura que ya no está en la lista.
+  Key _subjectFieldKey = UniqueKey();
+
   final List<String> _meetingTypes = [
     'Zoom',
     'Google Meet',
@@ -58,8 +67,10 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSubjects();
+    // _initData primero: fija la carrera, y de ella depende qué asignaturas
+    // carga _loadSubjects.
     _initData();
+    _loadSubjects();
     _linkController.addListener(_onLinkChanged);
   }
 
@@ -107,6 +118,15 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
     } else {
       _selectedCareerId = CareerService().getSelectedCareer()?.id;
     }
+
+    // Ya no existe "sin carrera": no se puede usar la app sin pertenecer a
+    // alguna. Si la guardada se perdió (el usuario salió de esa carrera), se
+    // propone la activa para que la reunión quede clasificada al guardarla.
+    if (!CareerService().careerIds.contains(_selectedCareerId)) {
+      final careers = CareerService().getCareers();
+      _selectedCareerId = CareerService().getSelectedCareer()?.id ??
+          (careers.isNotEmpty ? careers.first.id : null);
+    }
   }
 
   Widget _buildCareerField() {
@@ -115,26 +135,26 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: DropdownButtonFormField<String?>(
-        initialValue: _selectedCareerId,
+      child: DropdownButtonFormField<String>(
+        initialValue: careers.any((c) => c.id == _selectedCareerId)
+            ? _selectedCareerId
+            : null,
         decoration: const InputDecoration(
           labelText: 'Carrera',
           prefixIcon: Icon(Icons.school_outlined),
           border: OutlineInputBorder(),
-          helperText: 'Sirve para filtrar las reuniones en Mi área',
+          helperText: 'Define qué asignaturas puedes elegir',
         ),
         items: [
-          const DropdownMenuItem<String?>(
-            value: null,
-            child: Text('Sin carrera'),
-          ),
           for (final c in careers)
-            DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
+            DropdownMenuItem<String>(value: c.id, child: Text(c.name)),
         ],
+        validator: (value) => value == null ? 'Elige una carrera' : null,
         onChanged: (value) => setState(() {
           _selectedCareerId = value;
-          // Sin carrera no hay grupo con quién compartir.
-          if (value == null) _isPrivate = true;
+          // Cambiar de carrera cambia la lista de asignaturas: si la que
+          // estaba elegida era de la carrera anterior, se descarta.
+          _rebuildSubjects();
         }),
       ),
     );
@@ -170,15 +190,39 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
     );
   }
 
+  /// Carga las materias: primero las predefinidas de la carrera elegida (que
+  /// están en memoria y aparecen al instante) y después las propias del
+  /// usuario, que hay que ir a buscar a la red.
   Future<void> _loadSubjects() async {
-    final careers = CareerService().getCareers();
+    setState(_rebuildSubjects);
+
+    try {
+      final dbSubjects = await SupabaseDbService().getSubjects();
+      if (!mounted) return;
+      setState(() {
+        _ownSubjects = dbSubjects;
+        _rebuildSubjects();
+      });
+    } catch (_) {
+      // Sin red quedan solo las predefinidas, que ya están puestas.
+    }
+  }
+
+  /// Rearma la lista de asignaturas para [_selectedCareerId].
+  ///
+  /// Es la cascada: la carrera acota qué asignaturas se ofrecen, para que no
+  /// se pueda agendar una reunión de una materia de Informática dentro de
+  /// Teología. Las materias propias van siempre, porque no pertenecen a
+  /// ninguna carrera en particular.
+  void _rebuildSubjects() {
     final user = Supabase.instance.client.auth.currentUser;
     final uId = user?.id ?? '';
     final uName = user?.email ?? 'Usuario';
 
-    List<Subject> predefined = [];
-    int counter = 0;
-    for (final career in careers) {
+    final predefined = <Subject>[];
+    var counter = 0;
+    for (final career in CareerService().getCareers()) {
+      if (_selectedCareerId != null && career.id != _selectedCareerId) continue;
       for (final s in career.predefinedSubjects) {
         predefined.add(Subject(
           id: 'pred_${counter++}',
@@ -191,34 +235,31 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
       }
     }
 
-    try {
-      final dbSubjects = await SupabaseDbService().getSubjects();
-      if (mounted) {
-        setState(() {
-          final Map<String, Subject> uniqueMap = {};
-          for (final s in [...predefined, ...dbSubjects]) {
-            if (!uniqueMap.containsKey(s.name.toLowerCase())) {
-              uniqueMap[s.name.toLowerCase()] = s;
-            }
-          }
-          _subjects = uniqueMap.values.toList();
-          _filteredSubjects = _subjects;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          final Map<String, Subject> uniqueMap = {};
-          for (final s in predefined) {
-            if (!uniqueMap.containsKey(s.name.toLowerCase())) {
-              uniqueMap[s.name.toLowerCase()] = s;
-            }
-          }
-          _subjects = uniqueMap.values.toList();
-          _filteredSubjects = _subjects;
-        });
-      }
+    final unicas = <String, Subject>{};
+    for (final s in [...predefined, ..._ownSubjects]) {
+      unicas.putIfAbsent(s.name.toLowerCase(), () => s);
     }
+    _subjects = unicas.values.toList();
+    _filteredSubjects = _subjects;
+
+    if (_selectedSubject.isEmpty) return;
+
+    final actual = _selectedSubject.toLowerCase();
+    final sigueDisponible = _subjects.any((s) => s.name.toLowerCase() == actual);
+    if (sigueDisponible) return;
+
+    // Solo se limpia si el nombre pertenece a OTRA carrera. El campo admite
+    // texto libre a propósito —una reunión puede no ser de ninguna
+    // asignatura— y borrar lo que el usuario escribió a mano sería peor que
+    // el problema que esto resuelve.
+    final esDeOtraCarrera = CareerService().getCareers().any((c) =>
+        c.id != _selectedCareerId &&
+        c.predefinedSubjects.any((s) => s.name.toLowerCase() == actual));
+    if (!esDeOtraCarrera) return;
+
+    _selectedSubject = '';
+    _professorController.clear();
+    _subjectFieldKey = UniqueKey();
   }
 
   Future<void> _selectDate() async {
@@ -366,6 +407,7 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
             ),
             const SizedBox(height: 16),
             Autocomplete<Subject>(
+              key: _subjectFieldKey,
               initialValue: TextEditingValue(text: _selectedSubject),
               optionsBuilder: (textVal) {
                 return _filteredSubjects.where(

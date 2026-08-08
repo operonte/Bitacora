@@ -107,6 +107,26 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
     }
   }
 
+  Future<void> _toggleMeetingCompleted(Meeting meeting) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final marcada = !meeting.isCompleted;
+    try {
+      await _meetingService
+          .saveMeeting(meeting.copyWith(isCompleted: marcada));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(marcada
+              ? 'Reunión marcada como realizada'
+              : 'Reunión marcada como pendiente'),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('No se pudo actualizar la reunión: $e')),
+      );
+    }
+  }
+
   String _formatMeetingDate(DateTime date) {
     const days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
     const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -345,9 +365,15 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     children: [
                       Text(
                         meeting.title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
+                          decoration: meeting.isCompleted
+                              ? TextDecoration.lineThrough
+                              : null,
+                          color: meeting.isCompleted
+                              ? AppColors.textSecondary
+                              : null,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -362,6 +388,26 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                   ),
                 ),
                 if (isOwn) ...[
+                  // is_completed existía en el modelo y en la tabla desde el
+                  // principio, pero no había forma de marcarlo. Solo tiene
+                  // sentido en las puntuales: una recurrente vuelve sola la
+                  // semana siguiente.
+                  if (!meeting.isRecurrent)
+                    IconButton(
+                      icon: Icon(
+                        meeting.isCompleted
+                            ? Icons.check_circle
+                            : Icons.check_circle_outline,
+                        size: 18,
+                        color: meeting.isCompleted
+                            ? AppColors.success
+                            : AppColors.textSecondary,
+                      ),
+                      tooltip: meeting.isCompleted
+                          ? 'Marcar como pendiente'
+                          : 'Marcar como realizada',
+                      onPressed: () => _toggleMeetingCompleted(meeting),
+                    ),
                   IconButton(
                     icon: const Icon(Icons.edit_outlined, size: 18),
                     tooltip: 'Editar',

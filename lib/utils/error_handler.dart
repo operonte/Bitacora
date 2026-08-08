@@ -36,7 +36,7 @@ class ErrorMessages {
       'No hay conexión a internet. Verifica tu red e intenta nuevamente.';
   static const String authError =
       'Error de autenticación. Por favor inicia sesión nuevamente.';
-  static const String firebaseError =
+  static const String serverError =
       'Error al conectar con el servidor. Intenta más tarde.';
   static const String notFoundError =
       'El elemento solicitado no fue encontrado.';
@@ -55,7 +55,7 @@ class ErrorMessages {
       case AppErrorType.auth:
         return authError;
       case AppErrorType.database:
-        return firebaseError;
+        return serverError;
       case AppErrorType.notFound:
         return notFoundError;
       case AppErrorType.permissionDenied:
@@ -68,7 +68,7 @@ class ErrorMessages {
   }
 
   /// Clasifica un error de Supabase o genérico
-  static AppException fromFirebaseError(dynamic error) {
+  static AppException fromBackendError(dynamic error) {
     if (error is AuthException) {
       return AppException(
         type: AppErrorType.auth,
@@ -80,7 +80,7 @@ class ErrorMessages {
 
     if (error is PostgrestException) {
       AppErrorType type = AppErrorType.database;
-      String message = firebaseError;
+      String message = serverError;
 
       switch (error.code) {
         case '42501': // RLS violation (permission denied)
@@ -188,7 +188,7 @@ class ErrorHandler {
         Navigator.pop(context); // Cerrar loading
       }
 
-      final appException = ErrorMessages.fromFirebaseError(error);
+      final appException = ErrorMessages.fromBackendError(error);
       if (context.mounted) {
         showErrorSnackBar(context, appException);
       }

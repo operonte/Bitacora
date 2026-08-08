@@ -7,7 +7,7 @@ import 'encryption_service.dart';
 import 'local_cache_service.dart';
 
 /// Guarda el progreso personal (completada / enviada) por tarea y usuario.
-/// Equivale al antiguo TaskProgressService pero usando Supabase en lugar de Firestore.
+/// El progreso vive en Supabase (tabla task_progress) con Hive como caché.
 ///
 /// Tabla Supabase: task_progress (user_id, task_id, is_completed, is_submitted, updated_at)
 class TaskProgressService {
@@ -179,31 +179,6 @@ class TaskProgressService {
         });
       }
     }
-  }
-
-  /// Stream de cambios en el progreso remoto del usuario.
-  Stream<void> watchProgress(String userId) {
-    return _supabase
-        .from('task_progress')
-        .stream(primaryKey: ['user_id', 'task_id'])
-        .eq('user_id', userId)
-        .asyncMap((rows) async {
-          for (final row in rows) {
-            final remoteRaw = {
-              'isCompleted': row['is_completed'] as bool? ?? false,
-              'isSubmitted': row['is_submitted'] as bool? ?? false,
-              'updatedAt': row['updated_at'] as int? ?? 0,
-            };
-            final key = _key(userId, row['task_id'] as String);
-            final localRaw = _box?.get(key) as Map?;
-
-            if (localRaw == null ||
-                _updatedAtOf(remoteRaw) >
-                    _updatedAtOf(Map<String, dynamic>.from(localRaw))) {
-              await _box?.put(key, remoteRaw);
-            }
-          }
-        });
   }
 
   Future<void> clearProgress(String userId, String taskId) async {

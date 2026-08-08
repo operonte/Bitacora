@@ -2,7 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/logger.dart';
 
 /// Cliente Supabase singleton para toda la app.
-/// Equivale al antiguo AppFirestore.instance
+/// Cliente único de Supabase para toda la app.
 class SupabaseService {
   static const String _url = 'https://pigrmmxmcmtdppkhnsbw.supabase.co';
   static const String _anonKey =

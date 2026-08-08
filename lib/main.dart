@@ -37,7 +37,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    // Inicializar Supabase (reemplaza Firebase)
+    // Inicializar Supabase
     await SupabaseService.initialize();
 
     // Sin esto, DateFormat(..., 'es') (task_card, area_personal_screen)
@@ -81,7 +81,11 @@ Future<void> main() async {
       await _requestPermissions();
       final notificationService = NotificationService();
       await notificationService.initialize();
-      await notificationService.scheduleDailyReminder();
+      // Con el plugin ya inicializado, se le pasan las reuniones que están en
+      // caché para que el resumen de las 8:00 no espere a la primera
+      // sincronización con la red. Las tareas las empuja AppState al cargarlas.
+      await notificationService
+          .syncAllMeetingReminders(meetingService.getMeetings());
     }
 
     runApp(

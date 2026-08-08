@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bitacora/utils/logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
@@ -21,6 +23,20 @@ class CareerService extends ChangeNotifier {
   CareerService._internal();
 
   Box? _careerBox;
+  StreamSubscription? _authSubscription;
+
+  /// Nombres de las carreras que [syncMembershipsFromServer] acaba de quitar.
+  ///
+  /// Sacar una carrera sin decir nada deja al usuario en la pantalla de la
+  /// clave sin entender qué pasó. La pantalla lo lee una vez y lo explica.
+  List<String> _recentlyRevoked = [];
+
+  /// Devuelve y limpia el aviso pendiente: se muestra una sola vez.
+  List<String> takeRevokedCareerNames() {
+    final names = _recentlyRevoked;
+    _recentlyRevoked = [];
+    return names;
+  }
 
   static const _careersKey = 'careers';
   static const _activeKey = 'active_career_id';
@@ -31,6 +47,20 @@ class CareerService extends ChangeNotifier {
     _careerBox = await openHiveBoxSafelyUntyped('career_settings', cipher: EncryptionService.cipher);
     _migrateLegacyIfNeeded();
     await loadRemoteCareers();
+    await syncMembershipsFromServer();
+    _listenToAuthChanges();
+  }
+
+  /// Reconcilia al iniciar sesión: la cuenta puede ser otra, o haber entrado a
+  /// una carrera desde otro dispositivo.
+  void _listenToAuthChanges() {
+    _authSubscription?.cancel();
+    _authSubscription =
+        Supabase.instance.client.auth.onAuthStateChange.listen((state) async {
+      if (state.session?.user == null) return;
+      await loadRemoteCareers();
+      await syncMembershipsFromServer();
+    });
   }
 
   // ── Lectura ─────────────────────────────────────────────────────────
@@ -185,6 +215,105 @@ class CareerService extends ChangeNotifier {
     }
   }
 
+  /// Deja la lista local igual a las membresías reales de `user_careers`.
+  ///
+  /// Hasta ahora eran dos verdades independientes: la lista del teléfono se
+  /// mantenía sola y el servidor decidía por su cuenta qué contenido
+  /// compartido entregar. Cuando se desincronizaban, la app se veía perfecta
+  /// —la carrera aparecía, el título la mostraba, se podían crear tareas— y
+  /// simplemente no llegaba nada de lo que otros compartían, sin ninguna
+  /// pista de por qué.
+  ///
+  /// Ahora manda el servidor, en las dos direcciones:
+  ///
+  /// - Una carrera que el servidor no reconoce se quita del teléfono. La app
+  ///   no puede repararlo sola: inscribirse exige la clave de acceso, que es
+  ///   justamente el candado que protege la carrera. Sacarla manda al usuario
+  ///   a la pantalla de la clave, que es la que ya sabe usar.
+  /// - Una carrera que el servidor sí reconoce y el teléfono no, se agrega.
+  ///   Cubre haber entrado desde otro dispositivo.
+  ///
+  /// Sin conexión no hace nada: no se puede distinguir "no eres miembro" de
+  /// "no pude preguntar", y ante la duda no se le quita nada al usuario.
+  Future<void> syncMembershipsFromServer() async {
+    final client = Supabase.instance.client;
+    final uid = client.auth.currentUser?.id;
+    if (uid == null) return;
+
+    Set<String> confirmed;
+    try {
+      final rows =
+          await client.from('user_careers').select('career_id').eq('user_id', uid);
+      confirmed = rows
+          .map((r) => (r as Map)['career_id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet();
+    } catch (e) {
+      Logger.warning(
+        'No se pudieron leer las membresías del servidor, se conserva la lista local: $e',
+        tag: 'CareerService',
+      );
+      return;
+    }
+
+    final local = getCareers();
+    final localIds = local.map((c) => c.id).toSet();
+
+    final removed = localIds.difference(confirmed);
+    final added = confirmed.difference(localIds);
+    if (removed.isEmpty && added.isEmpty) return;
+
+    final updated = local.where((c) => confirmed.contains(c.id)).toList();
+
+    for (final id in added) {
+      final career = Careers.findById(id);
+      if (career != null) {
+        updated.add(career);
+      } else {
+        // La carrera existe en user_careers pero no en el catálogo cargado.
+        // Se omite en vez de inventar un nombre: aparecería como un id crudo.
+        Logger.warning(
+          'Membresía de una carrera desconocida ($id), se omite',
+          tag: 'CareerService',
+        );
+      }
+    }
+
+    await _careerBox?.put(_careersKey, updated.map((c) => c.toMap()).toList());
+
+    // Si la carrera activa era una de las que ya no están, se pasa a la
+    // primera que quede; si no queda ninguna, el routing lleva solo a la
+    // pantalla de clave de acceso.
+    final activeId = _careerBox?.get(_activeKey) as String?;
+    if (activeId != null && !confirmed.contains(activeId)) {
+      if (updated.isNotEmpty) {
+        await _careerBox?.put(_activeKey, updated.first.id);
+      } else {
+        await _careerBox?.delete(_activeKey);
+      }
+    }
+
+    if (removed.isNotEmpty) {
+      // `removed` sale de restarle el servidor a lo local, así que cada id
+      // está sí o sí en `local` y el nombre se puede resolver directo.
+      _recentlyRevoked =
+          local.where((c) => removed.contains(c.id)).map((c) => c.name).toList();
+      Logger.warning(
+        'Carreras quitadas por no tener membresía en el servidor: ${removed.join(', ')}',
+        tag: 'CareerService',
+      );
+    }
+    if (added.isNotEmpty) {
+      Logger.info(
+        'Carreras agregadas desde el servidor: ${added.join(', ')}',
+        tag: 'CareerService',
+      );
+    }
+
+    notifyListeners();
+  }
+
   /// Carga las carreras creadas/modificadas en el admin (Supabase) y las deja
   /// disponibles en [Careers.remote] para validar claves y resolver nombres.
   /// Best-effort: si falla (offline / sin sesión), no lanza.
@@ -306,6 +435,7 @@ class CareerService extends ChangeNotifier {
   /// Cierra recursos
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _careerBox?.close();
     super.dispose();
   }

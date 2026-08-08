@@ -6,7 +6,7 @@ import 'task_progress_service.dart';
 import 'supabase_db_service.dart';
 import '../utils/logger.dart';
 
-/// Servicio de sincronización automática entre caché local y Firebase.
+/// Servicio de sincronización automática entre caché local y Supabase.
 ///
 /// Este servicio escucha cambios de conectividad y sincroniza automáticamente
 /// los datos pendientes cuando se restaura la conexión a internet.
@@ -53,7 +53,8 @@ class SyncService {
   void initialize() {
     Logger.sync('SyncService inicializado');
 
-    // FIX: connectivity_plus v5+ emite List<ConnectivityResult>, no ConnectivityResult
+    // connectivity_plus v5 emite un ConnectivityResult suelto. Al subir a v6
+    // pasa a ser List<ConnectivityResult> y hay que cambiar la firma acá.
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       ConnectivityResult result,
     ) {
@@ -119,9 +120,9 @@ class SyncService {
           final type = item['type'] as String;
           final id = item['id'] as String;
           final operation = item['operation'] as String;
-          final careerId = item['careerId'] as String?;
+          final isShared = item['isShared'] as bool?;
 
-          await _syncItem(type, id, operation, careerId: careerId);
+          await _syncItem(type, id, operation, isShared: isShared);
           successCount++;
         } catch (e) {
           Logger.error(
@@ -172,11 +173,11 @@ class SyncService {
     String type,
     String id,
     String operation, {
-    String? careerId,
+    bool? isShared,
   }) async {
     switch (type) {
       case 'task':
-        await _syncTask(id, operation, careerId: careerId);
+        await _syncTask(id, operation, isShared: isShared);
         break;
       case 'subject':
         await _syncSubject(id, operation);
@@ -211,7 +212,7 @@ class SyncService {
   }
 
   /// Sincroniza una tarea
-  Future<void> _syncTask(String id, String operation, {String? careerId}) async {
+  Future<void> _syncTask(String id, String operation, {bool? isShared}) async {
     final cachedTask = _cache.getCachedTask(id);
 
     if (cachedTask == null && operation != 'delete') {
@@ -236,14 +237,24 @@ class SyncService {
 
       case 'update':
         if (cachedTask != null) {
-          await _supabase.updateTaskRemote(cachedTask);
-          Logger.sync('Tarea actualizada: $id');
+          try {
+            await _supabase.updateTaskRemote(cachedTask);
+            Logger.sync('Tarea actualizada: $id');
+          } on TaskWriteRejectedException catch (e) {
+            // Rechazada por el servidor (borrada, o sin permiso). Reintentarla
+            // eternamente solo dejaría la cola atascada: se descarta.
+            Logger.warning(
+              'Se descarta la actualización pendiente de $id: $e',
+              tag: 'SyncService',
+            );
+          }
         }
         break;
 
       case 'delete':
         try {
-          await _supabase.deleteTaskRemote(id, careerId: careerId ?? cachedTask?.careerId);
+          await _supabase.deleteTaskRemote(
+              id, isShared: isShared ?? cachedTask?.isShared);
           Logger.sync('Tarea eliminada: $id');
         } catch (e) {
           if (!e.toString().contains('not-found') &&

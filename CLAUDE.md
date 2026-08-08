@@ -17,7 +17,17 @@ flutter test test/models_test.dart   # run a single test file
 flutter test --plain-name "test name"  # run a single test by name
 flutter test integration_test/   # run integration tests
 flutter build apk / web / linux  # build for a platform
+flutter build web --release --pwa-strategy=none   # web: ver nota abajo
+firebase deploy --only hosting --project bitacora-2d643
 ```
+
+### Despliegue web
+
+Compilar **siempre** con `--pwa-strategy=none` y borrar `build/web/flutter_service_worker.js` antes de desplegar.
+
+El service worker de Flutter cachea `main.dart.js` de forma agresiva y no lo suelta hasta dos recargas después del despliegue: cada cambio se veía "no aplicado" aunque estuviera en producción, y había que pedir Ctrl+Shift+R en cada iteración. Dejar el archivo fuera del despliegue hace que el navegador dé de baja el que ya tuviera registrado.
+
+Bitácora se usa sobre todo en Android, así que el offline del navegador no compensa el costo de depurar contra una versión vieja.
 
 ## Architecture
 

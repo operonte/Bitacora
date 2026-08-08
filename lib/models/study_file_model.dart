@@ -3,7 +3,7 @@ import '../utils/file_type_icons.dart';
 
 /// Categorías de archivo. Son lo mismo salvo por dónde se muestran y en qué
 /// carpeta de Drive viven: [trabajo] son los trabajos que sube el estudiante
-/// ("Mis tareas") y [guia] el material docente.
+/// ("Mis archivos") y [guia] el material docente.
 class StudyFileCategory {
   static const String trabajo = 'trabajo';
   static const String guia = 'guia';

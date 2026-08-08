@@ -43,57 +43,77 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
 
   List<Subject> _subjects = [];
   List<Subject> _filteredSubjects = [];
+
+  /// Materias creadas por el usuario en "Mis Materias". No pertenecen a
+  /// ninguna carrera, así que se ofrecen siempre.
+  List<Subject> _ownSubjects = [];
+
+  /// Cambia cuando la carrera invalida la materia elegida, para que el
+  /// Autocomplete se reconstruya con el campo vacío.
+  Key _subjectFieldKey = UniqueKey();
+
   bool _isLoading = false;
   final SupabaseDbService _supabaseService = SupabaseDbService();
   final CareerService _careerService = CareerService();
   Career? _selectedCareer;
 
-  final List<String> _taskTypes = [
-    'trabajo',
-    'resumen',
-    'estudio',
-    'prueba',
-    'examen',
-    'lectura',
-    'ensayo',
-    'presentación',
-    'otro',
-  ];
+  /// Quién ve la tarea. Privada por defecto: publicar al grupo tiene que ser
+  /// una decisión, no la consecuencia de qué carrera estaba activa.
+  bool _isShared = false;
+
+  /// La lista vive en el modelo para que no vuelva a divergir: el formulario
+  /// ofrecía 9 tipos y la validación aceptaba 11, así que una tarea creada en
+  /// otra versión con 'laboratorio' era válida pero no se podía elegir al
+  /// editarla.
+  static const List<String> _taskTypes = Task.selectableTypes;
 
   @override
   void initState() {
     super.initState();
-    // Cargar carrera de forma síncrona primero
-    _loadCareerSync();
-    // Luego cargar asignaturas
-    _loadSubjects();
-    // Finalmente inicializar datos de la tarea si es edición
+    // El orden importa: primero la carrera, porque de ella depende qué
+    // asignaturas se ofrecen. Es la cascada carrera → asignatura.
     _initializeData();
+    _rebuildSubjects();
+    _loadSubjects();
   }
 
-  void _loadCareerSync() {
-    final career = _careerService.getSelectedCareer();
-    if (career != null) {
-      _selectedCareer = career;
-    }
-  }
+  /// Carreras entre las que se puede elegir. Nunca está vacía en la práctica:
+  /// no se puede usar la app sin pertenecer a alguna.
+  List<Career> get _careers => _careerService.getCareers();
 
   void _initializeData() {
-    if (widget.task != null) {
-      final task = widget.task!;
+    // Al editar se respeta la carrera guardada en la tarea; al crear, la
+    // activa como propuesta.
+    final task = widget.task;
+    if (task != null && task.careerId != null) {
+      _selectedCareer = _careers.firstWhere(
+        (c) => c.id == task.careerId,
+        orElse: () =>
+            _careerService.getSelectedCareer() ?? _careers.first,
+      );
+    } else {
+      _selectedCareer = _careerService.getSelectedCareer();
+    }
+
+    if (task != null) {
+      _isShared = task.isShared;
       _titleController.text = task.title;
       _descriptionController.text = task.description;
       _selectedSubject = task.subject;
       _selectedProfessor = task.professor;
       _professorController.text = task.professor;
-      _selectedType = task.type;
+      // Una tarea vieja puede traer 'presentacion' sin tilde, que se acepta
+      // pero no está en el desplegable; sin esto el Dropdown revienta porque
+      // su initialValue no calza con ningún item.
+      _selectedType = _taskTypes.contains(task.type)
+          ? task.type
+          : (task.type == 'presentacion' ? 'presentación' : 'otro');
       _dueDate = task.dueDate;
       _dueTime = TimeOfDay.fromDateTime(task.dueDate);
       _isCompleted = task.isCompleted;
       _isSubmitted = task.isSubmitted;
       _tagController.text = task.tag ?? '';
       _collaboratorsController.text = task.collaborators.join(', ');
-      _filterSubjects('');
     }
   }
 
@@ -107,102 +127,61 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     super.dispose();
   }
 
+  /// Materias predefinidas de [career]. Mezclar las de todas las carreras era
+  /// el origen del error que motivó esto: con Teología activa se podía elegir
+  /// "Programación I" y la tarea terminaba publicada al grupo equivocado.
+  List<Subject> _predefinedSubjectsFor(Career? career) {
+    if (career == null) return [];
+    var idx = 0;
+    return career.predefinedSubjects.map((subject) {
+      final index = idx++;
+      return Subject(
+        id: subject.id ?? 'predef_${career.id}_$index',
+        name: subject.name,
+        professor: subject.professor,
+        description: subject.description,
+        visibility: SubjectVisibility.soloYo,
+        userId: subject.userId,
+        userName: subject.userName,
+        createdAt: subject.createdAt,
+      );
+    }).toList();
+  }
+
+  /// Recalcula la lista ofrecida: las de la carrera elegida más las materias
+  /// propias del usuario, que no pertenecen a ninguna carrera y por eso se
+  /// muestran siempre.
+  void _rebuildSubjects() {
+    final predefined = _predefinedSubjectsFor(_selectedCareer);
+    final names = predefined.map((s) => s.name.toLowerCase()).toSet();
+    final propias =
+        _ownSubjects.where((s) => !names.contains(s.name.toLowerCase()));
+
+    _subjects = [...predefined, ...propias];
+    _filteredSubjects = _subjects;
+
+    // La materia elegida puede no existir en la carrera nueva.
+    if (_selectedSubject.isNotEmpty &&
+        !_subjects.any((s) => s.name == _selectedSubject)) {
+      _selectedSubject = '';
+      _selectedProfessor = '';
+      _professorController.clear();
+      _subjectFieldKey = UniqueKey(); // fuerza a repintar el Autocomplete
+    }
+  }
+
   Future<void> _loadSubjects() async {
-    // Materias predefinidas según carrera seleccionada
-    List<Subject> predefinedSubjects = [];
+    // Caché local primero, para que el formulario abra con algo.
+    _ownSubjects = _supabaseService.getSubjectsFromCache();
+    if (mounted) setState(_rebuildSubjects);
 
-    final userCareers = CareerService().getCareers();
-    if (userCareers.isNotEmpty) {
-      int idx = 0;
-      predefinedSubjects = userCareers
-          .expand((c) => c.predefinedSubjects)
-          .map((subject) {
-            final index = idx++;
-            return Subject(
-              id: subject.id ?? 'predef_user_$index',
-              name: subject.name,
-              professor: subject.professor,
-              description: subject.description,
-              visibility: SubjectVisibility.soloYo,
-              userId: subject.userId,
-              userName: subject.userName,
-              createdAt: subject.createdAt,
-            );
-          })
-          .toList();
-    } else if (_selectedCareer != null) {
-      predefinedSubjects = _selectedCareer!.predefinedSubjects
-          .asMap()
-          .entries
-          .map((entry) {
-            final index = entry.key;
-            final subject = entry.value;
-
-            return Subject(
-              id: subject.id ?? 'predef_${_selectedCareer!.id}_$index',
-              name: subject.name,
-              professor: subject.professor,
-              description: subject.description,
-              visibility: SubjectVisibility.soloYo,
-              userId: subject.userId,
-              userName: subject.userName,
-              createdAt: subject.createdAt,
-            );
-          })
-          .toList();
-    } else {
-      // Si no hay carrera seleccionada, cargar todas las materias predefinidas de todas las carreras
-      predefinedSubjects = Careers.all
-          .expand((career) => career.predefinedSubjects)
-          .toList()
-          .asMap()
-          .entries
-          .map((entry) {
-            final index = entry.key;
-            final subject = entry.value;
-
-            return Subject(
-              id: subject.id ?? 'predef_all_$index',
-              name: subject.name,
-              professor: subject.professor,
-              description: subject.description,
-              visibility: SubjectVisibility.soloYo,
-              userId: subject.userId,
-              userName: subject.userName,
-              createdAt: subject.createdAt,
-            );
-          })
-          .toList();
-    }
-
-    // Cargar primero desde caché local para respuesta inmediata
-    final cachedSubjects = _supabaseService.getSubjectsFromCache();
-    if (cachedSubjects.isNotEmpty && mounted) {
-      setState(() {
-        _subjects = [...predefinedSubjects, ...cachedSubjects];
-        _filteredSubjects = _subjects;
-      });
-    }
-
-    // Luego actualizar desde Supabase
     try {
-      final remoteSubjects = await _supabaseService.getSubjects();
+      _ownSubjects = await _supabaseService.getSubjects();
       if (!mounted) return;
-      setState(() {
-        _subjects = [...predefinedSubjects, ...remoteSubjects];
-        _filteredSubjects = _subjects;
-      });
+      setState(_rebuildSubjects);
     } catch (e) {
       Logger.error('Error cargando materias desde Supabase: $e', tag: 'App');
-      // Si falla, mantener las materias predefinidas y cache
-    }
-
-    // Si no hay materias en cache y falla Firebase, usar predefinidas
-    if (_subjects.isEmpty) {
-      setState(() {
-        _subjects = predefinedSubjects;
-        _filteredSubjects = _subjects;
-      });
+      // Si falla, quedan las predefinidas de la carrera, que son locales.
     }
   }
 
@@ -270,7 +249,38 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                     Validators.maxLength(value, 1500, 'La descripción'),
               ),
               const SizedBox(height: 16),
+              // Carrera antes que asignatura, a propósito: la primera acota
+              // las opciones de la segunda.
+              DropdownButtonFormField<String>(
+                initialValue: _careers.any((c) => c.id == _selectedCareer?.id)
+                    ? _selectedCareer?.id
+                    : null,
+                decoration: const InputDecoration(
+                  labelText: 'Carrera',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.workspace_premium_outlined),
+                  helperText: 'Define qué asignaturas puedes elegir',
+                ),
+                items: _careers
+                    .map((c) => DropdownMenuItem<String>(
+                          value: c.id,
+                          child: Text(c.name, overflow: TextOverflow.ellipsis),
+                        ))
+                    .toList(),
+                validator: (v) =>
+                    (v == null || v.isEmpty) ? 'Elige una carrera' : null,
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _selectedCareer =
+                        _careers.firstWhere((c) => c.id == value);
+                    _rebuildSubjects();
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
               Autocomplete<Subject>(
+                key: _subjectFieldKey,
                 initialValue: TextEditingValue(text: _selectedSubject),
                 optionsBuilder: (TextEditingValue textEditingValue) {
                   _filterSubjects(textEditingValue.text);
@@ -419,6 +429,31 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              // Antes toda tarea con carrera se publicaba al grupo, y la
+              // carrera se heredaba de la que estuviera activa: se podía
+              // compartir sin haberlo decidido. Ahora es explícito y privado
+              // por defecto, igual que en reuniones.
+              Card(
+                margin: EdgeInsets.zero,
+                child: SwitchListTile(
+                  value: _isShared,
+                  activeThumbColor: AppColors.primary,
+                  secondary: Icon(
+                    _isShared ? Icons.groups_outlined : Icons.lock_outline,
+                    color: _isShared ? AppColors.primary : null,
+                  ),
+                  title: Text(_isShared ? 'Tarea compartida' : 'Tarea privada'),
+                  subtitle: Text(
+                    _isShared
+                        ? 'La verán todos los miembros de '
+                            '${_selectedCareer?.name ?? 'la carrera'}'
+                        : 'Solo la ves tú',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  onChanged: (v) => setState(() => _isShared = v),
+                ),
+              ),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _isLoading ? null : _saveTask,
@@ -443,11 +478,22 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   }
 
   Future<void> _selectDate() async {
+    final now = DateTime.now();
+    var first = DateTime(now.year, now.month, now.day);
+    var last = now.add(const Duration(days: 365));
+
+    // Al editar una tarea vencida su fecha original queda fuera del rango, y
+    // el selector obligaba a inventar una fecha futura solo para corregir una
+    // descripción — con lo que la tarea saltaba de Vencidas a Pendientes. Se
+    // amplía el rango para incluir la fecha que ya tiene.
+    if (_dueDate.isBefore(first)) first = _dueDate;
+    if (_dueDate.isAfter(last)) last = _dueDate;
+
     final picked = await showDatePicker(
       context: context,
       initialDate: _dueDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      firstDate: first,
+      lastDate: last,
     );
     if (picked != null) {
       setState(() {
@@ -475,7 +521,6 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
 
     try {
       final appState = context.read<AppState>();
-      final notificationService = NotificationService();
       final user = Supabase.instance.client.auth.currentUser;
 
       if (user == null) {
@@ -516,23 +561,20 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         userName: user.userMetadata?['full_name'] as String? ?? user.userMetadata?['name'] as String? ?? 'Usuario',
         createdAt: widget.task?.createdAt ?? DateTime.now(),
         careerId: _selectedCareer?.id,
+        isShared: _isShared,
       );
 
+      // Los avisos no se programan acá: addTask y updateTask ya llaman a
+      // syncAllTaskReminders con la lista completa, que además recalcula el
+      // resumen diario. Hacerlo también desde la pantalla dejaba las dos
+      // cosas peleando por el mismo id.
       bool success;
       if (widget.task == null) {
         // Crear nueva tarea a través del AppState (notifica a todas las pantallas)
-        final savedTask = await appState.addTask(task);
-        success = savedTask != null;
-        if (savedTask != null) {
-          await notificationService.scheduleTaskReminders(savedTask);
-        }
+        success = await appState.addTask(task) != null;
       } else {
         // Actualizar a través del AppState
         success = await appState.updateTask(task);
-        if (success && widget.task!.dueDate != task.dueDate) {
-          await notificationService.cancelTaskReminders(task.id!);
-          await notificationService.scheduleTaskReminders(task);
-        }
       }
 
       if (!mounted) return;
@@ -558,7 +600,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      final appException = ErrorMessages.fromFirebaseError(e);
+      final appException = ErrorMessages.fromBackendError(e);
       ErrorHandler.showErrorSnackBar(context, appException);
       setState(() => _isLoading = false);
     }
@@ -603,7 +645,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                 );
               } catch (e) {
                 if (context.mounted) {
-                  final appException = ErrorMessages.fromFirebaseError(e);
+                  final appException = ErrorMessages.fromBackendError(e);
                   ErrorHandler.showErrorSnackBar(context, appException);
                 }
               }

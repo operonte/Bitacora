@@ -4,6 +4,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
+import '../app_info.dart';
 import '../colors.dart';
 import '../models/career_model.dart';
 import '../auth_service.dart';
@@ -26,9 +27,7 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
   final AuthService _authService = AuthService();
   Career? _selectedCareer;
   List<Career> _careers = [];
-  bool _notif24h = true;
-  bool _notif2h = true;
-  bool _notifMeeting = true;
+  bool _notifEnabled = true;
 
   // Estado real a nivel de sistema operativo — los switches de arriba solo
   // controlan la preferencia dentro de la app, pero si Android bloqueó el
@@ -86,16 +85,12 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
 
     final career = _careerService.getSelectedCareer();
     final careers = _careerService.getCareers();
-    final n24 = await _notifService.is24hEnabled;
-    final n2 = await _notifService.is2hEnabled;
-    final nMeeting = await _notifService.isMeetingReminderEnabled;
+    final notifEnabled = await _notifService.isEnabled;
     if (mounted) {
       setState(() {
         _selectedCareer = career;
         _careers = careers;
-        _notif24h = n24;
-        _notif2h = n2;
-        _notifMeeting = nMeeting;
+        _notifEnabled = notifEnabled;
       });
     }
   }
@@ -225,65 +220,61 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
 
           const SizedBox(height: 24),
 
-          // ── Recordatorios ───────────────────────────────────
-          _sectionHeader(
-            context,
-            'Recordatorios',
-            Icons.notifications_outlined,
-          ),
-          const SizedBox(height: 8),
-          Card(
-            child: Column(
-              children: [
-                SwitchListTile(
-                  value: _notif24h,
-                  activeThumbColor: AppColors.primary,
-                  secondary: const Icon(Icons.access_alarm),
-                  title: const Text('Aviso 24 h antes'),
-                  subtitle: const Text('Un día antes del vencimiento'),
-                  onChanged: (v) async {
-                    final tasks = context.read<AppState>().tasks;
-                    setState(() => _notif24h = v);
-                    await _notifService.set24hEnabled(v);
-                    await _notifService.syncAllTaskReminders(tasks);
-                  },
-                ),
-                const Divider(height: 1),
-                SwitchListTile(
-                  value: _notif2h,
-                  activeThumbColor: AppColors.primary,
-                  secondary: const Icon(Icons.alarm),
-                  title: const Text('Aviso 2 h antes'),
-                  subtitle: const Text('Alerta de última hora'),
-                  onChanged: (v) async {
-                    final tasks = context.read<AppState>().tasks;
-                    setState(() => _notif2h = v);
-                    await _notifService.set2hEnabled(v);
-                    await _notifService.syncAllTaskReminders(tasks);
-                  },
-                ),
-                const Divider(height: 1),
-                SwitchListTile(
-                  value: _notifMeeting,
-                  activeThumbColor: AppColors.primary,
-                  secondary: const Icon(Icons.video_camera_front_outlined),
-                  title: const Text('Aviso de reuniones'),
-                  subtitle: const Text('La mañana del día y 2 horas antes'),
-                  onChanged: (v) async {
-                    setState(() => _notifMeeting = v);
-                    await _notifService.setMeetingReminderEnabled(v);
-                  },
-                ),
-              ],
-            ),
-          ),
-
+          // ── Notificaciones ──────────────────────────────────
+          // Solo fuera de web: el navegador no tiene notificaciones locales
+          // programadas, y mostrar un interruptor que no hace nada es peor
+          // que no mostrarlo.
           if (!kIsWeb) ...[
+            _sectionHeader(
+              context,
+              'Notificaciones',
+              Icons.notifications_outlined,
+            ),
+            const SizedBox(height: 8),
+            Card(
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    value: _notifEnabled,
+                    activeThumbColor: AppColors.primary,
+                    secondary: const Icon(Icons.notifications_active_outlined),
+                    title: const Text('Activar notificaciones'),
+                    subtitle:
+                        const Text('Un solo interruptor para todos los avisos'),
+                    onChanged: (v) async {
+                      // Las tareas se leen antes del await: después de uno,
+                      // usar el context de un widget que pudo desmontarse es
+                      // justo lo que prohíbe use_build_context_synchronously.
+                      final tasks = context.read<AppState>().tasks;
+                      setState(() => _notifEnabled = v);
+                      await _notifService.setEnabled(v);
+                      if (v) await _notifService.syncAllTaskReminders(tasks);
+                    },
+                  ),
+                  const Divider(height: 1),
+                  const ListTile(
+                    leading: Icon(Icons.list_alt_outlined, size: 20),
+                    dense: true,
+                    title: Text(
+                      'Qué avisa',
+                      style: TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      '• Resumen del día a las 8:00\n'
+                      '• 2 horas antes de cada tarea\n'
+                      '• 5 minutos antes de cada reunión\n'
+                      '• Cuando alguien crea o edita una tarea compartida',
+                      style: TextStyle(fontSize: 12, height: 1.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 12),
             _buildPermissionStatusCard(),
+            const SizedBox(height: 24),
           ],
-
-          const SizedBox(height: 24),
 
           // ── Tutorial ─────────────────────────────────────────
           _sectionHeader(context, 'Tutorial', Icons.auto_stories_outlined),
@@ -371,7 +362,7 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                 ListTile(
                   leading: const Icon(Icons.school, color: AppColors.primary),
                   title: const Text('Acerca de Bitácora'),
-                  subtitle: const Text('Versión 1.0.0'),
+                  subtitle: Text(AppInfo.versionLabel),
                   trailing: const Icon(Icons.info_outline, size: 16),
                   onTap: () => _showAboutDialog(context),
                 ),
@@ -860,44 +851,45 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
             Text('Acerca de Bitácora'),
           ],
         ),
-        content: const SingleChildScrollView(
+        content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Bitácora',
+              const Text(
+                AppInfo.name,
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               Text(
-                'Versión 1.0.0',
-                style: TextStyle(color: AppColors.textSecondary),
+                AppInfo.versionLabel,
+                style: const TextStyle(color: AppColors.textSecondary),
               ),
-              SizedBox(height: 16),
-              Text(
+              const SizedBox(height: 16),
+              const Text(
                 'Aplicación diseñada para estudiantes universitarios. '
                 'Organiza tus tareas, exámenes y trabajos por materia, '
                 'con soporte offline y recordatorios inteligentes.',
               ),
-              SizedBox(height: 16),
-              Text(
+              const SizedBox(height: 16),
+              const Text(
                 'Características:',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
-              SizedBox(height: 8),
-              Text('• Gestión de tareas por materia y carrera'),
-              Text('• Recordatorios 24 h y 2 h antes del vencimiento'),
-              Text('• Funciona sin conexión a internet'),
-              Text('• Sincronización automática en la nube'),
-              Text('• Modo oscuro'),
-              SizedBox(height: 16),
-              Text(
+              const SizedBox(height: 8),
+              const Text('• Gestión de tareas por materia y carrera'),
+              const Text('• Reuniones y material compartidos por carrera'),
+              const Text('• Recordatorios 24 h y 2 h antes del vencimiento'),
+              const Text('• Funciona sin conexión a internet'),
+              const Text('• Sincronización automática en la nube'),
+              const Text('• Modo oscuro'),
+              const SizedBox(height: 16),
+              const Text(
                 'Desarrollado por:',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
-              SizedBox(height: 4),
-              Text('Operonte'),
+              const SizedBox(height: 4),
+              const Text(AppInfo.developer),
             ],
           ),
         ),

@@ -13,7 +13,23 @@ class Task {
   String? tag;
   String userId;
   String userName;
-  String? careerId; // Nuevo campo para filtrar por carrera
+
+  /// Carrera a la que pertenece la tarea. Ahora es obligatoria: no se puede
+  /// usar la app sin estar en alguna, y sirve para acotar las asignaturas
+  /// que se ofrecen.
+  String? careerId;
+
+  /// Si la ve toda la carrera o solo su autor.
+  ///
+  /// Antes esto se deducía de que [careerId] estuviera lleno: cualquier tarea
+  /// con carrera se publicaba al grupo. Como la carrera se heredaba en
+  /// silencio de la que estuviera activa, se podía terminar publicando una
+  /// tarea sin haberlo decidido nunca — y sin forma de tener una tarea
+  /// privada estando dentro de una carrera.
+  ///
+  /// Ahora son dos cosas separadas: la carrera dice *de qué* es la tarea,
+  /// esto dice *quién la ve*. Por defecto privada, igual que las reuniones.
+  bool isShared;
   List<String>
   collaborators; // IDs de usuarios con los que se comparte la tarea
 
@@ -41,12 +57,37 @@ class Task {
     required this.userId,
     required this.userName,
     this.careerId,
+    this.isShared = false,
     this.collaborators = const [],
     this.updatedByName,
     this.updatedAt,
   }) {
     _validate();
   }
+
+  /// Tipos que se ofrecen al crear o editar una tarea, en el orden en que
+  /// aparecen en el desplegable. Es la lista canónica: [acceptedTypes] la
+  /// incluye y le suma las variantes viejas.
+  static const List<String> selectableTypes = [
+    'trabajo',
+    'resumen',
+    'estudio',
+    'prueba',
+    'examen',
+    'laboratorio',
+    'lectura',
+    'ensayo',
+    'presentación',
+    'otro',
+  ];
+
+  /// Tipos que la validación acepta. Además de los seleccionables incluye
+  /// 'presentacion' sin tilde, que quedó en tareas creadas por versiones
+  /// anteriores: rechazarla ahora rompería al leerlas.
+  static const List<String> acceptedTypes = [
+    ...selectableTypes,
+    'presentacion',
+  ];
 
   /// Valida los datos de la tarea y lanza excepción si son inválidos.
   void _validate() {
@@ -80,20 +121,7 @@ class Task {
       throw ArgumentError('La fecha de entrega no puede ser tan antigua');
     }
     // Validar tipos de tarea permitidos
-    final validTypes = [
-      'trabajo',
-      'examen',
-      'laboratorio',
-      'lectura',
-      'otro',
-      'presentación',
-      'presentacion',
-      'resumen',
-      'estudio',
-      'prueba',
-      'ensayo',
-    ];
-    if (!validTypes.contains(type.toLowerCase())) {
+    if (!acceptedTypes.contains(type.toLowerCase())) {
       throw ArgumentError('Tipo de tarea no válido: $type');
     }
   }
@@ -113,6 +141,7 @@ class Task {
       'userId': userId,
       'userName': userName,
       'careerId': careerId,
+      'isShared': isShared,
       'collaborators': collaborators,
       // Solo para el caché local: al servidor no se mandan (los pone el
       // trigger), pero sin esto la autoría desaparecería estando offline.
@@ -121,25 +150,54 @@ class Task {
     };
   }
 
-  factory Task.fromMap(Map<String, dynamic> map, [String? id]) {
-    // Validar campos críticos antes de crear Task
-    final title = map['title']?.toString().trim() ?? '';
-    final description = map['description']?.toString().trim() ?? '';
-    final subject = map['subject']?.toString().trim() ?? '';
-    final professor = map['professor']?.toString().trim() ?? '';
-    final userId = map['userId']?.toString().trim() ?? '';
-    final userName = map['userName']?.toString().trim() ?? '';
-    final dueDate = map['dueDate'];
-    final createdAt = map['createdAt'];
-    
+  /// Lee un mapa venga de donde venga: de la caché de Hive (`camelCase`) o de
+  /// una fila de Supabase (`snake_case`).
+  ///
+  /// Eran dos lectores paralelos —éste y `_rowToTask` en SupabaseDbService—
+  /// con los mismos campos escritos dos veces y los mismos valores por defecto
+  /// repetidos. Arreglar algo en uno y olvidarse del otro era cuestión de
+  /// tiempo; de hecho ya diferían: uno decía "Sin título" y el otro "Tarea sin
+  /// título".
+  ///
+  /// [isShared] fuerza el valor de [Task.isShared] cuando quien llama ya lo
+  /// sabe por otra vía — leer de `shared_tasks` implica que está compartida,
+  /// esté o no la columna en la fila.
+  factory Task.fromMap(
+    Map<String, dynamic> map, [
+    String? id,
+    bool? isShared,
+  ]) {
+    // Cada campo se busca primero con su nombre de caché y después con el de
+    // la base. `??` no sirve acá: un false o un 0 legítimos harían caer al
+    // segundo nombre.
+    Object? campo(String cache, String columna) =>
+        map.containsKey(cache) ? map[cache] : map[columna];
+
+    String texto(String cache, String columna) =>
+        campo(cache, columna)?.toString().trim() ?? '';
+
+    final title = texto('title', 'title');
+    final description = texto('description', 'description');
+    final subject = texto('subject', 'subject');
+    final professor = texto('professor', 'professor');
+    final userId = texto('userId', 'user_id');
+    final userName = texto('userName', 'user_name');
+    final dueDate = campo('dueDate', 'due_date');
+    final createdAt = campo('createdAt', 'created_at');
+
     // Validar tipos de datos críticos
-    if (dueDate is! int && dueDate is! num) {
+    if (dueDate is! num) {
       throw ArgumentError('dueDate debe ser un número (milisegundos), se recibió: ${dueDate.runtimeType}');
     }
-    if (createdAt is! int && createdAt is! num) {
+    if (createdAt is! num) {
       throw ArgumentError('createdAt debe ser un número (milisegundos), se recibió: ${createdAt.runtimeType}');
     }
-    
+
+    // updatedAt llega en milisegundos desde la caché y como texto ISO desde
+    // Supabase, porque allá la columna es TIMESTAMPTZ.
+    final updatedAtRaw = campo('updatedAt', 'updated_at');
+    final updatedByName = texto('updatedByName', 'updated_by_name');
+
     return Task(
       id: id ?? map['id']?.toString(),
       title: title.isEmpty ? 'Tarea sin título' : title,
@@ -147,19 +205,21 @@ class Task {
       subject: subject.isEmpty ? 'Sin asignatura' : subject,
       professor: professor.isEmpty ? 'Sin profesor' : professor,
       dueDate: DateTime.fromMillisecondsSinceEpoch(dueDate.toInt()),
-      isCompleted: map['isCompleted'] ?? false,
-      isSubmitted: map['isSubmitted'] ?? false,
-      type: (map['type']?.toString() ?? 'trabajo').toLowerCase(),
+      isCompleted: campo('isCompleted', 'is_completed') as bool? ?? false,
+      isSubmitted: campo('isSubmitted', 'is_submitted') as bool? ?? false,
+      type: (campo('type', 'type')?.toString() ?? 'trabajo').toLowerCase(),
       createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt.toInt()),
-      tag: map['tag']?.toString(),
+      tag: campo('tag', 'tag')?.toString(),
       userId: userId.isEmpty ? 'unknown' : userId,
       userName: userName.isEmpty ? 'Usuario desconocido' : userName,
-      careerId: map['careerId']?.toString(),
-      collaborators: List<String>.from(map['collaborators'] ?? []),
-      updatedByName: map['updatedByName']?.toString(),
-      updatedAt: map['updatedAt'] is num
-          ? DateTime.fromMillisecondsSinceEpoch((map['updatedAt'] as num).toInt())
-          : null,
+      careerId: campo('careerId', 'career_id')?.toString(),
+      isShared: isShared ?? campo('isShared', 'is_shared') as bool? ?? false,
+      collaborators:
+          List<String>.from(campo('collaborators', 'collaborators') as List? ?? []),
+      updatedByName: updatedByName.isEmpty ? null : updatedByName,
+      updatedAt: updatedAtRaw is num
+          ? DateTime.fromMillisecondsSinceEpoch(updatedAtRaw.toInt())
+          : DateTime.tryParse(updatedAtRaw?.toString() ?? ''),
     );
   }
 
@@ -178,6 +238,7 @@ class Task {
     String? userId,
     String? userName,
     String? careerId,
+    bool? isShared,
     List<String>? collaborators,
     String? updatedByName,
     DateTime? updatedAt,
@@ -197,6 +258,7 @@ class Task {
       userId: userId ?? this.userId,
       userName: userName ?? this.userName,
       careerId: careerId ?? this.careerId,
+      isShared: isShared ?? this.isShared,
       collaborators: collaborators ?? this.collaborators,
       updatedByName: updatedByName ?? this.updatedByName,
       updatedAt: updatedAt ?? this.updatedAt,

@@ -34,7 +34,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
-        final appException = ErrorMessages.fromFirebaseError(e);
+        final appException = ErrorMessages.fromBackendError(e);
         ErrorHandler.showErrorSnackBar(context, appException);
       }
     }
@@ -380,7 +380,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                     _loadData();
                   } catch (e) {
                     if (context.mounted) {
-                      final appException = ErrorMessages.fromFirebaseError(e);
+                      final appException = ErrorMessages.fromBackendError(e);
                       ErrorHandler.showErrorSnackBar(context, appException);
                     }
                   }
@@ -419,7 +419,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                 );
               } catch (e) {
                 if (context.mounted) {
-                  final appException = ErrorMessages.fromFirebaseError(e);
+                  final appException = ErrorMessages.fromBackendError(e);
                   ErrorHandler.showErrorSnackBar(context, appException);
                 }
               }

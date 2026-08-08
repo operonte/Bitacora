@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/study_file_model.dart';
 import '../utils/input_sanitizer.dart';
 import '../utils/logger.dart';
+import 'career_service.dart';
 import 'google_drive_service.dart';
 
 class StudyFileService extends ChangeNotifier {
@@ -152,8 +153,27 @@ class StudyFileService extends ChangeNotifier {
       }
     }
 
+    // Si el nombre cambió, llevarlo también a Drive: si no, el archivo queda
+    // llamándose distinto en cada lado. Es best-effort a propósito — que
+    // falle la red no debe impedir guardar el cambio en la app.
+    final driveId = fileToSave.driveFileId;
+    final nombreAnterior = _cachedNameOf(fileId);
+    if (driveId != null &&
+        driveId.isNotEmpty &&
+        nombreAnterior != null &&
+        nombreAnterior != fileToSave.name) {
+      await GoogleDriveService().renameFile(driveId, fileToSave.name);
+    }
+
     await _filesBox?.put(fileId, fileToSave.toMap());
     notifyListeners();
+  }
+
+  /// Nombre con el que estaba guardado [fileId], o null si es nuevo.
+  String? _cachedNameOf(String fileId) {
+    final raw = _filesBox?.get(fileId);
+    if (raw is Map) return raw['name']?.toString();
+    return null;
   }
 
   /// Vacía la caché local de archivos. Se llama al cerrar sesión: la caja de
@@ -291,31 +311,49 @@ class StudyFileService extends ChangeNotifier {
         }
       }
 
-      // 3. Escanear archivos en carpetas de Drive (Nuevos subidos directamente).
-      //    scanBitacoraFolderFiles ignora la subcarpeta de material docente,
-      //    porque si no las guías se registrarían además como trabajos.
+      // 3. Escanear archivos en carpetas de Drive (nuevos subidos directamente
+      //    desde el computador). El escaneo devuelve carrera, asignatura y
+      //    categoría deducidas de la carpeta donde esté cada uno, así que un
+      //    archivo arrastrado a `Bitácora/Teología/Griego/Material docente/`
+      //    entra como guía de Griego en Teología sin tocar nada en la app.
       final driveFiles = await driveService.scanBitacoraFolderFiles();
       final existingDriveIds = _allCachedFiles()
           .map((f) => f.driveFileId)
           .whereType<String>()
           .toSet();
 
+      // El escaneo devuelve el nombre de la carpeta de carrera, si el archivo
+      // estaba dentro de una. Se traduce a id para que el archivo detectado
+      // quede filtrable como cualquier otro.
+      final careersByName = {
+        for (final c in CareerService().getCareers())
+          normalizeFolderName(c.name): c.id
+      };
+
       for (final df in driveFiles) {
         final driveId = df['drive_file_id'] as String;
-        if (!existingDriveIds.contains(driveId)) {
-          final newStudyFile = StudyFile(
-            name: df['name'],
-            subject: df['subject'],
-            driveFileId: driveId,
-            mimeType: df['mime_type'],
-            sizeBytes: df['size_bytes'],
-            driveLink: df['drive_link'],
-            userId: user.id,
-            category: StudyFileCategory.trabajo,
-          );
-          await saveFile(newStudyFile);
-          onNotify?.call('Detectado nuevo archivo en Drive: "${newStudyFile.name}" en ${newStudyFile.subject}');
-        }
+        if (existingDriveIds.contains(driveId)) continue;
+
+        final careerName = df['career'] as String?;
+        final newStudyFile = StudyFile(
+          name: df['name'],
+          subject: df['subject'],
+          driveFileId: driveId,
+          mimeType: df['mime_type'],
+          sizeBytes: df['size_bytes'],
+          driveLink: df['drive_link'],
+          userId: user.id,
+          category: StudyFileCategory.parse(df['category']),
+          careerId: careerName == null
+              ? null
+              : careersByName[normalizeFolderName(careerName)],
+        );
+        await saveFile(newStudyFile);
+
+        final donde = newStudyFile.category == StudyFileCategory.guia
+            ? 'material docente de ${newStudyFile.subject}'
+            : newStudyFile.subject;
+        onNotify?.call('Detectado nuevo archivo en Drive: "${newStudyFile.name}" en $donde');
       }
     } catch (e) {
       Logger.warning('Error en sincronización con Google Drive: $e', tag: 'StudyFileService');

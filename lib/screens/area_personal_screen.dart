@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/study_file_model.dart';
+import '../providers/app_state.dart';
 import '../services/study_file_service.dart';
 import '../services/google_drive_service.dart';
 import '../services/career_service.dart';
@@ -12,6 +11,8 @@ import '../utils/file_security_validator.dart';
 import '../utils/input_sanitizer.dart';
 import '../utils/custom_file_picker.dart';
 import '../widgets/subject_group_list.dart';
+import '../widgets/career_subject_picker.dart';
+import '../widgets/study_file_card.dart';
 import 'meetings_screen.dart';
 import 'add_meeting_screen.dart';
 import 'config_screen.dart';
@@ -117,14 +118,15 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       // 3. Proceder con la subida a Google Drive
       setState(() => _isUploading = true);
 
+      final customCareerId = details['careerId'] ?? '';
+
       final uploadRes = await GoogleDriveService().uploadStudyFile(
         fileName: customName,
         bytes: bytes,
         mimeType: file.extension.isNotEmpty ? file.extension : 'application/octet-stream',
+        career: CareerService().careerNameFor(customCareerId),
         subject: customSubject,
       );
-
-      final customCareerId = details['careerId'] ?? '';
 
       final studyFile = StudyFile(
         name: customName,
@@ -162,26 +164,11 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     }
   }
 
-  /// Materias que se pueden elegir para [careerId]. Con una carrera elegida
-  /// solo se ofrecen las suyas: mezclar las de todas dejaba guardar un
-  /// archivo de Informática con una asignatura de Teología. Sin carrera se
-  /// ofrecen todas, porque ahí no hay nada que acote.
-  List<String> _subjectsForCareer(String? careerId) {
-    final subjects = <String>['General'];
-    for (final c in CareerService().getCareers()) {
-      if (careerId != null && c.id != careerId) continue;
-      for (final s in c.predefinedSubjects) {
-        if (!subjects.contains(s.name)) subjects.add(s.name);
-      }
-    }
-    return subjects;
-  }
-
   Future<Map<String, String>?> _showFileDetailsDialog(String originalName) async {
-    final careers = CareerService().getCareers();
-    String? selectedCareerId = CareerService().getSelectedCareer()?.id;
-    List<String> subjects = _subjectsForCareer(selectedCareerId);
-    String selectedSubject = subjects.length > 1 ? subjects[1] : 'General';
+    final propias = context.read<AppState>().subjects.map((s) => s.name).toList();
+
+    String? careerId;
+    String subject = CareerSubjectPicker.generalSubject;
 
     final nameController = TextEditingController(text: originalName);
     final formKey = GlobalKey<FormState>();
@@ -191,130 +178,75 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       barrierDismissible: false,
       builder: (ctx) {
         final primaryColor = Theme.of(context).primaryColor;
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: Row(
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Icon(Icons.drive_folder_upload_rounded, color: primaryColor),
+              const SizedBox(width: 10),
+              const Text('Detalles del Archivo',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.drive_folder_upload_rounded, color: primaryColor),
-                  const SizedBox(width: 10),
-                  const Text('Detalles del Archivo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Asigna un nombre y la asignatura correspondiente a este archivo:',
+                    style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      labelText: 'Nombre del archivo',
+                      prefixIcon: const Icon(Icons.description_outlined),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Ingresa un nombre para el archivo';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  CareerSubjectPicker(
+                    ownSubjects: propias,
+                    onChanged: (c, s) {
+                      careerId = c;
+                      subject = s;
+                    },
+                  ),
                 ],
               ),
-              content: SingleChildScrollView(
-                child: Form(
-                  key: formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Asigna un nombre y la asignatura correspondiente a este archivo:',
-                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: nameController,
-                        decoration: InputDecoration(
-                          labelText: 'Nombre del archivo',
-                          prefixIcon: const Icon(Icons.description_outlined),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        validator: (val) {
-                          if (val == null || val.trim().isEmpty) {
-                            return 'Ingresa un nombre para el archivo';
-                          }
-                          return null;
-                        },
-                      ),
-                      if (careers.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<String?>(
-                          initialValue: careers.any((c) => c.id == selectedCareerId)
-                              ? selectedCareerId
-                              : null,
-                          decoration: InputDecoration(
-                            labelText: 'Carrera',
-                            prefixIcon: const Icon(Icons.workspace_premium_outlined),
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                          ),
-                          items: [
-                            const DropdownMenuItem<String?>(
-                              value: null,
-                              child: Text('Sin carrera'),
-                            ),
-                            for (final c in careers)
-                              DropdownMenuItem<String?>(
-                                value: c.id,
-                                child: Text(c.name, overflow: TextOverflow.ellipsis),
-                              ),
-                          ],
-                          onChanged: (val) => setDialogState(() {
-                            selectedCareerId = val;
-                            // La materia elegida puede no existir en la
-                            // carrera nueva: se recalcula la lista y, si ya
-                            // no calza, se vuelve a la primera.
-                            subjects = _subjectsForCareer(val);
-                            if (!subjects.contains(selectedSubject)) {
-                              selectedSubject =
-                                  subjects.length > 1 ? subjects[1] : subjects.first;
-                            }
-                          }),
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        initialValue: subjects.contains(selectedSubject)
-                            ? selectedSubject
-                            : subjects.first,
-                        decoration: InputDecoration(
-                          labelText: 'Asignatura / Materia',
-                          prefixIcon: const Icon(Icons.school_outlined),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                        items: subjects
-                            .map((sub) => DropdownMenuItem<String>(
-                                  value: sub,
-                                  child:
-                                      Text(sub, overflow: TextOverflow.ellipsis),
-                                ))
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setDialogState(() => selectedSubject = val);
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, null),
-                  child: const Text('Cancelar'),
-                ),
-                FilledButton.icon(
-                  onPressed: () {
-                    if (formKey.currentState!.validate()) {
-                      Navigator.pop(ctx, {
-                        'name': nameController.text.trim(),
-                        'subject': selectedSubject,
-                        // Cadena vacía = sin carrera; el mapa no admite nulos.
-                        'careerId': selectedCareerId ?? '',
-                      });
-                    }
-                  },
-                  style: FilledButton.styleFrom(backgroundColor: primaryColor),
-                  icon: const Icon(Icons.cloud_upload_rounded, size: 18),
-                  label: const Text('Subir Archivo'),
-                ),
-              ],
-            );
-          },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(ctx, {
+                    'name': nameController.text.trim(),
+                    'subject': subject,
+                    // Cadena vacía = sin carrera; el mapa no admite nulos.
+                    'careerId': careerId ?? '',
+                  });
+                }
+              },
+              style: FilledButton.styleFrom(backgroundColor: primaryColor),
+              icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+              label: const Text('Subir Archivo'),
+            ),
+          ],
         );
       },
     );
@@ -339,97 +271,6 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
             child: const Text('Entendido'),
           ),
         ],
-      ),
-    );
-  }
-
-  void _showShareOptions(StudyFile file) {
-    final driveId = file.driveFileId;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40, height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              file.name,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            Text(
-              [file.subject, file.formattedSize]
-                  .where((s) => s.isNotEmpty)
-                  .join(' \u2022 '),
-              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 20),
-            // Compartir por link solo aplica a archivos que viven en Drive:
-            // un material que es un enlace externo ya es un link.
-            if (driveId != null && driveId.isNotEmpty) ...[
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.copy_rounded, color: AppColors.primary, size: 22),
-              ),
-              title: const Text('Copiar enlace', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Comparte el enlace de este archivo'),
-              onTap: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                Navigator.pop(ctx);
-                final link = await GoogleDriveService().makeFilePubliclySharable(driveId);
-                await Clipboard.setData(ClipboardData(text: link));
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('\u00a1Enlace copiado!')),
-                );
-              },
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.share_rounded, color: Colors.green, size: 22),
-              ),
-              title: const Text('Enviar a...', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Abre el men\u00fa nativo para compartir'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final link = await GoogleDriveService().makeFilePubliclySharable(driveId);
-                await Share.share(
-                  '\u00abBit\u00e1cora\u00bb \u2022 ${file.name}\n$link',
-                  subject: file.name,
-                );
-              },
-            ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -507,7 +348,11 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
           isScrollable: true,
           tabAlignment: TabAlignment.start,
           tabs: const [
-            Tab(icon: Icon(Icons.folder_shared_rounded), text: 'Mis tareas'),
+            // "Mis archivos", no "Mis tareas": esta pestaña son archivos, y
+            // las tareas de verdad viven en Pendientes/Vencidas/Entregadas.
+            // Con el nombre anterior había dos cosas distintas llamadas igual
+            // a un toque de distancia.
+            Tab(icon: Icon(Icons.folder_shared_rounded), text: 'Mis archivos'),
             Tab(icon: Icon(Icons.video_camera_front_rounded), text: 'Mis reuniones'),
             Tab(icon: Icon(Icons.menu_book_rounded), text: 'Material docente'),
           ],
@@ -717,97 +562,12 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     );
   }
 
-  Widget _buildFileCard(StudyFile file) {
-    final primaryColor = Theme.of(context).primaryColor;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _openFileLink(file.driveLink, fileName: file.name),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              // Icono del tipo de archivo
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: file.fileColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(file.fileIcon, color: file.fileColor, size: 26),
-              ),
-              const SizedBox(width: 12),
-              // Nombre y metadatos
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      file.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        // Badge de Asignatura
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: primaryColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            file.subject.isNotEmpty ? file.subject : 'General',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: primaryColor,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Fecha y Tamaño
-                        Expanded(
-                          child: Text(
-                            '${DateFormat('dd/MM/yy HH:mm').format(file.createdAt)} \u2022 ${file.formattedSize}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: context.isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              // Acciones: Editar, Compartir y Eliminar
-              IconButton(
-                icon: const Icon(Icons.edit_outlined, size: 20),
-                tooltip: 'Editar',
-                onPressed: () => _showEditFileDialog(file),
-              ),
-              IconButton(
-                icon: Icon(Icons.share_rounded, size: 20, color: primaryColor),
-                tooltip: 'Compartir',
-                onPressed: () => _showShareOptions(file),
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline_rounded, size: 20, color: AppColors.error),
-                tooltip: 'Eliminar',
-                onPressed: () => _confirmDelete(file),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildFileCard(StudyFile file) => StudyFileCard(
+        file: file,
+        onOpen: () => _openFileLink(file.driveLink, fileName: file.name),
+        onEdit: () => _showEditFileDialog(file),
+        onDelete: () => _confirmDelete(file),
+      );
 
   /// Edita los datos de un archivo ya subido: nombre, materia, carrera y
   /// —en el material docente— descripción. No toca el archivo en Drive, solo
@@ -815,19 +575,13 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   /// tener que volver a subirlo. Es además la única forma de ponerle carrera
   /// a los archivos subidos antes de que ese campo existiera.
   Future<void> _showEditFileDialog(StudyFile file) async {
-    final careers = CareerService().getCareers();
-    String? selectedCareerId =
-        careers.any((c) => c.id == file.careerId) ? file.careerId : null;
-    List<String> subjects = _subjectsForCareer(selectedCareerId);
-    // La materia guardada puede no estar en la carrera (archivo viejo, mal
-    // clasificado, o carrera de la que el usuario se salió): se agrega para
-    // no perderla al abrir el desplegable.
-    if (file.subject.isNotEmpty && !subjects.contains(file.subject)) {
-      subjects.insert(1, file.subject);
-    }
+    final propias = context.read<AppState>().subjects.map((s) => s.name).toList();
 
-    String selectedSubject =
-        subjects.contains(file.subject) ? file.subject : subjects.first;
+    // Los archivos subidos antes de que existiera el campo no tienen carrera;
+    // el picker les propone la activa. Editarlos es justamente la forma de
+    // terminar de clasificarlos.
+    String? selectedCareerId = file.careerId;
+    String selectedSubject = file.subject;
 
     final nameController = TextEditingController(text: file.name);
     final descriptionController =
@@ -838,9 +592,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       context: context,
       builder: (ctx) {
         final primaryColor = Theme.of(context).primaryColor;
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
+        return AlertDialog(
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20)),
               title: Row(
@@ -885,62 +637,14 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                           ),
                         ),
                       ],
-                      if (careers.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<String?>(
-                          initialValue: selectedCareerId,
-                          decoration: InputDecoration(
-                            labelText: 'Carrera',
-                            prefixIcon:
-                                const Icon(Icons.workspace_premium_outlined),
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                          ),
-                          items: [
-                            const DropdownMenuItem<String?>(
-                              value: null,
-                              child: Text('Sin carrera'),
-                            ),
-                            for (final c in careers)
-                              DropdownMenuItem<String?>(
-                                value: c.id,
-                                child: Text(c.name,
-                                    overflow: TextOverflow.ellipsis),
-                              ),
-                          ],
-                          onChanged: (val) => setDialogState(() {
-                            selectedCareerId = val;
-                            subjects = _subjectsForCareer(val);
-                            if (!subjects.contains(selectedSubject)) {
-                              selectedSubject = subjects.length > 1
-                                  ? subjects[1]
-                                  : subjects.first;
-                            }
-                          }),
-                        ),
-                      ],
                       const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        initialValue: subjects.contains(selectedSubject)
-                            ? selectedSubject
-                            : subjects.first,
-                        decoration: InputDecoration(
-                          labelText: 'Asignatura / Materia',
-                          prefixIcon: const Icon(Icons.school_outlined),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                        items: subjects
-                            .map((sub) => DropdownMenuItem<String>(
-                                  value: sub,
-                                  child: Text(sub,
-                                      overflow: TextOverflow.ellipsis),
-                                ))
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setDialogState(() => selectedSubject = val);
-                          }
+                      CareerSubjectPicker(
+                        initialCareerId: selectedCareerId,
+                        initialSubject: selectedSubject,
+                        ownSubjects: propias,
+                        onChanged: (c, sub) {
+                          selectedCareerId = c;
+                          selectedSubject = sub;
                         },
                       ),
                     ],
@@ -987,8 +691,6 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                 ),
               ],
             );
-          },
-        );
       },
     );
 
@@ -1139,94 +841,17 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   }
 
   Widget _buildMaterialCard(StudyFile material) {
-    final primaryColor = Theme.of(context).primaryColor;
+    // El material docente puede venir de otro miembro de la carrera: solo su
+    // autor lo edita o lo borra.
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-    final canDelete = material.userId.isNotEmpty && material.userId == currentUserId;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _openFileLink(material.openUrl, fileName: material.name),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: material.fileColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(material.fileIcon, color: material.fileColor, size: 26),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      material.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: primaryColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            material.isLink ? 'Enlace' : 'Archivo',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: primaryColor,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          // El material ya no se comparte con el curso, así que
-                          // el autor sobra: siempre es el propio usuario.
-                          child: Text(
-                            [
-                              DateFormat('d MMM y', 'es').format(material.createdAt),
-                              if (material.formattedSize.isNotEmpty) material.formattedSize,
-                            ].join(' · '),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: context.isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (canDelete) ...[
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 20),
-                  tooltip: 'Editar',
-                  onPressed: () => _showEditFileDialog(material),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded, size: 20, color: AppColors.error),
-                  tooltip: 'Eliminar',
-                  onPressed: () => _confirmDeleteMaterial(material),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+    return StudyFileCard(
+      file: material,
+      canModify:
+          material.userId.isNotEmpty && material.userId == currentUserId,
+      onOpen: () => _openFileLink(material.openUrl, fileName: material.name),
+      onEdit: () => _showEditFileDialog(material),
+      onDelete: () => _confirmDeleteMaterial(material),
     );
   }
 
@@ -1337,6 +962,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         fileName: details['name']!,
         bytes: bytes,
         mimeType: file.extension.isNotEmpty ? file.extension : 'application/octet-stream',
+        career: CareerService().careerNameFor(details['careerId']),
         subject: details['subject']!,
         // Fuera de la carpeta de trabajos, para que el escaneo de Drive no
         // registre las guías también como archivos personales.
@@ -1391,10 +1017,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       return;
     }
 
-    final careers = CareerService().getCareers();
-    String? selectedCareerId = CareerService().getSelectedCareer()?.id;
-    List<String> subjects = _subjectsForCareer(selectedCareerId);
-    String selectedSubject = subjects.length > 1 ? subjects[1] : 'General';
+    final propias = context.read<AppState>().subjects.map((s) => s.name).toList();
+    String? selectedCareerId;
+    String selectedSubject = CareerSubjectPicker.generalSubject;
 
     final titleController = TextEditingController();
     final urlController = TextEditingController();
@@ -1405,9 +1030,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       barrierDismissible: false,
       builder: (ctx) {
         final primaryColor = Theme.of(context).primaryColor;
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
+        return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               title: Row(
                 children: [
@@ -1450,60 +1073,12 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                           return null;
                         },
                       ),
-                      if (careers.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<String?>(
-                          initialValue: careers.any((c) => c.id == selectedCareerId)
-                              ? selectedCareerId
-                              : null,
-                          decoration: InputDecoration(
-                            labelText: 'Carrera',
-                            prefixIcon: const Icon(Icons.workspace_premium_outlined),
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                          ),
-                          items: [
-                            const DropdownMenuItem<String?>(
-                              value: null,
-                              child: Text('Sin carrera'),
-                            ),
-                            for (final c in careers)
-                              DropdownMenuItem<String?>(
-                                value: c.id,
-                                child: Text(c.name, overflow: TextOverflow.ellipsis),
-                              ),
-                          ],
-                          onChanged: (val) => setDialogState(() {
-                            selectedCareerId = val;
-                            subjects = _subjectsForCareer(val);
-                            if (!subjects.contains(selectedSubject)) {
-                              selectedSubject = subjects.length > 1
-                                  ? subjects[1]
-                                  : subjects.first;
-                            }
-                          }),
-                        ),
-                      ],
                       const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        initialValue: subjects.contains(selectedSubject)
-                            ? selectedSubject
-                            : subjects.first,
-                        decoration: InputDecoration(
-                          labelText: 'Asignatura / Materia',
-                          prefixIcon: const Icon(Icons.school_outlined),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        items: subjects
-                            .map((sub) => DropdownMenuItem<String>(
-                                  value: sub,
-                                  child: Text(sub, overflow: TextOverflow.ellipsis),
-                                ))
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setDialogState(() => selectedSubject = val);
-                          }
+                      CareerSubjectPicker(
+                        ownSubjects: propias,
+                        onChanged: (c, sub) {
+                          selectedCareerId = c;
+                          selectedSubject = sub;
                         },
                       ),
                     ],
@@ -1546,8 +1121,6 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                 ),
               ],
             );
-          },
-        );
       },
     );
 

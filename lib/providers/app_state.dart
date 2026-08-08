@@ -4,7 +4,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/task_model.dart';
 import '../models/subject_model.dart';
 import '../services/supabase_db_service.dart';
-import '../services/task_progress_service.dart';
 import '../services/local_cache_service.dart';
 import '../services/sync_service.dart';
 import '../services/career_service.dart';
@@ -42,15 +41,23 @@ class AppState extends ChangeNotifier {
         _unsubscribeFromChanges();
         _tasks = [];
         _subjects = [];
+        // La foto es de la cuenta anterior: si sobrevive, la primera carga de
+        // la cuenta nueva la compara contra ella y avisa de tareas que llevan
+        // ahí desde siempre.
+        _sharedTaskSnapshot = null;
         notifyListeners();
       }
     });
   }
   
+  /// Se guarda la referencia para poder quitarlo en [dispose]: CareerService
+  /// es un singleton, así que un listener anónimo sobrevivía a este AppState y
+  /// seguía llamando a loadTasks() sobre un ChangeNotifier ya desechado.
+  late final VoidCallback _careerListener;
+
   void _initCareerListener() {
-    CareerService().addListener(() {
-      loadTasks();
-    });
+    _careerListener = () => loadTasks();
+    CareerService().addListener(_careerListener);
   }
   
   void _subscribeToChanges() {
@@ -113,21 +120,14 @@ class AppState extends ChangeNotifier {
         notifyListeners();
       }
       
-      // 3. Actualizar desde Supabase
-      final tasks = await _supabase.getTasks();
-      // Aplicar progreso personal (para tareas compartidas)
-      final uid = Supabase.instance.client.auth.currentUser?.id ?? '';
-      final progressService = TaskProgressService();
-      _tasks = tasks.map((task) {
-        if (task.id == null) return task;
-        final progress = progressService.getProgress(uid, task.id!);
-        if (progress == null) return task;
-        return task.copyWith(
-          isCompleted: progress['isCompleted']!,
-          isSubmitted: progress['isSubmitted']!,
-        );
-      }).toList();
+      // 3. Actualizar desde Supabase.
+      //
+      // getTasks() ya devuelve el progreso personal aplicado
+      // (applyCurrentUserProgress), así que acá no se vuelve a aplicar: eran
+      // dos pasadas sobre la misma caja de Hive esperando a divergir.
+      _tasks = await _supabase.getTasks();
       _clearError();
+      _notifySharedTaskChanges(_tasks);
       NotificationService().syncAllTaskReminders(_tasks);
     } catch (e) {
       _setError('Error cargando tareas: $e');
@@ -136,6 +136,75 @@ class AppState extends ChangeNotifier {
     }
   }
   
+  /// Última foto de las tareas compartidas: id -> huella de su contenido.
+  ///
+  /// Null hasta la primera carga: sin ese estado inicial, al abrir la app
+  /// todas las tareas del grupo se verían como "nuevas" y saldría una
+  /// notificación por cada una.
+  Map<String, String>? _sharedTaskSnapshot;
+
+  /// Compara la lista recién traída con la anterior y avisa de lo que otra
+  /// persona creó o editó en el grupo.
+  ///
+  /// Solo suena mientras la app esté corriendo: esto se dispara desde la
+  /// recarga que provoca la suscripción Realtime, no desde un push. Con la
+  /// app cerrada por el sistema no hay nada escuchando.
+  void _notifySharedTaskChanges(List<Task> tasks) {
+    final user = Supabase.instance.client.auth.currentUser;
+    final miId = user?.id;
+    final miNombre = user?.userMetadata?['full_name'] as String? ??
+        user?.userMetadata?['name'] as String?;
+
+    final compartidas = tasks.where((t) => t.isShared && t.id != null).toList();
+    final actual = {
+      for (final t in compartidas) t.id!: _huella(t),
+    };
+
+    final previo = _sharedTaskSnapshot;
+    _sharedTaskSnapshot = actual;
+    if (previo == null) return;
+
+    for (final t in compartidas) {
+      final antes = previo[t.id!];
+
+      if (antes == null) {
+        if (t.userId == miId) continue;
+        NotificationService().notifySharedTaskChange(
+          title: t.title,
+          subject: t.subject,
+          author: t.userName,
+          isNew: true,
+        );
+      } else if (antes != actual[t.id!]) {
+        // El autor de la última edición lo estampa un trigger del servidor,
+        // así que se puede confiar en él para no avisarle a alguien de su
+        // propio cambio — cosa que t.userId no permite: en una tarea
+        // compartida cualquier miembro edita, pero userId sigue siendo el de
+        // quien la creó.
+        if (t.updatedByName != null && t.updatedByName == miNombre) continue;
+        NotificationService().notifySharedTaskChange(
+          title: t.title,
+          subject: t.subject,
+          author: t.updatedByName ?? t.userName,
+          isNew: false,
+        );
+      }
+    }
+  }
+
+  /// Huella del contenido visible de una tarea. Los campos de progreso
+  /// personal (isCompleted/isSubmitted) quedan fuera a propósito: son de cada
+  /// usuario, y marcarla como entregada no es una edición del grupo.
+  static String _huella(Task t) => [
+        t.title,
+        t.description,
+        t.subject,
+        t.professor,
+        t.type,
+        t.dueDate.millisecondsSinceEpoch,
+        t.updatedAt?.millisecondsSinceEpoch ?? 0,
+      ].join('|');
+
   /// Agrega una tarea. Devuelve la tarea creada (con su id ya asignado) o
   /// `null` si falló, para que quien llame no tenga que adivinar el id.
   Future<Task?> addTask(Task task) async {
@@ -157,8 +226,19 @@ class AppState extends ChangeNotifier {
   Future<bool> updateTask(Task task) async {
     _clearError();
     try {
-      await _supabase.updateTask(task);
       final index = _tasks.indexWhere((t) => t.id == task.id);
+      final previa = index == -1 ? null : _tasks[index];
+
+      // Cambiar el interruptor de compartir no es una edición: la tarea vive
+      // en `tasks` o en `shared_tasks` según ese valor, así que hay que
+      // moverla. Un UPDATE no lo hace — tocaría cero filas en la tabla nueva
+      // y la tarea se quedaría donde estaba, mostrando en pantalla un estado
+      // que el servidor no tiene.
+      if (previa != null && previa.isShared != task.isShared) {
+        return _moveTaskBetweenTables(previa, task, index);
+      }
+
+      await _supabase.updateTask(task);
       if (index != -1) {
         _tasks[index] = task;
         notifyListeners();
@@ -171,13 +251,38 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Recrea la tarea en la tabla que le corresponde y borra la original.
+  ///
+  /// El id cambia, porque lo genera la base al insertar. Por eso se cancelan
+  /// los recordatorios del id viejo antes de reprogramar: si no, quedarían
+  /// alarmas huérfanas que nadie puede cancelar.
+  Future<bool> _moveTaskBetweenTables(Task previa, Task nueva, int index) async {
+    final idViejo = previa.id;
+    final creada = await _supabase.addTask(nueva.copyWith(id: null));
+
+    try {
+      await _supabase.deleteTask(idViejo!, isShared: previa.isShared);
+    } catch (e) {
+      // La copia nueva ya existe; dejar la vieja duplicaría la tarea, así que
+      // el fallo se reporta en vez de tragarse.
+      _setError('La tarea se movió pero no se pudo borrar la anterior: $e');
+    }
+
+    await NotificationService().cancelTaskReminders(idViejo!);
+
+    _tasks[index] = nueva.copyWith(id: creada);
+    notifyListeners();
+    NotificationService().syncAllTaskReminders(_tasks);
+    return true;
+  }
+
   /// Elimina una tarea. Devuelve false (y deja el motivo en [error]) si falla.
   Future<bool> deleteTask(String taskId) async {
     _clearError();
     try {
       final matches = _tasks.where((t) => t.id == taskId);
-      final careerId = matches.isEmpty ? null : matches.first.careerId;
-      await _supabase.deleteTask(taskId, careerId: careerId);
+      final isShared = matches.isEmpty ? null : matches.first.isShared;
+      await _supabase.deleteTask(taskId, isShared: isShared);
       _tasks.removeWhere((t) => t.id == taskId);
       notifyListeners();
       NotificationService().syncAllTaskReminders(_tasks);
@@ -325,36 +430,11 @@ class AppState extends ChangeNotifier {
     }
   }
   
-  /// Filtra tareas por materia
-  List<Task> getTasksBySubject(String subject) {
-    if (subject == 'Todos') return _tasks;
-    return _tasks.where((task) => task.subject == subject).toList();
-  }
-  
-  /// Obtiene materias únicas para filtros
-  List<String> get uniqueSubjects {
-    final subjects = _tasks.map((task) => task.subject).toSet().toList();
-    subjects.sort();
-    return ['Todos', ...subjects];
-  }
-  
-  /// Busca tareas por texto
-  List<Task> searchTasks(String query) {
-    if (query.isEmpty) return _tasks;
-    
-    final lowerQuery = query.toLowerCase();
-    return _tasks.where((task) =>
-      task.title.toLowerCase().contains(lowerQuery) ||
-      task.description.toLowerCase().contains(lowerQuery) ||
-      task.subject.toLowerCase().contains(lowerQuery) ||
-      (task.tag?.toLowerCase().contains(lowerQuery) ?? false)
-    ).toList();
-  }
-
   @override
   void dispose() {
     _authSubscription?.cancel();
     _changesSubscription?.cancel();
+    CareerService().removeListener(_careerListener);
     super.dispose();
   }
 }

@@ -1,142 +1,214 @@
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/logger.dart';
 import 'supabase_service.dart';
 
-/// Servicio de autenticación administrativa para operaciones protegidas.
+/// Puerta del panel de administración. Exige dos cosas:
 ///
-/// El hash de la contraseña se guarda en la tabla `profiles` de Supabase
-/// (columna `admin_password_hash`). Solo el propio usuario autenticado puede
-/// leer y actualizar su fila (RLS).
+/// 1. Que la cuenta autenticada tenga `profiles.is_admin = TRUE`.
+/// 2. Que quien la usa sepa su contraseña de administrador.
 ///
-/// ADVERTENCIA: esta verificación corre en el cliente, así que el hash de
-/// respaldo (`_defaultAdminHash`) viaja compilado dentro de la app y puede
-/// extraerse del instalador. El límite de intentos de abajo solo dificulta
-/// probarlo repetidamente *desde la app*; no protege contra alguien que
-/// extraiga el hash y lo intente romper offline. La protección real tiene
-/// que venir del lado del servidor: las políticas RLS de Supabase para las
-/// tablas que administra este panel (`careers`, materias, etc.) deben, por
-/// su cuenta, restringir la escritura a usuarios realmente autorizados — no
-/// asumir que si algo llegó hasta aquí es porque pasó por este check.
+/// Antes había una sola contraseña, compartida y compilada dentro de cada APK
+/// como un SHA-256 sin sal. Se extraía del instalador, se rompía fuera de
+/// línea, y como la comparación ocurría en el cliente bastaba parchear la app
+/// para saltarse hasta el límite de intentos. Cada filtración obligaba a
+/// rotarla a mano y publicar una versión nueva.
+///
+/// Ahora nada de eso vive acá: el hash es bcrypt con sal, está en
+/// `admin_credentials` —una tabla que no lee nadie— y la comparación la hace
+/// Postgres en `verify_admin_password()`. La app solo manda lo que el usuario
+/// escribió y recibe un sí o un no.
+///
+/// El flag por sí solo no abre nada y la contraseña por sí sola tampoco: son
+/// dos condiciones, y las dos las evalúa el servidor.
 class AdminAuthService {
   static SupabaseClient get _client => SupabaseService.client;
 
-  // Hash SHA-256 de respaldo de la contraseña máster.
-  // Rotada el 2026-08-01: la clave anterior quedó expuesta en texto plano en
-  // el historial de git (commits públicos entre 2026-05-31 y 2026-06-13).
-  // La clave en texto plano NUNCA debe volver a un archivo versionado.
-  static const _defaultAdminHash =
-      '50f1d166455f9321436a0fbaf5fbab958b361a5cb5298979d744eecb9e568ace';
+  /// Largo mínimo. Debe coincidir con la validación de `set_admin_password`,
+  /// que es la que manda — ésta solo evita un viaje de ida y vuelta.
+  static const int minPasswordLength = 8;
 
-  // Límite de intentos fallidos antes de bloquear temporalmente.
-  static const int _maxAttempts = 5;
-  static const Duration _lockDuration = Duration(minutes: 15);
-  static const _attemptsKey = 'admin_auth_failed_attempts';
-  static const _lockUntilKey = 'admin_auth_lock_until_ms';
+  /// Si el usuario autenticado es administrador, según el servidor.
+  ///
+  /// Devuelve false ante cualquier fallo (sin sesión, sin red, RPC caída): no
+  /// poder confirmar que alguien es admin no es lo mismo que serlo.
+  static Future<bool> isCurrentUserAdmin() async {
+    return _rpcBool('is_admin');
+  }
 
-  /// Verifica si la contraseña ingresada coincide con la clave máster (hash)
-  /// o con el hash guardado en Supabase para el usuario autenticado actual.
-  /// Tras [_maxAttempts] fallos seguidos, bloquea nuevos intentos por
-  /// [_lockDuration] (defensa básica contra prueba y error repetido desde
-  /// la propia app; ver advertencia de la clase).
+  /// Si este administrador ya definió su contraseña. Cuando no, la pantalla de
+  /// acceso pide crearla en vez de pedirla.
+  static Future<bool> hasPassword() async {
+    return _rpcBool('admin_password_is_set');
+  }
+
+  /// Comprueba la contraseña contra el hash guardado en el servidor.
+  ///
+  /// A los 5 intentos fallidos el servidor bloquea 15 minutos y esto sigue
+  /// devolviendo false — no hay forma de distinguir bloqueo de clave errada, y
+  /// es a propósito.
   static Future<bool> verifyPassword(String password) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    if (await _isLocked(prefs)) {
-      Logger.warning(
-        'Acceso admin bloqueado temporalmente por demasiados intentos fallidos',
-        tag: 'AdminAuth',
-      );
-      return false;
-    }
-
-    final isValid = await _checkPassword(password);
-
-    if (isValid) {
-      await prefs.remove(_attemptsKey);
-      await prefs.remove(_lockUntilKey);
-      return true;
-    }
-
-    await _registerFailedAttempt(prefs);
-    return false;
+    if (password.isEmpty) return false;
+    return _rpcBool('verify_admin_password', {'p_password': password});
   }
 
-  static Future<bool> _isLocked(SharedPreferences prefs) async {
-    final lockUntilMs = prefs.getInt(_lockUntilKey);
-    if (lockUntilMs == null) return false;
-
-    if (DateTime.now().millisecondsSinceEpoch < lockUntilMs) {
-      return true;
-    }
-
-    // El bloqueo ya expiró: reiniciar contador para permitir nuevos intentos.
-    await prefs.remove(_lockUntilKey);
-    await prefs.remove(_attemptsKey);
-    return false;
-  }
-
-  static Future<void> _registerFailedAttempt(SharedPreferences prefs) async {
-    final attempts = (prefs.getInt(_attemptsKey) ?? 0) + 1;
-    await prefs.setInt(_attemptsKey, attempts);
-
-    if (attempts >= _maxAttempts) {
-      final lockUntil = DateTime.now().add(_lockDuration);
-      await prefs.setInt(_lockUntilKey, lockUntil.millisecondsSinceEpoch);
-      Logger.warning(
-        'Demasiados intentos fallidos de acceso admin: bloqueado ${_lockDuration.inMinutes} min',
-        tag: 'AdminAuth',
-      );
-    }
-  }
-
-  static Future<bool> _checkPassword(String password) async {
-    try {
-      final inputHash = sha256.convert(utf8.encode(password)).toString();
-
-      // 1. Verificación contra hash predeterminado de la clave máster
-      if (inputHash == _defaultAdminHash) {
-        return true;
-      }
-
-      // 2. Verificación de hash guardado en Supabase
-      final user = _client.auth.currentUser;
-      if (user == null) return false;
-
-      final rows = await _client
-          .from('profiles')
-          .select('admin_password_hash')
-          .eq('id', user.id)
-          .limit(1);
-
-      if (rows.isNotEmpty) {
-        final storedHash = rows.first['admin_password_hash'] as String?;
-        if (storedHash != null && storedHash.isNotEmpty) {
-          return inputHash == storedHash;
-        }
-      }
-
-      return false;
-    } catch (e) {
-      Logger.error(
-        'Error verificando contraseña admin: $e',
-        error: e,
-        tag: 'AdminAuth',
-      );
-      return false;
-    }
-  }
-
-  /// Guarda o actualiza el hash de la contraseña de admin del usuario actual.
+  /// Define o cambia la contraseña del administrador actual.
+  ///
+  /// Lanza si el servidor la rechaza (no es admin, o es muy corta), para que
+  /// la pantalla pueda mostrar el motivo en vez de fallar en silencio.
   static Future<void> setPassword(String password) async {
-    final user = _client.auth.currentUser;
-    if (user == null) return;
-    final hash = sha256.convert(utf8.encode(password)).toString();
-    await _client
-        .from('profiles')
-        .update({'admin_password_hash': hash})
-        .eq('id', user.id);
+    await _client.rpc('set_admin_password', params: {'p_password': password});
   }
+
+  // ── Miembros y administradores ─────────────────────────────────────────
+  //
+  // Todo pasa por funciones SECURITY DEFINER que comprueban is_admin() antes
+  // de hacer nada. No hay políticas nuevas sobre las tablas: quien se salte la
+  // app y llame al API directo sigue sin poder leer perfiles ajenos.
+
+  /// Quién pertenece a [careerId].
+  static Future<List<AdminMember>> careerMembers(String careerId) async {
+    final rows = await _client.rpc(
+      'admin_list_career_members',
+      params: {'p_career_id': careerId},
+    ) as List;
+    return rows
+        .map((r) => AdminMember.fromMap(Map<String, dynamic>.from(r as Map)))
+        .toList();
+  }
+
+  /// Qué se lleva por delante borrar [careerId]. `user_careers` borra en
+  /// cascada, así que esto no es informativo: es la diferencia entre saber y
+  /// no saber que vas a expulsar a todo el mundo.
+  static Future<CareerImpact> careerImpact(String careerId) async {
+    final rows = await _client.rpc(
+      'admin_career_impact',
+      params: {'p_career_id': careerId},
+    ) as List;
+    if (rows.isEmpty) return const CareerImpact(0, 0, 0, 0);
+    final r = Map<String, dynamic>.from(rows.first as Map);
+    return CareerImpact(
+      (r['members'] as num?)?.toInt() ?? 0,
+      (r['tasks'] as num?)?.toInt() ?? 0,
+      (r['meetings'] as num?)?.toInt() ?? 0,
+      (r['files'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  static Future<void> removeMember(String careerId, String userId) async {
+    await _client.rpc('admin_remove_member', params: {
+      'p_career_id': careerId,
+      'p_user_id': userId,
+    });
+  }
+
+  static Future<List<AdminMember>> admins() async {
+    final rows = await _client.rpc('admin_list_admins') as List;
+    return rows
+        .map((r) => AdminMember.fromMap(
+              {...Map<String, dynamic>.from(r as Map), 'is_admin': true},
+            ))
+        .toList();
+  }
+
+  /// Define la contraseña de OTRO administrador.
+  ///
+  /// Hace falta porque nombrar a alguien solo le pone el permiso: sin una
+  /// contraseña, `verify_admin_password()` le devuelve false y queda con el
+  /// permiso y sin puerta. Sirve además para reponérsela a quien la olvidó,
+  /// que si no quedaba bloqueado para siempre.
+  ///
+  /// El servidor la rechaza si la cuenta no es administradora.
+  static Future<void> resetPasswordFor(String userId, String password) async {
+    await _client.rpc('admin_reset_password', params: {
+      'p_user_id': userId,
+      'p_password': password,
+    });
+  }
+
+  /// Busca una cuenta por correo. Devuelve null si no existe.
+  static Future<AdminMember?> findUser(String email) async {
+    final rows = await _client.rpc(
+      'admin_find_user',
+      params: {'p_email': email},
+    ) as List;
+    if (rows.isEmpty) return null;
+    return AdminMember.fromMap(Map<String, dynamic>.from(rows.first as Map));
+  }
+
+  /// Da o quita el permiso de administrador.
+  ///
+  /// El servidor rechaza quitárselo a uno mismo y dejar la instalación sin
+  /// ningún administrador: sin eso, un clic dejaba el panel sin dueño y sin
+  /// forma de recuperarlo salvo escribiendo SQL a mano.
+  static Future<void> setAdmin(String userId, bool value) async {
+    await _client.rpc('admin_set_admin', params: {
+      'p_user_id': userId,
+      'p_is_admin': value,
+    });
+  }
+
+  static Future<bool> _rpcBool(String fn, [Map<String, dynamic>? params]) async {
+    if (_client.auth.currentUser == null) return false;
+    try {
+      final result = await _client.rpc(fn, params: params);
+      return result == true;
+    } catch (e) {
+      Logger.warning('Falló $fn: $e', tag: 'AdminAuth');
+      return false;
+    }
+  }
+}
+
+/// Una persona vista desde el panel: la fila de `profiles` que las funciones
+/// de administración devuelven.
+class AdminMember {
+  final String userId;
+  final String? displayName;
+  final String? email;
+  final bool isAdmin;
+  final DateTime? joinedAt;
+
+  /// Solo en la lista de administradores: si además tiene contraseña. Sin
+  /// ella el permiso no sirve de nada — no puede abrir el panel.
+  final bool hasPassword;
+
+  const AdminMember({
+    required this.userId,
+    this.displayName,
+    this.email,
+    this.isAdmin = false,
+    this.joinedAt,
+    this.hasPassword = false,
+  });
+
+  /// Nombre para mostrar, con el correo como respaldo: `display_name` es nulo
+  /// en las cuentas que nunca lo definieron.
+  String get label {
+    final nombre = displayName?.trim();
+    if (nombre != null && nombre.isNotEmpty) return nombre;
+    return email ?? 'Sin nombre';
+  }
+
+  factory AdminMember.fromMap(Map<String, dynamic> map) => AdminMember(
+        userId: map['user_id'].toString(),
+        displayName: map['display_name']?.toString(),
+        email: map['email']?.toString(),
+        isAdmin: map['is_admin'] == true,
+        joinedAt: map['joined_at'] == null
+            ? null
+            : DateTime.tryParse(map['joined_at'].toString()),
+        hasPassword: map['has_password'] == true,
+      );
+}
+
+/// Qué contenido cuelga de una carrera. Se muestra antes de borrarla.
+class CareerImpact {
+  final int members;
+  final int tasks;
+  final int meetings;
+  final int files;
+
+  const CareerImpact(this.members, this.tasks, this.meetings, this.files);
+
+  bool get isEmpty => members == 0 && tasks == 0 && meetings == 0 && files == 0;
 }
