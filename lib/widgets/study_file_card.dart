@@ -69,7 +69,11 @@ class StudyFileCard extends StatelessWidget {
                   color: file.fileColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(file.fileIcon, color: file.fileColor, size: 26),
+                child: Icon(
+                  file.fileIcon,
+                  color: file.fileColor,
+                  size: 26,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -106,7 +110,10 @@ class StudyFileCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             _subtitle,
-                            style: TextStyle(fontSize: 11, color: secondaryText),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: secondaryText,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),

@@ -13,12 +13,44 @@ import '../../services/career_supabase_service.dart';
 ///
 /// Como pantalla, la lista tiene scroll y los diálogos se abren encima sin
 /// perder de vista dónde estabas.
-class CareerSubjectsScreen extends StatelessWidget {
+class CareerSubjectsScreen extends StatefulWidget {
   final Career career;
 
   const CareerSubjectsScreen({super.key, required this.career});
 
-  static final CareerSupabaseService _service = CareerSupabaseService();
+  @override
+  State<CareerSubjectsScreen> createState() => _CareerSubjectsScreenState();
+}
+
+class _CareerSubjectsScreenState extends State<CareerSubjectsScreen> {
+  final CareerSupabaseService _service = CareerSupabaseService();
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  Career get career => widget.career;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Materias que calzan con [_query], por orden alfabético.
+  ///
+  /// Venían en el orden en que se agregaron, que con ocho ya obliga a leerlas
+  /// todas para encontrar una.
+  List<Subject> _filtrar(List<Subject> materias) {
+    final q = _query.trim().toLowerCase();
+    final lista = q.isEmpty
+        ? [...materias]
+        : materias
+            .where((s) =>
+                s.name.toLowerCase().contains(q) ||
+                s.professor.toLowerCase().contains(q))
+            .toList();
+    lista.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return lista;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,8 +70,8 @@ class CareerSubjectsScreen extends StatelessWidget {
             return const Center(child: Text('Carrera no encontrada'));
           }
 
-          final materias = actual.predefinedSubjects;
-          if (materias.isEmpty) {
+          final materias = _filtrar(actual.predefinedSubjects);
+          if (actual.predefinedSubjects.isEmpty) {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
@@ -54,7 +86,38 @@ class CareerSubjectsScreen extends StatelessWidget {
             );
           }
 
-          return ListView.separated(
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar materia o profesor',
+                    prefixIcon: const Icon(Icons.search),
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            tooltip: 'Limpiar',
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                  ),
+                  onChanged: (v) => setState(() => _query = v),
+                ),
+              ),
+              if (materias.isEmpty)
+                const Expanded(
+                  child: Center(child: Text('Ninguna materia calza')),
+                )
+              else
+                Expanded(
+                  child: ListView.separated(
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: materias.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
@@ -84,6 +147,9 @@ class CareerSubjectsScreen extends StatelessWidget {
                 ),
               );
             },
+                  ),
+                ),
+            ],
           );
         },
       ),
@@ -244,7 +310,18 @@ class CareerSubjectsScreen extends StatelessWidget {
       await _service.removeSubjectFromCareer(actual.id, materia.id!);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Materia eliminada')),
+          SnackBar(
+            content: Text('"${materia.name}" eliminada'),
+            // La materia se conserva entera en memoria, así que devolverla es
+            // volver a agregarla con los mismos datos. Es barato y evita que
+            // un toque de más obligue a reescribir el nombre y el profesor.
+            action: SnackBarAction(
+              label: 'Deshacer',
+              onPressed: () =>
+                  _service.addSubjectToCareer(actual.id, materia),
+            ),
+            duration: const Duration(seconds: 6),
+          ),
         );
       }
     } catch (e) {

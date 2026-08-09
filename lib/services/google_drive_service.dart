@@ -14,6 +14,22 @@ const _googleClientId =
 
 class _DriveAuthExpiredException implements Exception {}
 
+/// El token sirve, pero no alcanza para lo que se pidió.
+///
+/// Pasa con quien autorizó la app cuando pedía el permiso acotado
+/// (`drive.file`): su token sigue vigente, así que Drive responde 403
+/// `insufficientPermissions` en vez de 401. Reintentar con un token nuevo no
+/// arregla nada — hay que volver a pedir el consentimiento con el permiso
+/// ampliado.
+class DriveScopeInsufficientException implements Exception {
+  const DriveScopeInsufficientException();
+
+  @override
+  String toString() =>
+      'Bitácora necesita permiso ampliado de Google Drive para ver los '
+      'archivos que subes directamente a Drive.';
+}
+
 // Algunos llamadores pasan solo la extensión del archivo (p. ej. "pdf")
 // en vez de un MIME type real, porque file_picker no expone el MIME type
 // en todas las plataformas. Google Drive rechaza con 400 un mimeType que
@@ -88,6 +104,127 @@ class DriveUploadResult {
     required this.webViewLink,
     required this.isStoredInGoogleDrive,
   });
+}
+
+/// Un archivo o carpeta de Drive, con lo mínimo para registrarlo o ubicarlo.
+class DriveEntry {
+  final String id;
+  final String name;
+  final List<String> parents;
+  final String? mimeType;
+  final int? sizeBytes;
+  final String webViewLink;
+  final bool trashed;
+
+  const DriveEntry({
+    required this.id,
+    required this.name,
+    required this.parents,
+    this.mimeType,
+    this.sizeBytes,
+    this.webViewLink = '',
+    this.trashed = false,
+  });
+
+  static const String folderMimeType = 'application/vnd.google-apps.folder';
+  bool get isFolder => mimeType == folderMimeType;
+
+  /// Carpeta que lo contiene, o null si Drive no la informó.
+  String? get parentId => parents.isEmpty ? null : parents.first;
+
+  factory DriveEntry.fromJson(Map<String, dynamic> json) => DriveEntry(
+        id: json['id']?.toString() ?? '',
+        name: json['name']?.toString() ?? '',
+        parents: (json['parents'] as List?)
+                ?.map((p) => p.toString())
+                .toList(growable: false) ??
+            const [],
+        mimeType: json['mimeType']?.toString(),
+        sizeBytes: int.tryParse(json['size']?.toString() ?? ''),
+        webViewLink: json['webViewLink']?.toString() ?? '',
+        trashed: json['trashed'] == true,
+      );
+}
+
+/// Un cambio informado por la Changes API de Drive.
+class DriveChange {
+  final String fileId;
+
+  /// Drive lo dio de baja: borrado definitivo, o el usuario perdió acceso.
+  final bool removed;
+
+  /// Estado actual del archivo. Null cuando [removed] es true.
+  final DriveEntry? file;
+
+  const DriveChange({
+    required this.fileId,
+    required this.removed,
+    this.file,
+  });
+
+  /// Si el archivo ya no debe aparecer en la app. La papelera cuenta: el
+  /// usuario ya lo dio por borrado, aunque el enlace le siga funcionando por
+  /// ser el dueño.
+  bool get isGone => removed || file == null || file!.trashed;
+
+  factory DriveChange.fromJson(Map<String, dynamic> json) {
+    final rawFile = json['file'];
+    return DriveChange(
+      fileId: json['fileId']?.toString() ?? '',
+      removed: json['removed'] == true,
+      file: rawFile is Map
+          ? DriveEntry.fromJson(Map<String, dynamic>.from(rawFile))
+          : null,
+    );
+  }
+}
+
+/// Lo que devuelve una pasada completa de la Changes API.
+class DriveChangesPage {
+  final List<DriveChange> changes;
+
+  /// Token con el que empezar la próxima consulta. Se guarda **solo** si el
+  /// ciclo entero terminó bien: si se guardara antes, un fallo a mitad dejaría
+  /// cambios sin procesar que ya nadie volvería a mirar.
+  final String nextStartToken;
+
+  const DriveChangesPage({
+    required this.changes,
+    required this.nextStartToken,
+  });
+}
+
+/// El árbol de carpetas de Bitácora, con la ruta de cada una.
+///
+/// Es el cerco que reemplaza al que antes ponía Google: con el permiso acotado
+/// (`drive.file`) la app literalmente no podía ver nada ajeno; ahora sí puede,
+/// así que la restricción a la carpeta Bitácora la impone este objeto. Todo lo
+/// que no esté acá dentro se ignora y no se toca.
+class BitacoraTree {
+  final String rootId;
+
+  /// Id de carpeta → ruta relativa a la raíz. La raíz misma es lista vacía.
+  final Map<String, List<String>> paths;
+
+  const BitacoraTree({required this.rootId, required this.paths});
+
+  /// Si [folderId] es la carpeta Bitácora o alguna de sus descendientes.
+  bool containsFolder(String? folderId) =>
+      folderId != null && paths.containsKey(folderId);
+
+  /// Si [entry] vive dentro del árbol. Un archivo sin `parents` informados no
+  /// cuenta: sin saber dónde está, no se puede afirmar que sea nuestro.
+  bool containsEntry(DriveEntry entry) =>
+      entry.parents.any(containsFolder);
+
+  /// Ruta de carpetas de [entry] relativa a la raíz, o null si está fuera.
+  List<String>? pathOf(DriveEntry entry) {
+    for (final parent in entry.parents) {
+      final ruta = paths[parent];
+      if (ruta != null) return ruta;
+    }
+    return null;
+  }
 }
 
 class GoogleDriveService {
@@ -198,13 +335,67 @@ class GoogleDriveService {
   /// storage), a diferencia de [getOrRequestToken]. Se usa al reintentar
   /// tras un 401: en Web, el providerToken de Supabase no se refresca solo,
   /// así que reusar [getOrRequestToken] devolvería el mismo token vencido.
-  Future<String?> _requestFreshToken() async {
-    final token = await requestDriveTokenPlatform(_googleClientId);
+  ///
+  /// [forceConsent] además vuelve a mostrar la pantalla de permisos de Google.
+  /// Sin eso, quien autorizó la app cuando pedía `drive.file` recibe una y
+  /// otra vez un token con ese scope viejo: es válido, así que Drive no
+  /// responde 401 sino 403, y reintentar sin forzar el consentimiento no
+  /// cambia nada.
+  Future<String?> _requestFreshToken({bool forceConsent = false}) async {
+    final token = await requestDriveTokenPlatform(
+      _googleClientId,
+      forceConsent: forceConsent,
+    );
     if (token != null && token.isNotEmpty) {
       await persistToken(token);
       return token;
     }
     return null;
+  }
+
+  /// Traduce una respuesta de la API de Drive a la excepción que corresponde.
+  ///
+  /// Existe porque el 403 se venía tratando como "no se pudo, mala suerte", y
+  /// ese es justo el caso que hay que distinguir: `insufficientPermissions`
+  /// significa que el usuario tiene que volver a dar permiso, no que haya
+  /// fallado la red. Confundir un fallo de autorización con "sin novedad" es
+  /// lo que hacía que la app dijera "todo al día" sin haber comprobado nada.
+  void _throwIfAuthProblem(http.Response response) {
+    if (response.statusCode == 401) throw _DriveAuthExpiredException();
+    if (response.statusCode == 403 &&
+        response.body.contains('insufficientPermissions')) {
+      throw const DriveScopeInsufficientException();
+    }
+  }
+
+  /// Ejecuta [peticion] con un token válido, reintentando una vez si Drive
+  /// dice que el token venció (401) o que no alcanza (403).
+  ///
+  /// Es el mismo patrón que ya usaba la subida de archivos, ahora disponible
+  /// para el resto de las llamadas: antes cada una lo resolvía a su manera —o
+  /// no lo resolvía— y un token vencido se convertía en silencio en "no hay
+  /// nada que informar".
+  Future<T> _withToken<T>(Future<T> Function(String token) peticion) async {
+    final token = await getOrRequestToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('No se pudo obtener acceso a Google Drive.');
+    }
+
+    try {
+      return await peticion(token);
+    } on _DriveAuthExpiredException {
+      await clearToken();
+      final fresco = await _requestFreshToken();
+      if (fresco == null || fresco.isEmpty) {
+        throw Exception('El acceso a Google Drive expiró.');
+      }
+      return await peticion(fresco);
+    } on DriveScopeInsufficientException {
+      await clearToken();
+      final ampliado = await _requestFreshToken(forceConsent: true);
+      if (ampliado == null || ampliado.isEmpty) rethrow;
+      return await peticion(ampliado);
+    }
   }
 
   /// Sube el archivo al Google Drive del usuario.
@@ -369,6 +560,13 @@ class GoogleDriveService {
     if (fileId.isEmpty || fileId.contains('/') || newName.trim().isEmpty) {
       return false;
     }
+    if (!await belongsToBitacora(fileId)) {
+      Logger.warning(
+        'No se renombra $fileId: está fuera de la carpeta Bitácora',
+        tag: 'GoogleDriveService',
+      );
+      return false;
+    }
     final token = await getOrRequestToken();
     if (token == null || token.isEmpty) return false;
 
@@ -393,35 +591,263 @@ class GoogleDriveService {
     return false;
   }
 
-  /// Verifica si un archivo existe y no está en la papelera en Google Drive.
-  Future<bool> checkFileExists(String fileId) async {
-    if (fileId.isEmpty || fileId.contains('/')) return false;
-    final token = await getOrRequestToken();
-    if (token == null || token.isEmpty) return true; // Si no hay token, no asumimos borrado
+  /// Campos que se piden de cada archivo. Lo justo para registrarlo y ubicarlo.
+  static const String _entryFields =
+      'id,name,parents,mimeType,size,webViewLink,trashed';
 
-    try {
-      final response = await http.get(
-        Uri.parse(
-          'https://www.googleapis.com/drive/v3/files/$fileId?fields=id,trashed',
-        ),
-        headers: {'Authorization': 'Bearer $token'},
+  /// Marca el punto de partida: "quiero saber los cambios de aquí en adelante".
+  ///
+  /// Se pide una sola vez por dispositivo; después el token lo va renovando
+  /// cada llamada a [listChanges].
+  Future<String?> getStartPageToken() => _withToken((token) async {
+        final response = await http.get(
+          Uri.parse(
+            'https://www.googleapis.com/drive/v3/changes/startPageToken',
+          ),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+        _throwIfAuthProblem(response);
+        if (response.statusCode != 200) {
+          Logger.warning(
+            'No se pudo obtener el token de cambios de Drive (${response.statusCode})',
+            tag: 'GoogleDriveService',
+          );
+          return null;
+        }
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['startPageToken']?.toString();
+      });
+
+  /// Qué cambió en el Drive del usuario desde [pageToken].
+  ///
+  /// Una sola consulta de diferencias, no una por archivo: cubre agregados,
+  /// borrados, renombrados y movimientos a la vez, y es lo que permite que la
+  /// app se entere de lo que se hizo directamente en Drive. Es el mecanismo
+  /// que Google ofrece justo para esto.
+  Future<DriveChangesPage> listChanges(String pageToken) =>
+      _withToken((token) async {
+        final cambios = <DriveChange>[];
+        var actual = pageToken;
+        String? siguienteInicio;
+
+        // Drive pagina: se sigue mientras entregue nextPageToken, y la última
+        // página trae el token con el que empezar la próxima vez.
+        while (true) {
+          final uri = Uri.parse(
+            'https://www.googleapis.com/drive/v3/changes'
+            '?pageToken=$actual'
+            '&pageSize=200'
+            '&fields=${Uri.encodeComponent('nextPageToken,newStartPageToken,changes(fileId,removed,file($_entryFields))')}',
+          );
+          final response =
+              await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+          _throwIfAuthProblem(response);
+          if (response.statusCode != 200) {
+            throw Exception(
+              'Drive respondió ${response.statusCode} al pedir los cambios.',
+            );
+          }
+
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          for (final raw in (data['changes'] as List?) ?? const []) {
+            if (raw is Map) {
+              cambios.add(DriveChange.fromJson(Map<String, dynamic>.from(raw)));
+            }
+          }
+
+          final siguientePagina = data['nextPageToken']?.toString();
+          if (siguientePagina != null && siguientePagina.isNotEmpty) {
+            actual = siguientePagina;
+            continue;
+          }
+          siguienteInicio = data['newStartPageToken']?.toString();
+          break;
+        }
+
+        return DriveChangesPage(
+          changes: cambios,
+          // Si Drive no devolvió uno nuevo, se conserva el que había: perder
+          // el token obligaría a rehacer el barrido completo.
+          nextStartToken: (siguienteInicio != null && siguienteInicio.isNotEmpty)
+              ? siguienteInicio
+              : pageToken,
+        );
+      });
+
+  /// Recorre las carpetas de Bitácora y devuelve el árbol con sus rutas.
+  ///
+  /// Devuelve null si la carpeta Bitácora todavía no existe — no se crea acá:
+  /// sincronizar es una lectura, y crear carpetas en el Drive de alguien que
+  /// nunca subió nada sería ensuciar por adelantado.
+  Future<BitacoraTree?> loadBitacoraTree() => _withToken((token) async {
+        final rootId = await _findBitacoraFolder(token);
+        if (rootId == null) return null;
+
+        final paths = <String, List<String>>{rootId: const []};
+        final pendientes = <String>[rootId];
+
+        while (pendientes.isNotEmpty) {
+          final actual = pendientes.removeAt(0);
+          final rutaActual = paths[actual]!;
+
+          for (final carpeta in await _listChildren(token, actual,
+              soloCarpetas: true)) {
+            if (paths.containsKey(carpeta.id)) continue;
+            paths[carpeta.id] = [...rutaActual, carpeta.name];
+            pendientes.add(carpeta.id);
+          }
+        }
+
+        return BitacoraTree(rootId: rootId, paths: paths);
+      });
+
+  /// Todos los archivos (no carpetas) que hay dentro del árbol de [tree].
+  ///
+  /// Es el barrido inicial: corre una sola vez, cuando el dispositivo empieza
+  /// a seguir los cambios, para registrar lo que ya estaba en Drive antes.
+  /// A partir de ahí manda [listChanges], que es mucho más barato.
+  Future<List<DriveEntry>> listFilesIn(BitacoraTree tree) =>
+      _withToken((token) async {
+        final archivos = <DriveEntry>[];
+        for (final folderId in tree.paths.keys) {
+          archivos.addAll(
+            await _listChildren(token, folderId, soloCarpetas: false),
+          );
+        }
+        return archivos;
+      });
+
+  /// Hijos directos de [parentId]: carpetas o archivos, nunca ambos.
+  Future<List<DriveEntry>> _listChildren(
+    String token,
+    String parentId, {
+    required bool soloCarpetas,
+  }) async {
+    final tipo = soloCarpetas
+        ? "mimeType = '${DriveEntry.folderMimeType}'"
+        : "mimeType != '${DriveEntry.folderMimeType}'";
+    final query = "'$parentId' in parents and $tipo and trashed = false";
+
+    final resultado = <DriveEntry>[];
+    String? pageToken;
+
+    do {
+      final uri = Uri.parse(
+        'https://www.googleapis.com/drive/v3/files'
+        '?q=${Uri.encodeComponent(query)}'
+        '&pageSize=200'
+        '&fields=${Uri.encodeComponent('nextPageToken,files($_entryFields)')}'
+        '${pageToken == null ? '' : '&pageToken=$pageToken'}',
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final isTrashed = data['trashed'] == true;
-        return !isTrashed;
-      } else if (response.statusCode == 404) {
-        return false;
+      final response =
+          await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+      _throwIfAuthProblem(response);
+      if (response.statusCode != 200) {
+        // Falla en vez de devolver lo que alcanzó a juntar. El listado
+        // alimenta una reconciliación que borra lo que no aparece: media
+        // respuesta se leería como "estos archivos ya no existen".
+        throw Exception(
+          'Drive respondió ${response.statusCode} al listar $parentId.',
+        );
       }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      for (final raw in (data['files'] as List?) ?? const []) {
+        if (raw is Map) {
+          resultado.add(DriveEntry.fromJson(Map<String, dynamic>.from(raw)));
+        }
+      }
+      pageToken = data['nextPageToken']?.toString();
+    } while (pageToken != null && pageToken.isNotEmpty);
+
+    return resultado;
+  }
+
+  /// Último árbol conocido, para no recorrer Drive antes de cada borrado.
+  BitacoraTree? _arbolCache;
+
+  /// El árbol de Bitácora, recorriéndolo solo si no se conoce o si [refrescar].
+  Future<BitacoraTree?> bitacoraTree({bool refrescar = false}) async {
+    if (!refrescar && _arbolCache != null) return _arbolCache;
+    _arbolCache = await loadBitacoraTree();
+    return _arbolCache;
+  }
+
+  /// Si [fileId] está dentro de la carpeta Bitácora.
+  ///
+  /// **Es la única barrera que queda.** Con el permiso acotado de antes, Google
+  /// impedía por sí solo que la app tocara un archivo ajeno; ahora que el
+  /// permiso es completo, eso depende de esta comprobación. Por eso ante la
+  /// duda —sin árbol, sin respuesta de Drive, error de red— devuelve false: no
+  /// poder confirmar que algo es nuestro no autoriza a borrarlo.
+  Future<bool> belongsToBitacora(String fileId) async {
+    if (fileId.isEmpty || fileId.contains('/')) return false;
+
+    try {
+      return await _withToken((token) async {
+        final response = await http.get(
+          Uri.parse(
+            'https://www.googleapis.com/drive/v3/files/$fileId?fields=id,parents',
+          ),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+        _throwIfAuthProblem(response);
+        if (response.statusCode != 200) return false;
+
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final parents = (data['parents'] as List?)
+                ?.map((p) => p.toString())
+                .toList(growable: false) ??
+            const <String>[];
+        if (parents.isEmpty) return false;
+
+        var arbol = await bitacoraTree();
+        if (arbol != null && parents.any(arbol.containsFolder)) return true;
+
+        // Puede haber caído en una carpeta creada después del último recorrido.
+        arbol = await bitacoraTree(refrescar: true);
+        return arbol != null && parents.any(arbol.containsFolder);
+      });
     } catch (e) {
-      Logger.warning('Error verificando existencia de archivo $fileId en Drive: $e', tag: 'GoogleDriveService');
+      Logger.warning(
+        'No se pudo confirmar si $fileId está en Bitácora: $e',
+        tag: 'GoogleDriveService',
+      );
+      return false;
     }
-    return true;
+  }
+
+  /// Busca la carpeta "Bitácora" sin crearla.
+  Future<String?> _findBitacoraFolder(String token) async {
+    final response = await http.get(
+      Uri.parse(
+        'https://www.googleapis.com/drive/v3/files'
+        "?q=name%3D'Bit%C3%A1cora'+and+mimeType%3D'application%2Fvnd.google-apps.folder'+and+trashed%3Dfalse"
+        '&fields=files(id%2Cname)',
+      ),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    _throwIfAuthProblem(response);
+    if (response.statusCode != 200) return null;
+    final files = (jsonDecode(response.body)['files'] as List?) ?? const [];
+    return files.isEmpty ? null : files.first['id'] as String?;
   }
 
   /// Elimina el archivo del Drive del usuario.
+  ///
+  /// Solo dentro de la carpeta Bitácora: ver [belongsToBitacora]. Con permiso
+  /// completo de Drive, un `fileId` equivocado acá borraría un archivo
+  /// cualquiera de la persona.
   Future<bool> deleteFile(String fileId) async {
+    if (!await belongsToBitacora(fileId)) {
+      Logger.warning(
+        'No se borra $fileId: está fuera de la carpeta Bitácora',
+        tag: 'GoogleDriveService',
+      );
+      return false;
+    }
+
     final token = await getOrRequestToken();
     if (token != null && token.isNotEmpty && !fileId.contains('/')) {
       try {

@@ -8,11 +8,24 @@ extension type _DriveTokenCallback._(JSFunction _) implements JSFunction {
 }
 
 @JS('requestGoogleDriveToken')
-external void _requestGoogleDriveToken(JSString clientId, JSFunction callback);
+external void _requestGoogleDriveToken(
+  JSString clientId,
+  JSBoolean forceConsent,
+  JSFunction callback,
+);
 
 /// Llama a `requestGoogleDriveToken` definida en web/index.html (GIS).
 /// Muestra un popup de consentimiento sin cerrar sesión.
-Future<String?> requestDriveTokenPlatform(String clientId) async {
+///
+/// [forceConsent] vuelve a mostrar la pantalla de permisos aunque el usuario
+/// ya haya autorizado la app. Se usa cuando Drive responde que el token no
+/// alcanza para lo que se pidió: quien autorizó con el permiso acotado de
+/// antes tiene un token válido pero insuficiente, y pedir otro sin forzar el
+/// consentimiento devuelve exactamente el mismo scope.
+Future<String?> requestDriveTokenPlatform(
+  String clientId, {
+  bool forceConsent = false,
+}) async {
   final completer = Completer<String?>();
 
   try {
@@ -23,7 +36,7 @@ Future<String?> requestDriveTokenPlatform(String clientId) async {
       }
     }).toJS;
 
-    _requestGoogleDriveToken(clientId.toJS, callback);
+    _requestGoogleDriveToken(clientId.toJS, forceConsent.toJS, callback);
   } catch (e) {
     if (!completer.isCompleted) completer.complete(null);
   }

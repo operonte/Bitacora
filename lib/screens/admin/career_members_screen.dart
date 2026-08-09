@@ -75,7 +75,18 @@ class _CareerMembersScreenState extends State<CareerMembersScreen> {
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${member.label} ya no pertenece a la carrera')),
+          SnackBar(
+            content: Text('${member.label} ya no pertenece a la carrera'),
+            action: SnackBarAction(
+              label: 'Deshacer',
+              onPressed: () async {
+                await AdminAuthService.addMember(
+                    widget.career.id, member.userId);
+                await _load();
+              },
+            ),
+            duration: const Duration(seconds: 6),
+          ),
         );
       }
     } catch (e) {

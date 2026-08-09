@@ -20,12 +20,12 @@ class AppInfo {
   /// forma de saber qué compilación tenía instalada el teléfono ni si el
   /// código que los creaba seguía ahí, y el diagnóstico se convirtió en
   /// adivinar. Se sube a mano en cada compilación que se instale o despliegue.
-  static const String build = '2026-08-08.7';
+  static const String build = '2026-08-08.12';
 
   /// "Versión 2.8.1", listo para pintar.
   static String get versionLabel => 'Versión $version';
 
-  /// "Versión 2.8.1 · compilación 2026-08-08.7", para la pantalla de
+  /// "Versión 2.8.1 · compilación 2026-08-08.9", para la pantalla de
   /// configuración: es lo que hay que preguntar cuando algo no calza.
   static String get buildLabel => '$versionLabel · compilación $build';
 }

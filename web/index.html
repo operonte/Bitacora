@@ -28,12 +28,18 @@
   <!-- Google Identity Services (GIS) para acceso a Google Drive sin cerrar sesión -->
   <script src="https://accounts.google.com/gsi/client" async></script>
   <script>
-    // Solicita un token de acceso a Google Drive mediante popup (sin redirigir ni cerrar sesión)
-    function requestGoogleDriveToken(clientId, callback) {
+    // Solicita un token de acceso a Google Drive mediante popup (sin redirigir ni cerrar sesión).
+    //
+    // forceConsent fuerza la pantalla de permisos aunque el usuario ya haya
+    // autorizado la app. Hace falta para quien autorizó cuando Bitácora pedía
+    // el permiso acotado (drive.file): su consentimiento previo no cubre el
+    // permiso ampliado, y sin prompt:'consent' Google devuelve un token con el
+    // scope viejo, que Drive rechaza con 403 insufficientPermissions.
+    function requestGoogleDriveToken(clientId, forceConsent, callback) {
       try {
         const client = google.accounts.oauth2.initTokenClient({
           client_id: clientId,
-          scope: 'https://www.googleapis.com/auth/drive.file',
+          scope: 'https://www.googleapis.com/auth/drive',
           callback: function(response) {
             if (response && response.access_token) {
               callback(response.access_token);
@@ -46,7 +52,7 @@
             callback('');
           }
         });
-        client.requestAccessToken({ prompt: '' });
+        client.requestAccessToken({ prompt: forceConsent ? 'consent' : '' });
       } catch(e) {
         console.error('GIS init error:', e);
         callback('');

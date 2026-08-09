@@ -51,7 +51,7 @@
 </head>
 <body>
     <h1>Política de Privacidad</h1>
-    <p class="last-updated">Última actualización: Abril 2025</p>
+    <p class="last-updated">Última actualización: Agosto 2026</p>
 
     <div class="section">
         <h2>1. Introducción</h2>
@@ -65,38 +65,74 @@
             <li><strong>Información de cuenta:</strong> Nombre, correo electrónico y foto de perfil (a través de Google Sign-In)</li>
             <li><strong>Datos de tareas:</strong> Títulos, descripciones, fechas de entrega, materias y estado de completado</li>
             <li><strong>Datos de materias:</strong> Nombres de materias, profesores y configuraciones de visibilidad</li>
-            <li><strong>Información técnica:</strong> ID de dispositivo para notificaciones push (opcional)</li>
+            <li><strong>Reuniones:</strong> Título, fecha, hora, enlace de videollamada y carrera asociada</li>
+            <li><strong>Metadatos de archivos:</strong> Nombre, tamaño, tipo, carrera y asignatura de los archivos que guardas en tu Google Drive, junto con su identificador de Drive y su enlace</li>
+            <li><strong>Información técnica:</strong> ID de dispositivo para notificaciones (opcional)</li>
         </ul>
     </div>
 
     <div class="section">
-        <h2>3. Cómo Usamos tu Información</h2>
+        <h2>3. Acceso a tu Google Drive</h2>
+        <p>Bitácora guarda tus archivos de estudio en <strong>tu propio Google Drive</strong>, dentro de una carpeta llamada <code>Bitácora</code>, organizada por carrera y asignatura. Los archivos son y siguen siendo tuyos: nunca se copian a nuestros servidores.</p>
+
+        <p>Para esto la aplicación solicita el permiso <code>https://www.googleapis.com/auth/drive</code>.</p>
+
+        <h3>Por qué pedimos este permiso</h3>
+        <p>Google no ofrece un permiso limitado a una carpeta concreta. El permiso más acotado disponible, <code>drive.file</code>, solo da acceso a los archivos que la propia aplicación creó, y con él Bitácora <strong>no puede detectar</strong> los archivos que tú agregas directamente a la carpeta desde tu computador, ni enterarse de forma confiable cuando borras uno. Esa detección automática es una función central de la aplicación, y por eso se solicita el permiso amplio.</p>
+
+        <h3>Qué hacemos con ese permiso</h3>
+        <p><strong>Bitácora limita por código su propio acceso a la carpeta <code>Bitácora</code> y sus subcarpetas.</strong> Antes de leer, modificar o eliminar cualquier archivo, la aplicación comprueba que pertenezca a ese árbol de carpetas; si no puede confirmarlo, no realiza la operación. Concretamente, la aplicación:</p>
+        <ul>
+            <li>Crea la carpeta <code>Bitácora</code> y sus subcarpetas por carrera y asignatura</li>
+            <li>Sube los archivos que tú eliges subir desde la aplicación</li>
+            <li>Consulta los cambios ocurridos en tu Drive (Google Drive Changes API) para detectar archivos agregados, renombrados, movidos o eliminados dentro de esa carpeta</li>
+            <li>Elimina de Drive un archivo únicamente cuando tú lo eliminas desde la aplicación</li>
+        </ul>
+
+        <h3>Qué NO hacemos</h3>
+        <ul>
+            <li><strong>No leemos el contenido de tus archivos.</strong> Solo usamos sus metadatos (nombre, tamaño, tipo, ubicación e identificador)</li>
+            <li><strong>No accedemos a archivos fuera de la carpeta <code>Bitácora</code></strong>, aunque el permiso concedido por Google técnicamente lo permitiría</li>
+            <li><strong>No copiamos tus archivos</strong> a nuestros servidores ni a los de terceros</li>
+            <li><strong>No usamos tus datos de Drive</strong> para publicidad, perfilado, entrenamiento de modelos de inteligencia artificial ni los vendemos a nadie</li>
+        </ul>
+
+        <p>El uso que Bitácora hace de la información recibida de las APIs de Google se ajusta a la <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Política de Datos de Usuario de los Servicios de API de Google</a>, incluidos sus requisitos de uso limitado.</p>
+
+        <p>Puedes revocar este permiso en cualquier momento desde <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">la configuración de tu cuenta de Google</a>. Al hacerlo, la aplicación deja de acceder a tu Drive y tus archivos permanecen intactos allí.</p>
+    </div>
+
+    <div class="section">
+        <h2>4. Cómo Usamos tu Información</h2>
         <p>Usamos tu información para:</p>
         <ul>
             <li>Proporcionar y mantener la aplicación</li>
-            <li>Sincronizar tus tareas entre dispositivos</li>
+            <li>Sincronizar tus tareas, reuniones y archivos entre dispositivos</li>
+            <li>Mostrarte tus archivos organizados por carrera y asignatura</li>
             <li>Enviar recordatorios de notificaciones (solo si lo permites)</li>
-            <li>Mejorar la experiencia del usuario</li>
         </ul>
+        <p>No usamos tu información para publicidad ni la cedemos con fines comerciales.</p>
     </div>
 
     <div class="section">
-        <h2>4. Almacenamiento y Seguridad</h2>
-        <p>Tus datos se almacenan en <strong>Firebase (Google Cloud)</strong> con las siguientes medidas de seguridad:</p>
+        <h2>5. Almacenamiento y Seguridad</h2>
+        <p>Tus tareas, materias, reuniones y los <strong>metadatos</strong> de tus archivos se almacenan en <strong>Supabase</strong> (PostgreSQL). El <strong>contenido</strong> de tus archivos se almacena únicamente en tu propio Google Drive. Medidas de seguridad:</p>
         <ul>
-            <li>Encriptación en tránsito (HTTPS/TLS)</li>
-            <li>Autenticación requerida para acceder a datos</li>
-            <li>Cada usuario solo puede acceder a sus propios datos</li>
-            <li>Datos almacenados en la base de datos <code>dtbitacora</code> bajo tu UID de usuario</li>
+            <li>Cifrado en tránsito (HTTPS/TLS)</li>
+            <li>Autenticación requerida para acceder a cualquier dato</li>
+            <li>Políticas de seguridad a nivel de fila (Row Level Security): cada usuario solo puede leer y escribir sus propios registros, verificado en el servidor</li>
+            <li>La caché local del dispositivo se guarda cifrada</li>
+            <li>El token de acceso a Google Drive se guarda en el almacén seguro del sistema (Keystore en Android, Keychain en iOS) y, en la versión web, únicamente en memoria: se descarta al cerrar la pestaña</li>
         </ul>
     </div>
 
     <div class="section">
-        <h2>5. Compartir Información</h2>
+        <h2>6. Compartir Información</h2>
         <p><strong>No vendemos ni compartimos tu información personal</strong> con terceros, excepto:</p>
         <ul>
-            <li>Google (Firebase) para alojamiento de datos</li>
-            <li>Cuando habilitas visibilidad "Curso completo" en materias (opcional)</li>
+            <li><strong>Supabase</strong>, como proveedor de base de datos y autenticación</li>
+            <li><strong>Google</strong>, para el inicio de sesión y el almacenamiento de tus archivos en tu propio Drive</li>
+            <li><strong>Otros miembros de tu carrera</strong>, cuando tú publicas una tarea o una reunión como compartida. Tus archivos personales nunca se comparten de este modo</li>
         </ul>
     </div>
 
@@ -108,12 +144,15 @@
             <li>Corregir información incorrecta</li>
             <li>Eliminar tu cuenta y datos</li>
             <li>Exportar tus datos</li>
+            <li>Revocar el acceso de Bitácora a tu Google Drive en cualquier momento</li>
         </ul>
     </div>
 
     <div class="section">
         <h2>7. Retención de Datos</h2>
         <p>Conservamos tus datos mientras mantengas una cuenta activa. Si eliminas tu cuenta, todos tus datos se eliminarán permanentemente de nuestros servidores dentro de los 30 días.</p>
+        <p>Los metadatos de tus archivos (nombre, tamaño, ubicación e identificador de Drive) se conservan mientras el archivo exista en tu carpeta de Drive. Si eliminas el archivo desde Drive, su metadato se elimina de nuestra base de datos en la siguiente sincronización.</p>
+        <p><strong>Los archivos en sí viven en tu Google Drive y no se ven afectados</strong> si eliminas tu cuenta de Bitácora o revocas el permiso: permanecen ahí y siguen siendo tuyos.</p>
     </div>
 
     <div class="section">

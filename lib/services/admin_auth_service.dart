@@ -94,6 +94,18 @@ class AdminAuthService {
     );
   }
 
+  /// Inscribe a alguien en una carrera sin repartirle la clave de acceso.
+  ///
+  /// Es lo que permite ofrecer "Deshacer" tras quitar a un miembro por error,
+  /// y de paso resuelve dar de alta a una persona sin que la clave salga a
+  /// pasear — una vez repartida no hay forma de retirarla.
+  static Future<void> addMember(String careerId, String userId) async {
+    await _client.rpc('admin_add_member', params: {
+      'p_career_id': careerId,
+      'p_user_id': userId,
+    });
+  }
+
   static Future<void> removeMember(String careerId, String userId) async {
     await _client.rpc('admin_remove_member', params: {
       'p_career_id': careerId,

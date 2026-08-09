@@ -23,7 +23,12 @@ class AuthService {
         scopes: const [
           'email',
           'profile',
-          'https://www.googleapis.com/auth/drive.file',
+          // Permiso completo de Drive: ver la explicación en
+          // lib/utils/drive_token_stub.dart. Resumen: `drive.file` solo daba
+          // acceso a lo que la app había creado, así que un archivo subido a
+          // mano en Drive era invisible. La restricción a la carpeta Bitácora
+          // la impone el código, no Google.
+          'https://www.googleapis.com/auth/drive',
         ],
       );
 
@@ -47,7 +52,7 @@ class AuthService {
       if (kIsWeb) {
         await _client.auth.signInWithOAuth(
           OAuthProvider.google,
-          scopes: 'https://www.googleapis.com/auth/drive.file',
+          scopes: 'https://www.googleapis.com/auth/drive',
           queryParams: {
             'access_type': 'offline',
             'prompt': 'select_account',

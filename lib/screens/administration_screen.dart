@@ -20,6 +20,35 @@ class AdministrationScreen extends StatefulWidget {
 class _AdministrationScreenState extends State<AdministrationScreen> {
   final CareerSupabaseService _careerService = CareerSupabaseService();
 
+  /// Filtro por nombre. Vacío = todas.
+  String _query = '';
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Carreras que calzan con [_query], ordenadas por nombre.
+  ///
+  /// El orden importa aunque hoy haya dos: la lista venía en el orden que
+  /// devolviera el servidor, así que cambiaba sola entre recargas.
+  List<Career> _filtrar(List<Career> careers) {
+    final q = _query.trim().toLowerCase();
+    final lista = q.isEmpty
+        ? [...careers]
+        : careers.where((c) {
+            if (c.name.toLowerCase().contains(q)) return true;
+            // También busca dentro de las materias: con muchas carreras es más
+            // rápido acordarse de un ramo que del nombre exacto de la carrera.
+            return c.predefinedSubjects
+                .any((s) => s.name.toLowerCase().contains(q));
+          }).toList();
+    lista.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return lista;
+  }
+
   void _showCreateCareerDialog() {
     final nameController = TextEditingController();
     final descriptionController = TextEditingController();
@@ -569,11 +598,46 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
             );
           }
 
-          return ListView.builder(
+          final visibles = _filtrar(careers);
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar carrera o materia',
+                    prefixIcon: const Icon(Icons.search),
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            tooltip: 'Limpiar',
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                  ),
+                  onChanged: (v) => setState(() => _query = v),
+                ),
+              ),
+              if (visibles.isEmpty)
+                const Expanded(
+                  child: Center(
+                    child: Text('Ninguna carrera calza con la búsqueda'),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: careers.length,
+            itemCount: visibles.length,
             itemBuilder: (context, index) {
-              final career = careers[index];
+              final career = visibles[index];
               // La etiqueta "(predefinida)" salía siempre: se calculaba con
               // `Careers.all`, que fusiona las definidas en el código con las
               // que vienen de Supabase, así que cualquier carrera cargada del
@@ -644,6 +708,9 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                 ),
               );
             },
+                  ),
+                ),
+            ],
           );
         },
       ),

@@ -73,25 +73,57 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     _syncAndCleanFiles();
   }
 
-  /// Trae del servidor los archivos y el material docente.
+  /// Pone la app al día: metadatos desde Supabase y cambios desde Drive.
   ///
-  /// [manual] distingue el botón de la barra del arrastre y de la primera
-  /// carga: solo entonces se confirma que terminó. Sin eso, apretar el botón y
-  /// no ver ninguna reacción se leía como que la app no había hecho nada.
+  /// Los dos pasos corren siempre, también en la carga inicial y al volver a
+  /// la app. Contrastar con Drive es una sola consulta de diferencias
+  /// ([StudyFileService.syncDriveChanges]), no una por archivo, así que no hay
+  /// motivo para reservarla al botón.
+  ///
+  /// [manual] solo decide si se confirma con un aviso: apretar el botón y no
+  /// ver ninguna reacción se leía como que la app no había hecho nada.
   Future<void> _syncAndCleanFiles({bool manual = false}) async {
     if (_isSyncing) return;
     setState(() => _isSyncing = true);
 
     try {
       await _studyFileService.syncFromSupabase();
-      if (manual && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Archivos actualizados'),
-            behavior: SnackBarBehavior.floating,
+      // El botón hace el barrido completo; la automática, solo el delta. Es la
+      // diferencia entre "ponme al día" y "arregla lo que esté descuadrado".
+      final cambios = await _studyFileService.syncDriveChanges(completa: manual);
+      if (!mounted || !manual) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(cambios.resumen),
+          backgroundColor:
+              (cambios.fallo || cambios.ignorados > 0) ? AppColors.warning : null,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } on DriveScopeInsufficientException {
+      // El usuario autorizó la app cuando pedía el permiso acotado y no aceptó
+      // el ampliado. Sin esto la sincronización fallaría en silencio y
+      // parecería que Drive simplemente no tiene nada nuevo.
+      //
+      // Solo se avisa en la sincronización manual: el permiso se pide con un
+      // popup, y los navegadores solo lo dejan abrir si viene de un clic. En
+      // la automática el popup no llega a aparecer, así que el aviso sería un
+      // reproche por algo que el usuario ni vio.
+      if (!mounted || !manual) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Bitácora necesita permiso para ver los archivos que subes '
+            'directamente a Google Drive. Vuelve a intentarlo y acepta el '
+            'permiso.',
           ),
-        );
-      }
+          backgroundColor: AppColors.warning,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 6),
+        ),
+      );
     } finally {
       _lastAutoSync = DateTime.now();
       if (mounted) setState(() => _isSyncing = false);
@@ -522,7 +554,11 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         final files = _studyFileService.getFiles(careerId: _filesCareerFilter);
 
         return RefreshIndicator(
-          onRefresh: () => _syncAndCleanFiles(),
+          // Arrastrar es tan explícito como apretar el botón: hace el barrido
+          // completo, no solo el delta. Que hicieran cosas distintas era una
+          // trampa — el usuario prueba las dos y no entiende por qué una
+          // arregla lo que la otra deja igual.
+          onRefresh: () => _syncAndCleanFiles(manual: true),
           child: SubjectGroupList<StudyFile>(
             items: files,
             header: _buildFilesCareerFilter(
@@ -811,7 +847,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
           // mismas carpetas de Drive. Que esta pestaña mirara solo Supabase
           // hacía que un archivo borrado o agregado a mano en
           // `Material docente/` no apareciera nunca.
-          onRefresh: _syncAndCleanFiles,
+          onRefresh: () => _syncAndCleanFiles(manual: true),
           child: SubjectGroupList<StudyFile>(
             items: materials,
             header: _buildFilesCareerFilter(
