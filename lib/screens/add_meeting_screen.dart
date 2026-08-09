@@ -45,13 +45,12 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
 
   bool _isLoading = false;
   List<Subject> _subjects = [];
-  List<Subject> _filteredSubjects = [];
 
   /// Materias que creó el usuario. No están atadas a ninguna carrera —el
   /// modelo Subject no guarda carrera— así que se ofrecen en todas.
   List<Subject> _ownSubjects = [];
 
-  /// Fuerza a reconstruir el Autocomplete al cambiar de carrera: su
+  /// Fuerza a reconstruir el desplegable al cambiar de carrera: su
   /// `initialValue` solo se lee cuando se construye, así que sin una key nueva
   /// el campo seguiría mostrando una asignatura que ya no está en la lista.
   Key _subjectFieldKey = UniqueKey();
@@ -240,23 +239,15 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
       unicas.putIfAbsent(s.name.toLowerCase(), () => s);
     }
     _subjects = unicas.values.toList();
-    _filteredSubjects = _subjects;
 
     if (_selectedSubject.isEmpty) return;
 
     final actual = _selectedSubject.toLowerCase();
-    final sigueDisponible = _subjects.any((s) => s.name.toLowerCase() == actual);
-    if (sigueDisponible) return;
+    if (_subjects.any((s) => s.name.toLowerCase() == actual)) return;
 
-    // Solo se limpia si el nombre pertenece a OTRA carrera. El campo admite
-    // texto libre a propósito —una reunión puede no ser de ninguna
-    // asignatura— y borrar lo que el usuario escribió a mano sería peor que
-    // el problema que esto resuelve.
-    final esDeOtraCarrera = CareerService().getCareers().any((c) =>
-        c.id != _selectedCareerId &&
-        c.predefinedSubjects.any((s) => s.name.toLowerCase() == actual));
-    if (!esDeOtraCarrera) return;
-
+    // La asignatura elegida no existe en la carrera nueva. Antes se conservaba
+    // si parecía texto libre; ahora el campo solo admite materias de la
+    // carrera, así que se descarta y hay que elegir de nuevo.
     _selectedSubject = '';
     _professorController.clear();
     _subjectFieldKey = UniqueKey();
@@ -310,7 +301,7 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
         id: widget.meeting?.id,
         title: InputSanitizer.sanitizeText(_titleController.text),
         description: InputSanitizer.sanitizeText(_descriptionController.text),
-        subject: _selectedSubject.isEmpty ? _titleController.text : _selectedSubject,
+        subject: _selectedSubject,
         professor: _professorController.text.trim().isEmpty ? 'Profesor' : _professorController.text.trim(),
         meetingDate: dt,
         type: _selectedType,
@@ -406,31 +397,45 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
               validator: (v) => Validators.requiredWithMinLength(v, 3, 'La descripción'),
             ),
             const SizedBox(height: 16),
-            Autocomplete<Subject>(
+            // Desplegable y obligatoria, no texto libre.
+            //
+            // Antes era un Autocomplete que aceptaba cualquier cosa y, si se
+            // dejaba vacío, guardaba el título de la reunión como asignatura.
+            // Eso metía en la lista de materias de la carrera cadenas que no
+            // eran materias de nada, y desde el endurecimiento 16 el servidor
+            // lo rechaza.
+            DropdownButtonFormField<String>(
               key: _subjectFieldKey,
-              initialValue: TextEditingValue(text: _selectedSubject),
-              optionsBuilder: (textVal) {
-                return _filteredSubjects.where(
-                  (s) => s.name.toLowerCase().contains(textVal.text.toLowerCase()),
-                );
-              },
-              displayStringForOption: (s) => s.name,
-              onSelected: (s) {
+              initialValue: _subjects.any((s) => s.name == _selectedSubject)
+                  ? _selectedSubject
+                  : null,
+              decoration: InputDecoration(
+                labelText: 'Asignatura *',
+                prefixIcon: const Icon(Icons.book),
+                helperText: _subjects.isEmpty
+                    ? 'Esta carrera no tiene materias cargadas'
+                    : null,
+              ),
+              items: _subjects
+                  .map((s) => DropdownMenuItem<String>(
+                        value: s.name,
+                        child: Text(s.name, overflow: TextOverflow.ellipsis),
+                      ))
+                  .toList(),
+              validator: (v) =>
+                  (v == null || v.isEmpty) ? 'Elige una asignatura' : null,
+              onChanged: (value) {
+                if (value == null) return;
                 setState(() {
-                  _selectedSubject = s.name;
-                  _professorController.text = s.professor;
+                  _selectedSubject = value;
+                  // El profesor de la materia, si lo tiene: ahorra escribirlo
+                  // y evita que cada reunión lo escriba distinto.
+                  final materia =
+                      _subjects.firstWhere((s) => s.name == value);
+                  if (materia.professor.isNotEmpty) {
+                    _professorController.text = materia.professor;
+                  }
                 });
-              },
-              fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
-                return TextFormField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  decoration: const InputDecoration(
-                    labelText: 'Asignatura (opcional)',
-                    prefixIcon: Icon(Icons.book),
-                  ),
-                  onChanged: (v) => _selectedSubject = v,
-                );
               },
             ),
             const SizedBox(height: 16),

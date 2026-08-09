@@ -10,9 +10,22 @@ class AppInfo {
   const AppInfo._();
 
   static const String name = 'Bitácora';
-  static const String version = '2.8.0';
+  static const String version = '2.8.1';
   static const String developer = 'Operonte';
 
-  /// "Versión 2.7.1", listo para pintar.
+  /// Identifica la compilación concreta, no solo la versión publicada.
+  ///
+  /// Hizo falta el 2026-08-08: en un mismo día salieron seis APK distintos,
+  /// todos diciendo "2.8.0". Cuando aparecieron archivos duplicados no hubo
+  /// forma de saber qué compilación tenía instalada el teléfono ni si el
+  /// código que los creaba seguía ahí, y el diagnóstico se convirtió en
+  /// adivinar. Se sube a mano en cada compilación que se instale o despliegue.
+  static const String build = '2026-08-08.7';
+
+  /// "Versión 2.8.1", listo para pintar.
   static String get versionLabel => 'Versión $version';
+
+  /// "Versión 2.8.1 · compilación 2026-08-08.7", para la pantalla de
+  /// configuración: es lo que hay que preguntar cuando algo no calza.
+  static String get buildLabel => '$versionLabel · compilación $build';
 }

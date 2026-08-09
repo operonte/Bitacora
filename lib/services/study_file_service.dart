@@ -4,7 +4,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/study_file_model.dart';
 import '../utils/input_sanitizer.dart';
 import '../utils/logger.dart';
-import 'career_service.dart';
 import 'google_drive_service.dart';
 
 class StudyFileService extends ChangeNotifier {
@@ -109,16 +108,6 @@ class StudyFileService extends ChangeNotifier {
               : f.careerId!)
           .toSet();
 
-  /// Todos los archivos en caché, sin filtrar por categoría. Para la
-  /// sincronización, que trabaja sobre el conjunto completo.
-  List<StudyFile> _allCachedFiles() {
-    if (_filesBox == null) return [];
-    return _filesBox!.values
-        .map((e) => e is Map ? StudyFile.fromMap(Map<String, dynamic>.from(e)) : null)
-        .whereType<StudyFile>()
-        .toList();
-  }
-
   /// Único punto de guardado de archivos (subida, edición y enlaces): a
   /// diferencia de tareas y reuniones, que sanitizan en la pantalla, acá se
   /// hace en el servicio para que cubra los tres flujos sin repetir la
@@ -140,6 +129,9 @@ class StudyFileService extends ChangeNotifier {
         'description': InputSanitizer.sanitizeText(file.description!),
     });
 
+    // Si el servidor no lo acepta —sin red, o rechazado— queda marcado para
+    // reintentarlo en la próxima sincronización. Ver [_pendingKey].
+    var pendiente = user == null;
     if (user != null) {
       try {
         final payload = fileToSave.toMap();
@@ -149,6 +141,7 @@ class StudyFileService extends ChangeNotifier {
             .from('study_files')
             .upsert(payload, onConflict: 'id');
       } catch (e) {
+        pendiente = true;
         Logger.error('Error guardando metadato de archivo en Supabase: $e', error: e, tag: 'StudyFileService');
       }
     }
@@ -165,8 +158,29 @@ class StudyFileService extends ChangeNotifier {
       await GoogleDriveService().renameFile(driveId, fileToSave.name);
     }
 
-    await _filesBox?.put(fileId, fileToSave.toMap());
+    await _filesBox?.put(fileId, {
+      ...fileToSave.toMap(),
+      if (pendiente) _pendingKey: true,
+    });
     notifyListeners();
+  }
+
+  /// Marca, dentro del mapa guardado en Hive, de que esta fila todavía no
+  /// llegó a Supabase.
+  ///
+  /// No es parte de [StudyFile]: `fromMap` la ignora, así que solo existe en
+  /// la caché. Sirve para subir en la sincronización **únicamente** lo que
+  /// falta, en vez de reenviar todo.
+  static const String _pendingKey = '_pending';
+
+  /// Archivos guardados localmente que nunca llegaron al servidor.
+  List<StudyFile> _pendingFiles() {
+    if (_filesBox == null) return [];
+    return _filesBox!.values
+        .whereType<Map>()
+        .where((m) => m[_pendingKey] == true)
+        .map((m) => StudyFile.fromMap(Map<String, dynamic>.from(m)))
+        .toList();
   }
 
   /// Nombre con el que estaba guardado [fileId], o null si es nuevo.
@@ -183,6 +197,34 @@ class StudyFileService extends ChangeNotifier {
   Future<void> clearCache() async {
     await _filesBox?.clear();
     notifyListeners();
+  }
+
+  /// Borra el archivo en todas partes: Google Drive, Supabase y la caché.
+  ///
+  /// Devuelve false si el archivo de Drive no se pudo borrar. Antes esto vivía
+  /// en la pantalla y solo lo hacía la pestaña de archivos: borrar material
+  /// docente quitaba la tarjeta y dejaba el archivo en Drive para siempre. Y
+  /// el resultado no se miraba, así que un fallo se anunciaba igual como
+  /// "archivo eliminado".
+  Future<bool> deleteStudyFile(StudyFile file) async {
+    var driveOk = true;
+
+    final driveId = file.driveFileId;
+    if (driveId != null && driveId.isNotEmpty) {
+      driveOk = await GoogleDriveService().deleteFile(driveId);
+      if (!driveOk) {
+        Logger.warning(
+          'No se pudo borrar "${file.name}" de Google Drive',
+          tag: 'StudyFileService',
+        );
+      }
+      await deleteFile(driveId);
+    }
+
+    final id = file.id;
+    if (id != null && id.isNotEmpty) await deleteFile(id);
+
+    return driveOk;
   }
 
   Future<void> deleteFile(String fileIdOrDriveId) async {
@@ -221,9 +263,15 @@ class StudyFileService extends ChangeNotifier {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
     try {
-      // 1. Subir metadatos locales a Supabase
-      final localFiles = _allCachedFiles();
-      for (final f in localFiles) {
+      // 1. Subir SOLO lo que nunca llegó al servidor.
+      //
+      // Antes se reenviaba la caché entera en cada sincronización, y eso
+      // resucitaba lo borrado: si eliminabas un archivo en el teléfono,
+      // desaparecía de Supabase, pero la caché del navegador todavía lo tenía
+      // y en su siguiente sincronización lo volvía a insertar — y de ahí
+      // regresaba al teléfono. El servidor manda; la caché solo aporta lo que
+      // se creó sin conexión.
+      for (final f in _pendingFiles()) {
         try {
           final payload = f.toMap();
           payload['user_id'] = user.id;
@@ -280,85 +328,24 @@ class StudyFileService extends ChangeNotifier {
     }
   }
 
-  /// Escanea Google Drive para detectar borrados externos o archivos nuevos agregados directamente a la carpeta.
-  Future<void> syncFromSupabaseAndDrive({Function(String msg)? onNotify}) async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
-
-    // 1. Sincronización base con Supabase
-    await syncFromSupabase();
-
-    try {
-      // Solo los archivos de esta cuenta: preguntarle al Drive de la sesión
-      // actual por archivos de otra cuenta siempre da "no existe", y el
-      // borrado de abajo se disparaba en cascada con un aviso por archivo.
-      final currentFiles =
-          _allCachedFiles().where((f) => f.userId == user.id).toList();
-      final driveService = GoogleDriveService();
-
-      // 2. Verificar existencia de archivos en Google Drive (Borrados externos).
-      //    Los enlaces externos no tienen archivo en Drive, se saltan.
-      for (final sf in currentFiles) {
-        final driveId = sf.driveFileId;
-        if (driveId != null && driveId.isNotEmpty) {
-          final existsInDrive = await driveService.checkFileExists(driveId);
-          if (!existsInDrive) {
-            Logger.info('Archivo "${sf.name}" fue eliminado externamente de Drive.', tag: 'StudyFileService');
-            await deleteFile(driveId);
-            final subjectName = sf.subject.isNotEmpty ? sf.subject : 'General';
-            onNotify?.call('Se eliminó "${sf.name}" de $subjectName');
-          }
-        }
-      }
-
-      // 3. Escanear archivos en carpetas de Drive (nuevos subidos directamente
-      //    desde el computador). El escaneo devuelve carrera, asignatura y
-      //    categoría deducidas de la carpeta donde esté cada uno, así que un
-      //    archivo arrastrado a `Bitácora/Teología/Griego/Material docente/`
-      //    entra como guía de Griego en Teología sin tocar nada en la app.
-      final driveFiles = await driveService.scanBitacoraFolderFiles();
-      final existingDriveIds = _allCachedFiles()
-          .map((f) => f.driveFileId)
-          .whereType<String>()
-          .toSet();
-
-      // El escaneo devuelve el nombre de la carpeta de carrera, si el archivo
-      // estaba dentro de una. Se traduce a id para que el archivo detectado
-      // quede filtrable como cualquier otro.
-      final careersByName = {
-        for (final c in CareerService().getCareers())
-          normalizeFolderName(c.name): c.id
-      };
-
-      for (final df in driveFiles) {
-        final driveId = df['drive_file_id'] as String;
-        if (existingDriveIds.contains(driveId)) continue;
-
-        final careerName = df['career'] as String?;
-        final newStudyFile = StudyFile(
-          name: df['name'],
-          subject: df['subject'],
-          driveFileId: driveId,
-          mimeType: df['mime_type'],
-          sizeBytes: df['size_bytes'],
-          driveLink: df['drive_link'],
-          userId: user.id,
-          category: StudyFileCategory.parse(df['category']),
-          careerId: careerName == null
-              ? null
-              : careersByName[normalizeFolderName(careerName)],
-        );
-        await saveFile(newStudyFile);
-
-        final donde = newStudyFile.category == StudyFileCategory.guia
-            ? 'material docente de ${newStudyFile.subject}'
-            : newStudyFile.subject;
-        onNotify?.call('Detectado nuevo archivo en Drive: "${newStudyFile.name}" en $donde');
-      }
-    } catch (e) {
-      Logger.warning('Error en sincronización con Google Drive: $e', tag: 'StudyFileService');
-    }
-
-    notifyListeners();
-  }
+  /// Antes existía `syncFromSupabaseAndDrive`, que contrastaba la caché con
+  /// las carpetas de Drive. Se eliminó por dos motivos:
+  ///
+  /// 1. **Detectar archivos nuevos era imposible.** La app pide el ámbito
+  ///    OAuth `drive.file`, que da acceso solo a los archivos que ella misma
+  ///    creó. Un archivo que el usuario arrastra a Drive desde el computador
+  ///    no aparece en ningún listado, por bien escrito que esté el escaneo.
+  ///    Subir a `drive.readonly` exigiría verificación con auditoría de
+  ///    Google, y para esta app no compensa.
+  ///
+  /// 2. **Detectar borrados externos era peligroso.** El barrido llamaba a
+  ///    `deleteFile()`, que borra también de Supabase. Un token a medias o un
+  ///    404 pasajero se traducía en pérdida de datos del servidor, sin vuelta
+  ///    atrás, por un problema de red.
+  ///
+  /// Ahora el borrado es simétrico —eliminar en la app elimina en Drive, ver
+  /// [deleteStudyFile]— así que las dos copias no divergen por el uso normal.
+  /// Si alguien borra un archivo directamente en Drive, su tarjeta queda en la
+  /// app hasta que la elimine: molesto, pero reversible, que es justo lo que
+  /// no era el comportamiento anterior.
 }

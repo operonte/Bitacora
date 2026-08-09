@@ -26,10 +26,11 @@ class AreaPersonalScreen extends StatefulWidget {
 }
 
 class _AreaPersonalScreenState extends State<AreaPersonalScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabController;
   final StudyFileService _studyFileService = StudyFileService();
   bool _isUploading = false;
+  bool _isSyncing = false;
 
   /// Filtro de carrera de cada pestaña, por separado: null = todas. No se
   /// persiste, igual que en reuniones, para no esconder archivos por un
@@ -37,35 +38,69 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   String? _filesCareerFilter;
   String? _materialsCareerFilter;
 
+  /// Cuándo terminó la última sincronización automática. Volver a la app
+  /// dispara una, y sin esto alternar entre ventanas la lanzaría en bucle.
+  DateTime? _lastAutoSync;
+
+  /// Cuánto se espera entre sincronizaciones automáticas.
+  static const Duration _autoSyncCooldown = Duration(seconds: 20);
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Un solo sync: trabajos y material docente viven en la misma tabla.
       _syncAndCleanFiles();
     });
   }
 
-  Future<void> _syncAndCleanFiles() async {
-    await _studyFileService.syncFromSupabaseAndDrive(
-      onNotify: (msg) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(msg),
-              backgroundColor: AppColors.primary,
-              duration: const Duration(seconds: 4),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      },
-    );
+  /// Abrir un archivo lleva a Drive, y de ahí el usuario puede volver habiendo
+  /// borrado o agregado cosas. Sincronizar al volver es lo que hace que ese
+  /// cambio aparezca solo, sin que tenga que arrastrar la lista ni saber que
+  /// existe un botón.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+
+    final ultima = _lastAutoSync;
+    if (ultima != null &&
+        DateTime.now().difference(ultima) < _autoSyncCooldown) {
+      return;
+    }
+    _lastAutoSync = DateTime.now();
+    _syncAndCleanFiles();
+  }
+
+  /// Trae del servidor los archivos y el material docente.
+  ///
+  /// [manual] distingue el botón de la barra del arrastre y de la primera
+  /// carga: solo entonces se confirma que terminó. Sin eso, apretar el botón y
+  /// no ver ninguna reacción se leía como que la app no había hecho nada.
+  Future<void> _syncAndCleanFiles({bool manual = false}) async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+
+    try {
+      await _studyFileService.syncFromSupabase();
+      if (manual && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Archivos actualizados'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      _lastAutoSync = DateTime.now();
+      if (mounted) setState(() => _isSyncing = false);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     super.dispose();
   }
@@ -168,7 +203,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     final propias = context.read<AppState>().subjects.map((s) => s.name).toList();
 
     String? careerId;
-    String subject = CareerSubjectPicker.generalSubject;
+    String subject = '';
 
     final nameController = TextEditingController(text: originalName);
     final formKey = GlobalKey<FormState>();
@@ -334,6 +369,17 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
           ],
         ),
         actions: [
+          IconButton(
+            icon: _isSyncing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.sync),
+            tooltip: 'Sincronizar con Google Drive',
+            onPressed: _isSyncing ? null : () => _syncAndCleanFiles(manual: true),
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.push(
@@ -724,22 +770,23 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         ],
       ),
     );
-    if (confirmed == true) {
-      final fileId = file.id;
-      final driveId = file.driveFileId;
-      if (fileId != null && fileId.isNotEmpty) {
-        await _studyFileService.deleteFile(fileId);
-      }
-      if (driveId != null && driveId.isNotEmpty) {
-        await _studyFileService.deleteFile(driveId);
-        await GoogleDriveService().deleteFile(driveId);
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Archivo eliminado')),
-        );
-      }
-    }
+    if (confirmed != true) return;
+
+    final driveOk = await _studyFileService.deleteStudyFile(file);
+    if (mounted) _avisarBorrado(driveOk);
+  }
+
+  /// Un borrado a medias —quitado de la app pero todavía en Drive— hay que
+  /// decirlo. Antes se anunciaba "eliminado" pasara lo que pasara.
+  void _avisarBorrado(bool driveOk) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(driveOk
+            ? 'Eliminado de la app y de Google Drive'
+            : 'Eliminado de la app, pero no se pudo borrar en Google Drive'),
+        backgroundColor: driveOk ? AppColors.success : AppColors.warning,
+      ),
+    );
   }
 
   // ==================== MATERIAL DOCENTE ====================
@@ -760,7 +807,11 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         );
 
         return RefreshIndicator(
-          onRefresh: () => _studyFileService.syncFromSupabase(),
+          // La misma sincronización que en Archivos: son la misma tabla y las
+          // mismas carpetas de Drive. Que esta pestaña mirara solo Supabase
+          // hacía que un archivo borrado o agregado a mano en
+          // `Material docente/` no apareciera nunca.
+          onRefresh: _syncAndCleanFiles,
           child: SubjectGroupList<StudyFile>(
             items: materials,
             header: _buildFilesCareerFilter(
@@ -861,7 +912,10 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('¿Eliminar material?'),
-        content: Text('"${material.name}" se quitará de tu material docente.'),
+        content: Text(material.isLink
+            ? '"${material.name}" se quitará de tu material docente.'
+            : '"${material.name}" se eliminará de tu material docente y de tu '
+                'Google Drive.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -875,14 +929,13 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         ],
       ),
     );
-    if (confirmed == true && material.id != null) {
-      await _studyFileService.deleteFile(material.id!);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Material eliminado')),
-        );
-      }
-    }
+    if (confirmed != true) return;
+
+    // El mismo borrado que en Archivos: es la misma tabla y el mismo archivo
+    // de Drive. Que esta pestaña solo quitara el metadato dejaba el archivo en
+    // Drive para siempre, sin que nadie lo dijera.
+    final driveOk = await _studyFileService.deleteStudyFile(material);
+    if (mounted) _avisarBorrado(driveOk);
   }
 
   Future<void> _showAddMaterialDialog() async {
@@ -1019,7 +1072,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
 
     final propias = context.read<AppState>().subjects.map((s) => s.name).toList();
     String? selectedCareerId;
-    String selectedSubject = CareerSubjectPicker.generalSubject;
+    String selectedSubject = '';
 
     final titleController = TextEditingController();
     final urlController = TextEditingController();

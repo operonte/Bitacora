@@ -38,8 +38,17 @@ class CareerSubjectPicker extends StatefulWidget {
     this.ownSubjects = const [],
   });
 
-  /// Asignatura genérica, siempre disponible.
-  static const String generalSubject = 'General';
+  /// Ya no existe una asignatura genérica.
+  ///
+  /// "General" permitía guardar un archivo dentro de una carrera sin decir de
+  /// qué materia era, y eso en una app de carreras universitarias no significa
+  /// nada: ni se puede agrupar, ni filtrar, ni encontrar después. El servidor
+  /// además lo rechaza desde el endurecimiento 16.
+  ///
+  /// Se mantiene el nombre como constante solo para el texto de aviso cuando
+  /// una carrera todavía no tiene materias cargadas.
+  static const String sinMateriasHint =
+      'Esta carrera no tiene materias. Pídele al administrador que las cargue.';
 
   @override
   State<CareerSubjectPicker> createState() => _CareerSubjectPickerState();
@@ -67,12 +76,12 @@ class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
     // perderla en silencio al abrir el desplegable.
     if (widget.initialSubject.isNotEmpty &&
         !_subjects.contains(widget.initialSubject)) {
-      _subjects = [..._subjects]..insert(1, widget.initialSubject);
+      _subjects = [widget.initialSubject, ..._subjects];
     }
 
     _subject = _subjects.contains(widget.initialSubject)
         ? widget.initialSubject
-        : (_subjects.length > 1 ? _subjects[1] : _subjects.first);
+        : (_subjects.isEmpty ? '' : _subjects.first);
 
     // Después del primer frame: llamar al callback durante initState haría
     // setState en el padre mientras todavía se está construyendo.
@@ -82,7 +91,7 @@ class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
   }
 
   List<String> _subjectsFor(String? careerId) {
-    final subjects = <String>[CareerSubjectPicker.generalSubject];
+    final subjects = <String>[];
 
     for (final c in _careers) {
       if (careerId != null && c.id != careerId) continue;
@@ -106,7 +115,7 @@ class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
       _subjects = _subjectsFor(careerId);
       // La asignatura elegida puede no existir en la carrera nueva.
       if (!_subjects.contains(_subject)) {
-        _subject = _subjects.length > 1 ? _subjects[1] : _subjects.first;
+        _subject = _subjects.isEmpty ? '' : _subjects.first;
       }
     });
     widget.onChanged(_careerId, _subject);
@@ -141,9 +150,12 @@ class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
           const SizedBox(height: 16),
         ],
         DropdownButtonFormField<String>(
-          initialValue: _subjects.contains(_subject) ? _subject : _subjects.first,
+          initialValue: _subjects.contains(_subject) ? _subject : null,
           decoration: InputDecoration(
             labelText: 'Asignatura / Materia',
+            helperText: _subjects.isEmpty
+                ? CareerSubjectPicker.sinMateriasHint
+                : null,
             prefixIcon: const Icon(Icons.school_outlined),
             border: borde,
           ),
@@ -153,6 +165,10 @@ class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
                     child: Text(sub, overflow: TextOverflow.ellipsis),
                   ))
               .toList(),
+          // Obligatoria: guardar algo dentro de una carrera sin decir de qué
+          // materia es no sirve para agrupar, filtrar ni encontrarlo después.
+          validator: (val) =>
+              (val == null || val.isEmpty) ? 'Elige una asignatura' : null,
           onChanged: (val) {
             if (val == null) return;
             setState(() => _subject = val);

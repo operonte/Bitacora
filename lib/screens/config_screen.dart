@@ -362,7 +362,9 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                 ListTile(
                   leading: const Icon(Icons.school, color: AppColors.primary),
                   title: const Text('Acerca de Bitácora'),
-                  subtitle: Text(AppInfo.versionLabel),
+                  // La compilación, no solo la versión: es el dato que hay que
+                  // pedir cuando el comportamiento no calza con el código.
+                  subtitle: Text(AppInfo.buildLabel),
                   trailing: const Icon(Icons.info_outline, size: 16),
                   onTap: () => _showAboutDialog(context),
                 ),
@@ -862,7 +864,7 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
               ),
               const SizedBox(height: 4),
               Text(
-                AppInfo.versionLabel,
+                AppInfo.buildLabel,
                 style: const TextStyle(color: AppColors.textSecondary),
               ),
               const SizedBox(height: 16),

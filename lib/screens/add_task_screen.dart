@@ -323,9 +323,21 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                             tooltip: 'Agregar materia',
                           ),
                         ),
+                        // No basta con que haya algo escrito: tiene que ser
+                        // una materia de la carrera elegida o una propia. El
+                        // campo es de texto para poder buscar entre muchas,
+                        // pero escribir cualquier cosa creaba tareas colgando
+                        // de asignaturas que no existen, y desde el
+                        // endurecimiento 16 el servidor las rechaza.
                         validator: (value) {
-                          if (value == null || value.isEmpty) {
+                          if (value == null || value.trim().isEmpty) {
                             return 'Por favor selecciona una asignatura';
+                          }
+                          final escrita = value.trim().toLowerCase();
+                          final existe = _subjects
+                              .any((s) => s.name.toLowerCase() == escrita);
+                          if (!existe) {
+                            return 'Elige una de la lista, o créala con el botón +';
                           }
                           return null;
                         },

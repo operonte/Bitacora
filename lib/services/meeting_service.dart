@@ -70,6 +70,20 @@ class MeetingService extends ChangeNotifier {
     }
   }
 
+  /// Marca, dentro del mapa guardado en Hive, de que esta reunión todavía no
+  /// llegó a Supabase. No es parte de [Meeting]: `fromMap` la ignora.
+  static const String _pendingKey = '_pending';
+
+  /// Reuniones guardadas localmente que nunca llegaron al servidor.
+  List<Meeting> _pendingMeetings() {
+    if (_meetingBox == null) return [];
+    return _meetingBox!.values
+        .whereType<Map>()
+        .where((m) => m[_pendingKey] == true)
+        .map((m) => Meeting.fromMap(Map<String, dynamic>.from(m)))
+        .toList();
+  }
+
   /// Carreras que aparecen entre las reuniones guardadas, para armar el
   /// filtro sin ofrecer opciones que no seleccionarían nada.
   Set<String> get usedCareerIds => getMeetings()
@@ -128,6 +142,9 @@ class MeetingService extends ChangeNotifier {
       userId: user?.id ?? meeting.userId,
     );
 
+    // Si el servidor no la acepta queda marcada para reintentarla en la
+    // próxima sincronización. Ver [_pendingKey].
+    var pendiente = user == null;
     if (user != null) {
       try {
         final payload = meetingToSave.toMap();
@@ -144,12 +161,16 @@ class MeetingService extends ChangeNotifier {
               .eq('id', meetingId);
         }
       } catch (e) {
+        pendiente = true;
         Logger.error('Error guardando reunión en Supabase: $e', error: e, tag: 'MeetingService');
         rethrow;
       }
     }
 
-    await _meetingBox?.put(meetingId, meetingToSave.toMap());
+    await _meetingBox?.put(meetingId, {
+      ...meetingToSave.toMap(),
+      if (pendiente) _pendingKey: true,
+    });
 
     // Se resincroniza la lista completa, no solo esta reunión: el resumen
     // diario cuenta cuántas hay cada día, así que agregar una obliga a
@@ -186,14 +207,18 @@ class MeetingService extends ChangeNotifier {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
     try {
-      // 1. Subir o actualizar las reuniones locales PROPIAS a Supabase.
+      // 1. Subir SOLO las reuniones que nunca llegaron al servidor.
       //
-      // Desde que la caché también guarda las reuniones que otros
-      // compartieron con la carrera, hay que excluirlas: reenviarlas con
+      // Antes se reenviaba toda la caché propia en cada sincronización, y eso
+      // resucitaba lo borrado: al eliminar una reunión en un dispositivo
+      // desaparecía de Supabase, pero la caché del otro todavía la tenía y en
+      // su siguiente sincronización la volvía a insertar. El servidor manda;
+      // la caché solo aporta lo que se creó sin conexión.
+      //
+      // Se excluyen además las ajenas: reenviarlas con
       // payload['user_id'] = user.id se las robaría a su dueño (y la RLS de
-      // update las rechazaría igual). userId vacío = creada offline, todavía
-      // sin dueño asignado, así que esa sí es propia.
-      final localMeetings = getMeetings()
+      // update las rechazaría igual).
+      final localMeetings = _pendingMeetings()
           .where((m) => m.userId.isEmpty || m.userId == user.id)
           .toList();
       for (final m in localMeetings) {
