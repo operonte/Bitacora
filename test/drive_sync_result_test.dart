@@ -19,6 +19,24 @@ void main() {
       expect(const DriveSyncResult.vacio().sinCambios, isTrue);
     });
 
+    test('"falta autorizar" no es ni fallo ni todo al día', () {
+      // La sincronización automática termina así cuando haría falta abrir la
+      // ventana de permisos de Google. No es un error —no hay nada roto— pero
+      // tampoco se comprobó nada, así que no puede decir "todo al día".
+      const r = DriveSyncResult.faltaPermiso();
+      expect(r.faltaPermiso, isTrue);
+      expect(r.fallo, isFalse);
+      expect(r.sinCambios, isFalse);
+      expect(r.resumen, 'Falta autorizar el acceso a Google Drive');
+    });
+
+    test('sin carpeta Bitácora tampoco es todo al día', () {
+      const r = DriveSyncResult.sinCarpeta();
+      expect(r.sinCarpeta, isTrue);
+      expect(r.resumen,
+          'No se encontró la carpeta "Bitácora" en tu Google Drive');
+    });
+
     test('cuenta lo que hizo, en singular y en plural', () {
       const uno = DriveSyncResult(
           agregados: 1, eliminados: 1, actualizados: 1, ignorados: 0);

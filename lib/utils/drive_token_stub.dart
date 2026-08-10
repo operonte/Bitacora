@@ -1,16 +1,16 @@
 // Stub para plataformas no-web (móvil/desktop)
 import 'package:google_sign_in/google_sign_in.dart';
 
-/// Permiso completo de Drive.
+/// Permiso acotado de Drive: solo ve lo que la propia app crea.
 ///
-/// Era `drive.file`, que solo da acceso a los archivos que la propia app creó:
-/// un archivo que el usuario sube a Drive desde el computador era invisible
-/// para Bitácora, y los borrados hechos fuera de la app no se podían detectar
-/// de forma confiable. Google no ofrece un permiso acotado a una carpeta
-/// (existía en la API v2, no en la v3), así que para eso hace falta el permiso
-/// amplio. **La app se restringe por código al árbol de la carpeta Bitácora**;
-/// esa restricción ya no la impone Google.
-const _driveScope = 'https://www.googleapis.com/auth/drive';
+/// Antes era el permiso completo, que además de ver todo el Drive disparaba
+/// la pantalla de "Google no ha verificado esta aplicación" para cualquier
+/// usuario y ponía un tope de 100 cuentas hasta pasar una auditoría paga
+/// (CASA). Se volvió a `drive.file` a propósito: el costo es que un archivo
+/// que alguien suba a Drive desde fuera de la app queda invisible para
+/// Bitácora, aceptable para una app pensada para gente que solo usa el botón
+/// de subir de adentro.
+const _driveScope = 'https://www.googleapis.com/auth/drive.file';
 
 /// Pide un access token de Drive sin mostrar ningún diálogo, reutilizando la
 /// sesión nativa de Google ya autorizada (el usuario dio el permiso una vez
@@ -19,17 +19,24 @@ const _driveScope = 'https://www.googleapis.com/auth/drive';
 /// fallback.
 ///
 /// [forceConsent] descarta la sesión nativa y abre el diálogo de Google. Hace
-/// falta para quien autorizó cuando la app pedía el permiso acotado:
-/// `signInSilently()` reutiliza ese consentimiento y devuelve un token con el
-/// scope viejo una y otra vez, que Drive rechaza con 403.
+/// falta para quien autorizó con un scope viejo: `signInSilently()` reutiliza
+/// ese consentimiento y devuelve un token que Drive rechaza con 403.
+/// [scope] permite pedir un ámbito distinto al habitual. Nada lo usa hoy;
+/// queda para que las dos implementaciones (esta y la de web) tengan la
+/// misma firma.
 Future<String?> requestDriveTokenPlatform(
   String clientId, {
   bool forceConsent = false,
+  String scope = '',
 }) async {
   try {
     final googleSignIn = GoogleSignIn(
       serverClientId: clientId,
-      scopes: ['email', 'profile', _driveScope],
+      scopes: [
+        'email',
+        'profile',
+        if (scope.isNotEmpty) scope else _driveScope,
+      ],
     );
 
     if (forceConsent) {

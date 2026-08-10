@@ -11,6 +11,7 @@ extension type _DriveTokenCallback._(JSFunction _) implements JSFunction {
 external void _requestGoogleDriveToken(
   JSString clientId,
   JSBoolean forceConsent,
+  JSString scope,
   JSFunction callback,
 );
 
@@ -22,9 +23,12 @@ external void _requestGoogleDriveToken(
 /// alcanza para lo que se pidió: quien autorizó con el permiso acotado de
 /// antes tiene un token válido pero insuficiente, y pedir otro sin forzar el
 /// consentimiento devuelve exactamente el mismo scope.
+/// [scope] permite pedir un ámbito distinto al habitual. Se usa para probar
+/// `drive.file` sin cambiar el de toda la app.
 Future<String?> requestDriveTokenPlatform(
   String clientId, {
   bool forceConsent = false,
+  String scope = '',
 }) async {
   final completer = Completer<String?>();
 
@@ -36,7 +40,12 @@ Future<String?> requestDriveTokenPlatform(
       }
     }).toJS;
 
-    _requestGoogleDriveToken(clientId.toJS, forceConsent.toJS, callback);
+    _requestGoogleDriveToken(
+      clientId.toJS,
+      forceConsent.toJS,
+      scope.toJS,
+      callback,
+    );
   } catch (e) {
     if (!completer.isCompleted) completer.complete(null);
   }

@@ -31,15 +31,26 @@
     // Solicita un token de acceso a Google Drive mediante popup (sin redirigir ni cerrar sesión).
     //
     // forceConsent fuerza la pantalla de permisos aunque el usuario ya haya
-    // autorizado la app. Hace falta para quien autorizó cuando Bitácora pedía
-    // el permiso acotado (drive.file): su consentimiento previo no cubre el
-    // permiso ampliado, y sin prompt:'consent' Google devuelve un token con el
-    // scope viejo, que Drive rechaza con 403 insufficientPermissions.
-    function requestGoogleDriveToken(clientId, forceConsent, callback) {
+    // autorizado la app. Hace falta para quien autorizó con un scope viejo:
+    // sin prompt:'consent' Google devuelve el mismo token, que Drive rechaza
+    // con 403 insufficientPermissions.
+    function requestGoogleDriveToken(clientId, forceConsent, scope, callback) {
+      // Tolera la firma anterior (clientId, forceConsent, callback). Si el
+      // navegador sirve un main.dart.js viejo contra este index.html nuevo, sin
+      // esto el callback nunca se llama: la app se queda esperando un token que
+      // no llega y toda la sincronización con Drive muere sin decir nada.
+      if (typeof scope === 'function') {
+        callback = scope;
+        scope = '';
+      }
+      if (typeof callback !== 'function') {
+        console.error('requestGoogleDriveToken: falta el callback');
+        return;
+      }
       try {
         const client = google.accounts.oauth2.initTokenClient({
           client_id: clientId,
-          scope: 'https://www.googleapis.com/auth/drive',
+          scope: scope || 'https://www.googleapis.com/auth/drive.file',
           callback: function(response) {
             if (response && response.access_token) {
               callback(response.access_token);

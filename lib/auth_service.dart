@@ -23,12 +23,14 @@ class AuthService {
         scopes: const [
           'email',
           'profile',
-          // Permiso completo de Drive: ver la explicación en
-          // lib/utils/drive_token_stub.dart. Resumen: `drive.file` solo daba
-          // acceso a lo que la app había creado, así que un archivo subido a
-          // mano en Drive era invisible. La restricción a la carpeta Bitácora
-          // la impone el código, no Google.
-          'https://www.googleapis.com/auth/drive',
+          // drive.file: solo ve lo que la propia app crea. Se probó drive
+          // completo antes, pero disparaba la pantalla de "app no verificada"
+          // de Google para cualquier usuario (tope de 100, auditoría CASA
+          // paga para sacarla). El costo es que un archivo que alguien suba a
+          // Drive desde fuera de la app queda invisible para Bitácora — se
+          // acepta a propósito: la app es para gente que no va a andar
+          // metiendo archivos a mano en carpetas de Drive.
+          'https://www.googleapis.com/auth/drive.file',
         ],
       );
 
@@ -52,7 +54,7 @@ class AuthService {
       if (kIsWeb) {
         await _client.auth.signInWithOAuth(
           OAuthProvider.google,
-          scopes: 'https://www.googleapis.com/auth/drive',
+          scopes: 'https://www.googleapis.com/auth/drive.file',
           queryParams: {
             'access_type': 'offline',
             'prompt': 'select_account',

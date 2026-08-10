@@ -16,18 +16,31 @@ class _DriveAuthExpiredException implements Exception {}
 
 /// El token sirve, pero no alcanza para lo que se pidió.
 ///
-/// Pasa con quien autorizó la app cuando pedía el permiso acotado
-/// (`drive.file`): su token sigue vigente, así que Drive responde 403
+/// Pasa si el scope concedido cambió y el token que se tenía guardado es del
+/// scope anterior: sigue vigente, así que Drive responde 403
 /// `insufficientPermissions` en vez de 401. Reintentar con un token nuevo no
-/// arregla nada — hay que volver a pedir el consentimiento con el permiso
-/// ampliado.
+/// arregla nada — hay que volver a pedir el consentimiento.
 class DriveScopeInsufficientException implements Exception {
   const DriveScopeInsufficientException();
 
   @override
   String toString() =>
-      'Bitácora necesita permiso ampliado de Google Drive para ver los '
-      'archivos que subes directamente a Drive.';
+      'Bitácora necesita que vuelvas a autorizar el acceso a Google Drive.';
+}
+
+/// Haría falta pedirle permiso al usuario, y no es momento de interrumpirlo.
+///
+/// La ventana de permisos de Google muestra —mientras la app no esté
+/// verificada— una pantalla que dice "esta app no es segura". Abrirla sola, al
+/// arrancar la app o al volver a ella, es alarmante y además la bloquean los
+/// navegadores, porque no viene de un clic. Esta excepción marca ese caso para
+/// que la sincronización automática se rinda en silencio y espere a que el
+/// usuario lo pida.
+class DriveNeedsConsentException implements Exception {
+  const DriveNeedsConsentException();
+
+  @override
+  String toString() => 'Falta autorizar el acceso a Google Drive.';
 }
 
 // Algunos llamadores pasan solo la extensión del archivo (p. ej. "pdf")
@@ -196,10 +209,10 @@ class DriveChangesPage {
 
 /// El árbol de carpetas de Bitácora, con la ruta de cada una.
 ///
-/// Es el cerco que reemplaza al que antes ponía Google: con el permiso acotado
-/// (`drive.file`) la app literalmente no podía ver nada ajeno; ahora sí puede,
-/// así que la restricción a la carpeta Bitácora la impone este objeto. Todo lo
-/// que no esté acá dentro se ignora y no se toca.
+/// Con el permiso acotado (`drive.file`) Google ya solo deja ver lo que la
+/// app creó, pero esto se conserva como segunda barrera: si algún día
+/// cambiara el scope, o algo quedara accesible por otra vía, la restricción a
+/// la carpeta Bitácora no depende únicamente de lo que Google decida permitir.
 class BitacoraTree {
   final String rootId;
 
@@ -331,6 +344,20 @@ class GoogleDriveService {
     return token;
   }
 
+  /// El token que ya se tenga, **sin abrir ninguna ventana de permisos**.
+  ///
+  /// Existe para separar dos cosas que no son lo mismo: usar un permiso ya
+  /// concedido, y pedirlo. Pedirlo abre un popup de Google que, mientras la
+  /// app no esté verificada, muestra una pantalla de advertencia. Eso solo
+  /// puede pasar cuando el usuario hizo algo para provocarlo — nunca al abrir
+  /// la app ni al volver a ella, que es cuando más asusta y menos se entiende.
+  Future<String?> tokenSilencioso() async {
+    if (kIsWeb) return _storedToken;
+    // En móvil renovar es de verdad silencioso: la sesión nativa de Google ya
+    // está autorizada y no se muestra ningún diálogo.
+    return getOrRequestToken();
+  }
+
   /// Pide un token nuevo saltándose el cache (Supabase providerToken /
   /// storage), a diferencia de [getOrRequestToken]. Se usa al reintentar
   /// tras un 401: en Web, el providerToken de Supabase no se refresca solo,
@@ -375,9 +402,18 @@ class GoogleDriveService {
   /// para el resto de las llamadas: antes cada una lo resolvía a su manera —o
   /// no lo resolvía— y un token vencido se convertía en silencio en "no hay
   /// nada que informar".
-  Future<T> _withToken<T>(Future<T> Function(String token) peticion) async {
-    final token = await getOrRequestToken();
+  /// [interactivo] decide si se puede abrir una ventana de permisos. En false
+  /// —sincronización automática— la petición se abandona antes que molestar:
+  /// lanza [DriveNeedsConsentException] y quien llama lo trata como "todavía
+  /// no", no como un error.
+  Future<T> _withToken<T>(
+    Future<T> Function(String token) peticion, {
+    bool interactivo = true,
+  }) async {
+    final token =
+        interactivo ? await getOrRequestToken() : await tokenSilencioso();
     if (token == null || token.isEmpty) {
+      if (!interactivo) throw const DriveNeedsConsentException();
       throw Exception('No se pudo obtener acceso a Google Drive.');
     }
 
@@ -385,6 +421,7 @@ class GoogleDriveService {
       return await peticion(token);
     } on _DriveAuthExpiredException {
       await clearToken();
+      if (!interactivo) throw const DriveNeedsConsentException();
       final fresco = await _requestFreshToken();
       if (fresco == null || fresco.isEmpty) {
         throw Exception('El acceso a Google Drive expiró.');
@@ -392,6 +429,7 @@ class GoogleDriveService {
       return await peticion(fresco);
     } on DriveScopeInsufficientException {
       await clearToken();
+      if (!interactivo) throw const DriveNeedsConsentException();
       final ampliado = await _requestFreshToken(forceConsent: true);
       if (ampliado == null || ampliado.isEmpty) rethrow;
       return await peticion(ampliado);
@@ -599,7 +637,8 @@ class GoogleDriveService {
   ///
   /// Se pide una sola vez por dispositivo; después el token lo va renovando
   /// cada llamada a [listChanges].
-  Future<String?> getStartPageToken() => _withToken((token) async {
+  Future<String?> getStartPageToken({bool interactivo = true}) =>
+      _withToken(interactivo: interactivo, (token) async {
         final response = await http.get(
           Uri.parse(
             'https://www.googleapis.com/drive/v3/changes/startPageToken',
@@ -624,8 +663,9 @@ class GoogleDriveService {
   /// borrados, renombrados y movimientos a la vez, y es lo que permite que la
   /// app se entere de lo que se hizo directamente en Drive. Es el mecanismo
   /// que Google ofrece justo para esto.
-  Future<DriveChangesPage> listChanges(String pageToken) =>
-      _withToken((token) async {
+  Future<DriveChangesPage> listChanges(String pageToken,
+          {bool interactivo = true}) =>
+      _withToken(interactivo: interactivo, (token) async {
         final cambios = <DriveChange>[];
         var actual = pageToken;
         String? siguienteInicio;
@@ -679,7 +719,8 @@ class GoogleDriveService {
   /// Devuelve null si la carpeta Bitácora todavía no existe — no se crea acá:
   /// sincronizar es una lectura, y crear carpetas en el Drive de alguien que
   /// nunca subió nada sería ensuciar por adelantado.
-  Future<BitacoraTree?> loadBitacoraTree() => _withToken((token) async {
+  Future<BitacoraTree?> loadBitacoraTree({bool interactivo = true}) =>
+      _withToken(interactivo: interactivo, (token) async {
         final rootId = await _findBitacoraFolder(token);
         if (rootId == null) return null;
 
@@ -706,8 +747,9 @@ class GoogleDriveService {
   /// Es el barrido inicial: corre una sola vez, cuando el dispositivo empieza
   /// a seguir los cambios, para registrar lo que ya estaba en Drive antes.
   /// A partir de ahí manda [listChanges], que es mucho más barato.
-  Future<List<DriveEntry>> listFilesIn(BitacoraTree tree) =>
-      _withToken((token) async {
+  Future<List<DriveEntry>> listFilesIn(BitacoraTree tree,
+          {bool interactivo = true}) =>
+      _withToken(interactivo: interactivo, (token) async {
         final archivos = <DriveEntry>[];
         for (final folderId in tree.paths.keys) {
           archivos.addAll(
@@ -768,19 +810,19 @@ class GoogleDriveService {
   BitacoraTree? _arbolCache;
 
   /// El árbol de Bitácora, recorriéndolo solo si no se conoce o si [refrescar].
-  Future<BitacoraTree?> bitacoraTree({bool refrescar = false}) async {
+  Future<BitacoraTree?> bitacoraTree(
+      {bool refrescar = false, bool interactivo = true}) async {
     if (!refrescar && _arbolCache != null) return _arbolCache;
-    _arbolCache = await loadBitacoraTree();
+    _arbolCache = await loadBitacoraTree(interactivo: interactivo);
     return _arbolCache;
   }
 
   /// Si [fileId] está dentro de la carpeta Bitácora.
   ///
-  /// **Es la única barrera que queda.** Con el permiso acotado de antes, Google
-  /// impedía por sí solo que la app tocara un archivo ajeno; ahora que el
-  /// permiso es completo, eso depende de esta comprobación. Por eso ante la
-  /// duda —sin árbol, sin respuesta de Drive, error de red— devuelve false: no
-  /// poder confirmar que algo es nuestro no autoriza a borrarlo.
+  /// Con `drive.file`, Google ya solo deja ver archivos que la app creó, así
+  /// que esto es cinturón y tirantes, no la única barrera. Ante la duda —sin
+  /// árbol, sin respuesta de Drive, error de red— devuelve false: no poder
+  /// confirmar que algo es nuestro no autoriza a borrarlo.
   Future<bool> belongsToBitacora(String fileId) async {
     if (fileId.isEmpty || fileId.contains('/')) return false;
 
@@ -818,8 +860,16 @@ class GoogleDriveService {
     }
   }
 
-  /// Busca la carpeta "Bitácora" sin crearla.
-  Future<String?> _findBitacoraFolder(String token) async {
+  /// Busca la carpeta "Bitácora" sin crearla, por nombre.
+  ///
+  /// Con `drive.file`, esta búsqueda solo encuentra la carpeta si la creó la
+  /// propia app (en una sesión anterior, con éste u otro scope): es el único
+  /// caso al que este permiso da acceso sin haber elegido nada en un
+  /// selector.
+  Future<String?> _findBitacoraFolder(String token) =>
+      _searchBitacoraFolderByName(token);
+
+  Future<String?> _searchBitacoraFolderByName(String token) async {
     final response = await http.get(
       Uri.parse(
         'https://www.googleapis.com/drive/v3/files'
