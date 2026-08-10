@@ -68,3 +68,9 @@ google-services.json
 GoogleService-Info.plist
 releases/
 
+# Notas de trabajo temporales (mallas curriculares pasadas a texto para
+# armar las migraciones de materias) — no son parte de la app, se borran
+# cuando se terminan de usar.
+materias_teologia_2026.md
+materias_informatica_2026.md
+

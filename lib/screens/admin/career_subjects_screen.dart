@@ -3,6 +3,7 @@ import '../../colors.dart';
 import '../../models/career_model.dart';
 import '../../models/subject_model.dart';
 import '../../services/career_supabase_service.dart';
+import '../../utils/input_sanitizer.dart';
 
 /// Materias de una carrera, dentro del panel de administración.
 ///
@@ -22,10 +23,18 @@ class CareerSubjectsScreen extends StatefulWidget {
   State<CareerSubjectsScreen> createState() => _CareerSubjectsScreenState();
 }
 
+enum _EstadoFiltro { todas, activas, inactivas }
+
 class _CareerSubjectsScreenState extends State<CareerSubjectsScreen> {
   final CareerSupabaseService _service = CareerSupabaseService();
   final _searchController = TextEditingController();
   String _query = '';
+
+  /// null = "Todas". Con 62 materias en Teología (4 años × 2 semestres),
+  /// buscar por texto no alcanzaba para ubicar rápido un semestre entero.
+  String? _semestreSeleccionado;
+  _EstadoFiltro _estadoFiltro = _EstadoFiltro.todas;
+  bool _aplicandoEnBloque = false;
 
   Career get career => widget.career;
 
@@ -35,21 +44,271 @@ class _CareerSubjectsScreenState extends State<CareerSubjectsScreen> {
     super.dispose();
   }
 
-  /// Materias que calzan con [_query], por orden alfabético.
+  /// Materias que calzan con el texto, el semestre y el estado elegidos (las
+  /// tres condiciones se combinan), por orden alfabético.
   ///
   /// Venían en el orden en que se agregaron, que con ocho ya obliga a leerlas
-  /// todas para encontrar una.
+  /// todas para encontrar una — con 62 mucho más.
   List<Subject> _filtrar(List<Subject> materias) {
     final q = _query.trim().toLowerCase();
-    final lista = q.isEmpty
-        ? [...materias]
-        : materias
-            .where((s) =>
-                s.name.toLowerCase().contains(q) ||
-                s.professor.toLowerCase().contains(q))
-            .toList();
+    final lista = materias.where((s) {
+      final matchesQuery = q.isEmpty ||
+          s.name.toLowerCase().contains(q) ||
+          s.professor.toLowerCase().contains(q) ||
+          (s.semester ?? '').toLowerCase().contains(q);
+      final matchesSemestre = _semestreSeleccionado == null ||
+          s.semester == _semestreSeleccionado;
+      final matchesEstado = switch (_estadoFiltro) {
+        _EstadoFiltro.todas => true,
+        _EstadoFiltro.activas => s.isActive,
+        _EstadoFiltro.inactivas => !s.isActive,
+      };
+      return matchesQuery && matchesSemestre && matchesEstado;
+    }).toList();
     lista.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return lista;
+  }
+
+  /// Valores distintos de [Subject.semester] presentes en [materias],
+  /// ordenados alfabéticamente. Vacío si nadie cargó un semestre todavía
+  /// (ej. carreras chicas como Informática) — ahí no se muestra el chip-row.
+  List<String> _semestresDisponibles(List<Subject> materias) {
+    final valores = materias
+        .map((s) => (s.semester ?? '').trim())
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList();
+    valores.sort();
+    return valores;
+  }
+
+  /// Chip "Todas" + uno por cada semestre distinto. Nada si la carrera no
+  /// tiene ningún semestre cargado — mismo criterio que el filtro de
+  /// materia en pending_tasks_screen.dart.
+  Widget _buildSemestreChips(List<Subject> materias) {
+    final semestres = _semestresDisponibles(materias);
+    if (semestres.isEmpty) return const SizedBox.shrink();
+
+    final opciones = ['Todas', ...semestres];
+    return SizedBox(
+      height: 44,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: opciones.length,
+        itemBuilder: (context, index) {
+          final opcion = opciones[index];
+          final esTodas = opcion == 'Todas';
+          final seleccionado =
+              esTodas ? _semestreSeleccionado == null : _semestreSeleccionado == opcion;
+          final primaryColor = Theme.of(context).primaryColor;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilterChip(
+              label: Text(
+                opcion,
+                style: TextStyle(
+                  color: seleccionado
+                      ? Colors.white
+                      : Theme.of(context).colorScheme.onSurface,
+                  fontWeight: seleccionado ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+              selected: seleccionado,
+              onSelected: (_) => setState(
+                () => _semestreSeleccionado = esTodas ? null : opcion,
+              ),
+              backgroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? AppColors.darkSurface
+                  : Colors.grey[200],
+              selectedColor: primaryColor,
+              checkmarkColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color: seleccionado ? primaryColor : AppColors.borderLight,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// "Todas / Activas / Inactivas". Siempre visible, no depende de los datos.
+  Widget _buildEstadoChips() {
+    const opciones = {
+      _EstadoFiltro.todas: 'Todas',
+      _EstadoFiltro.activas: 'Activas',
+      _EstadoFiltro.inactivas: 'Inactivas',
+    };
+    final primaryColor = Theme.of(context).primaryColor;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      child: Wrap(
+        spacing: 8,
+        children: opciones.entries.map((entry) {
+          final seleccionado = _estadoFiltro == entry.key;
+          return FilterChip(
+            label: Text(
+              entry.value,
+              style: TextStyle(
+                color: seleccionado
+                    ? Colors.white
+                    : Theme.of(context).colorScheme.onSurface,
+                fontWeight: seleccionado ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+            selected: seleccionado,
+            onSelected: (_) => setState(() => _estadoFiltro = entry.key),
+            backgroundColor: Theme.of(context).brightness == Brightness.dark
+                ? AppColors.darkSurface
+                : Colors.grey[200],
+            selectedColor: primaryColor,
+            checkmarkColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(
+                color: seleccionado ? primaryColor : AppColors.borderLight,
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  /// Botones para activar/desactivar de una vez todas las materias del
+  /// semestre elegido. Pensado para el cambio de semestre: en vez de tocar
+  /// ~8-16 switches uno por uno, dos toques con confirmación.
+  Widget _buildAccionEnBloque(Career actual, String semestre) {
+    final delSemestre =
+        actual.predefinedSubjects.where((s) => s.semester == semestre).toList();
+    final inactivas = delSemestre.where((s) => !s.isActive).length;
+    final activas = delSemestre.length - inactivas;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _aplicandoEnBloque || inactivas == 0
+                  ? null
+                  : () => _confirmarEnBloque(actual, semestre, true, inactivas),
+              icon: const Icon(Icons.toggle_on_outlined, size: 18),
+              label: Text('Activar todas ($inactivas)'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _aplicandoEnBloque || activas == 0
+                  ? null
+                  : () => _confirmarEnBloque(actual, semestre, false, activas),
+              icon: const Icon(Icons.toggle_off_outlined, size: 18),
+              label: Text('Desactivar todas ($activas)'),
+              style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmarEnBloque(
+    Career actual,
+    String semestre,
+    bool activar,
+    int cantidad,
+  ) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(activar ? 'Activar semestre' : 'Desactivar semestre'),
+        content: Text(
+          '${activar ? "Activar" : "Desactivar"} $cantidad materia'
+          '${cantidad == 1 ? '' : 's'} de "$semestre".\n\n'
+          '${activar ? "Van a ofrecerse" : "Van a dejar de ofrecerse"} para '
+          'tareas y reuniones nuevas. Lo ya guardado con estas materias no '
+          'cambia.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmado != true) return;
+    await _aplicarEnBloque(actual, semestre, activar);
+  }
+
+  Future<void> _aplicarEnBloque(
+    Career actual,
+    String semestre,
+    bool activar,
+  ) async {
+    final afectadas = actual.predefinedSubjects
+        .where((s) => s.semester == semestre && s.isActive != activar)
+        .toList();
+
+    setState(() => _aplicandoEnBloque = true);
+    try {
+      // Secuencial a propósito: updateSubjectInCareer reescribe el array
+      // entero cada vez (fetch-modifica-guarda). En paralelo, dos llamadas
+      // podrían pisarse la una a la otra con datos viejos.
+      for (final materia in afectadas) {
+        await _service.updateSubjectInCareer(
+          actual.id,
+          materia.copyWith(isActive: activar),
+        );
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${afectadas.length} materia${afectadas.length == 1 ? '' : 's'} '
+              '${activar ? "activadas" : "desactivadas"}',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo aplicar a todas: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _aplicandoEnBloque = false);
+    }
+  }
+
+  /// "Segundo Año · Sem. IV · Mg. X — inactiva". Cada parte solo aparece si
+  /// hay dato; para ubicar de un vistazo a qué semestre pertenece cada
+  /// materia sin tener que abrirla a editar.
+  String _subtitulo(Subject materia) {
+    final partes = <String>[
+      if ((materia.semester ?? '').trim().isNotEmpty) materia.semester!.trim(),
+      if (materia.professor.isNotEmpty) materia.professor,
+    ];
+    var texto = partes.join(' · ');
+    if (!materia.isActive) {
+      texto = texto.isEmpty ? 'Inactiva' : '$texto — inactiva';
+    }
+    return texto;
   }
 
   @override
@@ -111,6 +370,24 @@ class _CareerSubjectsScreenState extends State<CareerSubjectsScreen> {
                   onChanged: (v) => setState(() => _query = v),
                 ),
               ),
+              _buildSemestreChips(actual.predefinedSubjects),
+              _buildEstadoChips(),
+              if (_semestreSeleccionado != null)
+                _buildAccionEnBloque(actual, _semestreSeleccionado!),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${materias.length} materia${materias.length == 1 ? '' : 's'}'
+                    ' · ${materias.where((s) => s.isActive).length} activas',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
               if (materias.isEmpty)
                 const Expanded(
                   child: Center(child: Text('Ninguna materia calza')),
@@ -123,15 +400,19 @@ class _CareerSubjectsScreenState extends State<CareerSubjectsScreen> {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final materia = materias[i];
-              return ListTile(
+              return Opacity(
+                opacity: materia.isActive ? 1 : 0.6,
+                child: ListTile(
                 leading: const Icon(Icons.menu_book_outlined),
                 title: Text(materia.name),
-                subtitle: materia.professor.isEmpty
-                    ? null
-                    : Text(materia.professor),
+                subtitle: Text(_subtitulo(materia)),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    Switch(
+                      value: materia.isActive,
+                      onChanged: (_) => _toggleActive(actual, materia),
+                    ),
                     IconButton(
                       icon: const Icon(Icons.edit_outlined, size: 20),
                       tooltip: 'Editar',
@@ -144,6 +425,7 @@ class _CareerSubjectsScreenState extends State<CareerSubjectsScreen> {
                       onPressed: () => _eliminar(context, actual, materia),
                     ),
                   ],
+                ),
                 ),
               );
             },
@@ -174,6 +456,27 @@ class _CareerSubjectsScreenState extends State<CareerSubjectsScreen> {
   ) =>
       _formulario(context, actual, materia);
 
+  /// Activa o desactiva la materia. Desactivada, sigue disponible en
+  /// Archivos/Material docente (para lo de semestres anteriores) pero deja de
+  /// ofrecerse al crear tareas o reuniones nuevas.
+  Future<void> _toggleActive(Career actual, Subject materia) async {
+    try {
+      await _service.updateSubjectInCareer(
+        actual.id,
+        materia.copyWith(isActive: !materia.isActive),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo cambiar: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   /// Un único formulario para crear y para editar: los dos diálogos separados
   /// que había eran el mismo campo por campo.
   Future<void> _formulario(
@@ -185,6 +488,8 @@ class _CareerSubjectsScreenState extends State<CareerSubjectsScreen> {
     final nombreController = TextEditingController(text: materia?.name ?? '');
     final profesorController =
         TextEditingController(text: materia?.professor ?? '');
+    final semestreController =
+        TextEditingController(text: materia?.semester ?? '');
     final formKey = GlobalKey<FormState>();
 
     final guardada = await showDialog<bool>(
@@ -216,6 +521,16 @@ class _CareerSubjectsScreenState extends State<CareerSubjectsScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: semestreController,
+                decoration: const InputDecoration(
+                  labelText: 'Semestre (opcional)',
+                  hintText: 'Ej: Segundo Año · Sem. IV',
+                  border: OutlineInputBorder(),
+                  helperText: 'Solo para ubicarla en este panel',
+                ),
+              ),
             ],
           ),
         ),
@@ -231,11 +546,16 @@ class _CareerSubjectsScreenState extends State<CareerSubjectsScreen> {
               final nueva = Subject(
                 id: materia?.id ??
                     'subj_${DateTime.now().millisecondsSinceEpoch}',
-                name: nombreController.text.trim(),
-                professor: profesorController.text.trim(),
+                name: InputSanitizer.sanitizeText(nombreController.text),
+                professor:
+                    InputSanitizer.sanitizeText(profesorController.text),
                 userId: 'system',
                 userName: 'Sistema',
                 createdAt: materia?.createdAt ?? DateTime.now(),
+                isActive: materia?.isActive ?? true,
+                semester: semestreController.text.trim().isEmpty
+                    ? null
+                    : InputSanitizer.sanitizeText(semestreController.text),
               );
 
               try {
@@ -264,6 +584,7 @@ class _CareerSubjectsScreenState extends State<CareerSubjectsScreen> {
 
     nombreController.dispose();
     profesorController.dispose();
+    semestreController.dispose();
 
     if (guardada == true && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

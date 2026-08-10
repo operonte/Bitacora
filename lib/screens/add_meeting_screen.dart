@@ -163,6 +163,11 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
           // Cambiar de carrera cambia la lista de asignaturas: si la que
           // estaba elegida era de la carrera anterior, se descarta.
           _rebuildSubjects();
+          // Autocomplete no vuelve a llamar a optionsBuilder solo porque
+          // _subjects cambió: con el campo de asignatura vacío se quedaba
+          // mostrando las opciones de la carrera anterior. La key nueva
+          // fuerza a remontarlo con la lista ya actualizada.
+          _subjectFieldKey = UniqueKey();
         }),
       ),
     );
@@ -232,6 +237,11 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
     for (final career in CareerService().getCareers()) {
       if (_selectedCareerId != null && career.id != _selectedCareerId) continue;
       for (final s in career.predefinedSubjects) {
+        // Inactiva (semestre anterior) y no es la ya elegida: no se ofrece.
+        // Sigue disponible igual en Archivos/Material docente.
+        if (!s.isActive && s.name.toLowerCase() != _selectedSubject.toLowerCase()) {
+          continue;
+        }
         predefined.add(Subject(
           id: 'pred_${counter++}',
           name: s.name,
@@ -239,6 +249,7 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
           userId: uId,
           userName: uName,
           createdAt: DateTime.now(),
+          isActive: s.isActive,
         ));
       }
     }

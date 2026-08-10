@@ -739,7 +739,8 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                             ),
                             title: Text(career.name),
                             subtitle: Text(
-                              '${career.predefinedSubjects.length} materias'
+                              '${career.predefinedSubjects.length} materias, '
+                              '${career.predefinedSubjects.where((s) => s.isActive).length} activas'
                               '${isPredefined ? ' · definida en la app' : ' · creada aquí'}'
                               '${career.isActive ? '' : ' · desactivada'}',
                             ),

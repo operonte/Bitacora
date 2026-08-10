@@ -20,6 +20,18 @@ class Subject {
   String userName;
   DateTime createdAt;
 
+  /// Si es falsa, la materia no se ofrece para tareas ni reuniones nuevas —
+  /// pero sigue disponible en Archivos/Material docente, para poder seguir
+  /// organizando ahí lo de semestres anteriores. Solo aplica a las materias
+  /// predefinidas de una carrera; las propias del usuario no la usan.
+  bool isActive;
+
+  /// Etiqueta libre ("Segundo Año · Sem. IV") para que el admin ubique de un
+  /// vistazo a qué semestre pertenece una materia predefinida, sin tener que
+  /// adivinar por el nombre. Solo se muestra en el panel de administración;
+  /// no afecta selectores ni validación del servidor.
+  String? semester;
+
   Subject({
     this.id,
     required this.name,
@@ -30,6 +42,8 @@ class Subject {
     required this.userId,
     required this.userName,
     required this.createdAt,
+    this.isActive = true,
+    this.semester,
   }) {
     _validate();
   }
@@ -70,6 +84,7 @@ class Subject {
 
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'name': name,
       'professor': professor,
       'description': description,
@@ -78,6 +93,8 @@ class Subject {
       'userId': userId,
       'userName': userName,
       'createdAt': createdAt.millisecondsSinceEpoch,
+      'isActive': isActive,
+      'semester': semester,
     };
   }
 
@@ -94,6 +111,8 @@ class Subject {
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         map['createdAt'] ?? DateTime.now().millisecondsSinceEpoch,
       ),
+      isActive: map['isActive'] as bool? ?? true,
+      semester: map['semester']?.toString(),
     );
   }
 
@@ -107,6 +126,8 @@ class Subject {
     String? userId,
     String? userName,
     DateTime? createdAt,
+    bool? isActive,
+    String? semester,
   }) {
     return Subject(
       id: id ?? this.id,
@@ -118,6 +139,8 @@ class Subject {
       userId: userId ?? this.userId,
       userName: userName ?? this.userName,
       createdAt: createdAt ?? this.createdAt,
+      isActive: isActive ?? this.isActive,
+      semester: semester ?? this.semester,
     );
   }
 

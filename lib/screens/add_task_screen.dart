@@ -137,10 +137,16 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   /// Materias predefinidas de [career]. Mezclar las de todas las carreras era
   /// el origen del error que motivó esto: con Teología activa se podía elegir
   /// "Programación I" y la tarea terminaba publicada al grupo equivocado.
+  ///
+  /// Las inactivas (de un semestre anterior) no se ofrecen, salvo que sea la
+  /// ya elegida — para no vaciar en silencio el campo al editar una tarea
+  /// vieja. Siguen disponibles igual en Archivos/Material docente.
   List<Subject> _predefinedSubjectsFor(Career? career) {
     if (career == null) return [];
     var idx = 0;
-    return career.predefinedSubjects.map((subject) {
+    return career.predefinedSubjects
+        .where((s) => s.isActive || s.name == _selectedSubject)
+        .map((subject) {
       final index = idx++;
       return Subject(
         id: subject.id ?? 'predef_${career.id}_$index',
@@ -151,6 +157,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         userId: subject.userId,
         userName: subject.userName,
         createdAt: subject.createdAt,
+        isActive: subject.isActive,
       );
     }).toList();
   }
@@ -286,6 +293,13 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                     _selectedCareer =
                         _careers.firstWhere((c) => c.id == value);
                     _rebuildSubjects();
+                    // Autocomplete no vuelve a llamar a optionsBuilder solo
+                    // porque _filteredSubjects cambió: si el campo de
+                    // asignatura ya estaba vacío (tarea nueva), se quedaba
+                    // mostrando las opciones de la carrera anterior hasta
+                    // que el usuario tipeara algo. Cambiar la key fuerza a
+                    // remontarlo con la lista ya actualizada.
+                    _subjectFieldKey = UniqueKey();
                   });
                 },
               ),
