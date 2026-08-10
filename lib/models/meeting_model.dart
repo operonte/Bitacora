@@ -88,13 +88,16 @@ class Meeting {
       'description': description,
       'subject': subject,
       'professor': professor,
-      'meeting_date': meetingDate.toIso8601String(),
+      // .toUtc() explícito: la columna es timestamptz, y sin marca de huso
+      // Postgres interpreta la hora local tal cual como si fuera UTC —
+      // 19:00 en Chile quedaba guardado como 19:00 UTC (15:00 Chile real).
+      'meeting_date': meetingDate.toUtc().toIso8601String(),
       'type': effectiveType,
       'is_recurrent': isRecurrent,
       'user_id': userId,
       'is_completed': isCompleted,
       'is_private': isPrivate,
-      'created_at': createdAt.toIso8601String(),
+      'created_at': createdAt.toUtc().toIso8601String(),
     };
 
     if (meetingLink != null && meetingLink!.isNotEmpty) {
@@ -113,8 +116,12 @@ class Meeting {
       description: map['description'] ?? '',
       subject: map['subject'] ?? '',
       professor: map['professor'] ?? '',
+      // .toLocal(): Supabase devuelve timestamptz con offset explícito
+      // (correcto), pero el resto de la app —_hhmm, _formatMeetingDate,
+      // effectiveDate, occurrenceOn— lee .hour/.day directo asumiendo hora
+      // local, igual que antes de que existiera este bug.
       meetingDate: map['meeting_date'] != null
-          ? DateTime.parse(map['meeting_date'])
+          ? DateTime.parse(map['meeting_date']).toLocal()
           : DateTime.now(),
       type: map['type'] ?? 'Zoom',
       isRecurrent: map['is_recurrent'] ?? false,
@@ -128,7 +135,7 @@ class Meeting {
       // que es como se comportaban antes de existir esta opción.
       isPrivate: map['is_private'] ?? true,
       createdAt: map['created_at'] != null
-          ? DateTime.parse(map['created_at'])
+          ? DateTime.parse(map['created_at']).toLocal()
           : DateTime.now(),
     );
   }
