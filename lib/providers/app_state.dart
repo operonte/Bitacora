@@ -19,7 +19,10 @@ class AppState extends ChangeNotifier {
   // Estado de datos
   List<Task> _tasks = [];
   List<Subject> _subjects = [];
-  bool _isLoading = false;
+  // Contador, no booleano: loadTasks/loadSubjects/forceSync se superponen
+  // (forceSync espera a los otros dos con Future.wait), y con un booleano el
+  // primero en terminar apagaba isLoading aunque el otro siguiera cargando.
+  int _loadingCount = 0;
   String _error = '';
   
   StreamSubscription? _changesSubscription;
@@ -75,7 +78,7 @@ class AppState extends ChangeNotifier {
   // Getters
   List<Task> get tasks => _tasks;
   List<Subject> get subjects => _subjects;
-  bool get isLoading => _isLoading;
+  bool get isLoading => _loadingCount > 0;
   String get error => _error;
   
   // Getters filtrados
@@ -341,21 +344,23 @@ class AppState extends ChangeNotifier {
     }
   }
   
-  /// Agrega una materia
-  Future<void> addSubject(Subject subject) async {
+  /// Agrega una materia. Devuelve null (y deja el motivo en [error]) si falla.
+  Future<Subject?> addSubject(Subject subject) async {
     _clearError();
     try {
       final id = await _supabase.addSubject(subject);
       final newSubject = subject.copyWith(id: id);
       _subjects.add(newSubject);
       notifyListeners();
+      return newSubject;
     } catch (e) {
       _setError('Error agregando materia: $e');
+      return null;
     }
   }
-  
-  /// Actualiza una materia
-  Future<void> updateSubject(Subject subject) async {
+
+  /// Actualiza una materia. Devuelve false (y deja el motivo en [error]) si falla.
+  Future<bool> updateSubject(Subject subject) async {
     _clearError();
     try {
       await _supabase.updateSubject(subject);
@@ -364,20 +369,24 @@ class AppState extends ChangeNotifier {
         _subjects[index] = subject;
         notifyListeners();
       }
+      return true;
     } catch (e) {
       _setError('Error actualizando materia: $e');
+      return false;
     }
   }
-  
-  /// Elimina una materia
-  Future<void> deleteSubject(String subjectId) async {
+
+  /// Elimina una materia. Devuelve false (y deja el motivo en [error]) si falla.
+  Future<bool> deleteSubject(String subjectId) async {
     _clearError();
     try {
       await _supabase.deleteSubject(subjectId);
       _subjects.removeWhere((s) => s.id == subjectId);
       notifyListeners();
+      return true;
     } catch (e) {
       _setError('Error eliminando materia: $e');
+      return false;
     }
   }
   
@@ -414,7 +423,9 @@ class AppState extends ChangeNotifier {
   // ==================== UTILS ====================
   
   void _setLoading(bool loading) {
-    _isLoading = loading;
+    _loadingCount = loading
+        ? _loadingCount + 1
+        : (_loadingCount > 0 ? _loadingCount - 1 : 0);
     notifyListeners();
   }
   

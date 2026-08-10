@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import '../app_info.dart';
 import '../colors.dart';
+import '../utils/input_sanitizer.dart';
 import '../models/career_model.dart';
 import '../auth_service.dart';
 import '../services/career_service.dart';
@@ -458,12 +459,20 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
           ),
           ElevatedButton(
             onPressed: () async {
+              final photoUrl = photoController.text.trim();
+              if (photoUrl.isNotEmpty && !InputSanitizer.isSafeExternalUrl(photoUrl)) {
+                _showSnack(
+                  'La URL de la foto debe empezar con http:// o https://',
+                  AppColors.error,
+                );
+                return;
+              }
               try {
                 await Supabase.instance.client.auth.updateUser(
                   UserAttributes(
                     data: {
-                      'full_name': nameController.text.trim(),
-                      'avatar_url': photoController.text.trim(),
+                      'full_name': InputSanitizer.sanitizeText(nameController.text),
+                      'avatar_url': photoUrl,
                     },
                   ),
                 );
@@ -556,7 +565,13 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                   // Consulta al servidor: la clave ya no viaja en la app.
                   career = await _careerService.validateAccessKey(key);
                 } catch (e) {
-                  setLocal(() => errorText = 'Sin conexión para validar la clave');
+                  // join_career() bloquea 15 min tras 5 intentos fallidos y
+                  // avisa con esta excepción puntual; el resto de errores del
+                  // servidor se tratan como falta de conexión.
+                  final message = e is PostgrestException ? e.message : '';
+                  setLocal(() => errorText = message.contains('Demasiados intentos')
+                      ? message
+                      : 'Sin conexión para validar la clave');
                   return;
                 }
                 if (career == null) {
@@ -881,7 +896,7 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
               const SizedBox(height: 8),
               const Text('• Gestión de tareas por materia y carrera'),
               const Text('• Reuniones y material compartidos por carrera'),
-              const Text('• Recordatorios 24 h y 2 h antes del vencimiento'),
+              const Text('• Resumen diario y recordatorio 2 h antes del vencimiento'),
               const Text('• Funciona sin conexión a internet'),
               const Text('• Sincronización automática en la nube'),
               const Text('• Modo oscuro'),

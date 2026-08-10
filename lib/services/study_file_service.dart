@@ -3,9 +3,11 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/study_file_model.dart';
 import '../utils/drive_path_classifier.dart';
+import '../utils/hive_box_helper.dart';
 import '../utils/input_sanitizer.dart';
 import '../utils/logger.dart';
 import 'career_service.dart';
+import 'encryption_service.dart';
 import 'google_drive_service.dart';
 
 class StudyFileService extends ChangeNotifier {
@@ -23,7 +25,10 @@ class StudyFileService extends ChangeNotifier {
 
   Future<void> init() async {
     try {
-      _filesBox = await Hive.openBox(_boxName);
+      _filesBox = await openHiveBoxSafelyUntyped(
+        _boxName,
+        cipher: EncryptionService.cipher,
+      );
       await _migrateLegacyTeachingMaterials();
       Logger.info('StudyFileService inicializado', tag: 'StudyFileService');
     } catch (e) {
@@ -38,7 +43,10 @@ class StudyFileService extends ChangeNotifier {
     if (!await Hive.boxExists(_legacyMaterialsBoxName)) return;
 
     try {
-      final legacyBox = await Hive.openBox(_legacyMaterialsBoxName);
+      final legacyBox = await openHiveBoxSafelyUntyped(
+        _legacyMaterialsBoxName,
+        cipher: EncryptionService.cipher,
+      );
       var migrated = 0;
 
       for (final value in legacyBox.values) {
@@ -361,7 +369,15 @@ class StudyFileService extends ChangeNotifier {
   /// borró de Drive antes de eso no aparece en ningún delta, nunca, y su
   /// tarjeta se quedaría en la app para siempre. El barrido completo es la
   /// forma de arreglar cualquier desajuste que se haya acumulado.
-  Future<DriveSyncResult> syncDriveChanges({bool completa = false}) async {
+  ///
+  /// [interactivo] permite abrir la ventana de permisos de Google si hiciera
+  /// falta. Solo debe ir en true cuando el usuario pidió sincronizar: si no,
+  /// la app le abre sola una pantalla que dice "esta app no es segura" cada
+  /// vez que la abre, y eso asusta más de lo que sirve.
+  Future<DriveSyncResult> syncDriveChanges({
+    bool completa = false,
+    bool interactivo = true,
+  }) async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return const DriveSyncResult.vacio();
 
@@ -371,7 +387,10 @@ class StudyFileService extends ChangeNotifier {
       final guardado = _filesBox?.get(_driveTokenKey)?.toString();
 
       if (completa || guardado == null || guardado.isEmpty) {
-        final arbol = await drive.bitacoraTree(refrescar: true);
+        final arbol = await drive.bitacoraTree(
+          refrescar: true,
+          interactivo: interactivo,
+        );
         // No encontrar la carpeta Bitácora **no** es "no hay nada nuevo": es
         // no haber podido mirar. Puede que el usuario nunca haya subido nada,
         // pero también que el permiso no alcance o que la carpeta se haya
@@ -384,10 +403,15 @@ class StudyFileService extends ChangeNotifier {
           );
           return const DriveSyncResult.sinCarpeta();
         }
-        return await _primeraSincronizacion(drive, arbol, user.id);
+        return await _primeraSincronizacion(
+          drive,
+          arbol,
+          user.id,
+          interactivo: interactivo,
+        );
       }
 
-      final pagina = await drive.listChanges(guardado);
+      final pagina = await drive.listChanges(guardado, interactivo: interactivo);
       if (pagina.changes.isEmpty) {
         await _filesBox?.put(_driveTokenKey, pagina.nextStartToken);
         return const DriveSyncResult.vacio();
@@ -403,7 +427,10 @@ class StudyFileService extends ChangeNotifier {
       // cambios como ausentes. Y como borrar archivos es lo más frecuente,
       // incluirlo acá haría el recorrido completo casi siempre.
       final carpetasTocadas = pagina.changes.any((c) => c.file?.isFolder == true);
-      final arbol = await drive.bitacoraTree(refrescar: carpetasTocadas);
+      final arbol = await drive.bitacoraTree(
+        refrescar: carpetasTocadas,
+        interactivo: interactivo,
+      );
       if (arbol == null) return const DriveSyncResult.vacio();
 
       final resultado = await _aplicarCambios(pagina.changes, arbol, user.id);
@@ -418,6 +445,11 @@ class StudyFileService extends ChangeNotifier {
       return resultado;
     } on DriveScopeInsufficientException {
       rethrow;
+    } on DriveNeedsConsentException {
+      // Falta autorizar y no es momento de pedirlo. No es un fallo: es "todavía
+      // no". Se distingue para que el botón pueda decirlo y la sincronización
+      // automática se calle.
+      return const DriveSyncResult.faltaPermiso();
     } catch (e) {
       Logger.warning('Falló la sincronización con Drive: $e',
           tag: 'StudyFileService');
@@ -439,11 +471,12 @@ class StudyFileService extends ChangeNotifier {
   Future<DriveSyncResult> _primeraSincronizacion(
     GoogleDriveService drive,
     BitacoraTree arbol,
-    String userId,
-  ) async {
+    String userId, {
+    bool interactivo = true,
+  }) async {
     // Si esto lanza, no se toca nada: un listado a medias se leería como
     // "todos estos archivos ya no existen". Ver [GoogleDriveService.listFilesIn].
-    final archivos = await drive.listFilesIn(arbol);
+    final archivos = await drive.listFilesIn(arbol, interactivo: interactivo);
 
     final enDrive = archivos.map((e) => e.id).toSet();
     final conocidos = _driveIdsRegistrados();
@@ -485,7 +518,7 @@ class StudyFileService extends ChangeNotifier {
       );
     }
 
-    final token = await drive.getStartPageToken();
+    final token = await drive.getStartPageToken(interactivo: interactivo);
     if (token != null && token.isNotEmpty) {
       await _filesBox?.put(_driveTokenKey, token);
     }
@@ -695,14 +728,25 @@ class DriveSyncResult {
         actualizados = 0,
         ignorados = 0;
 
+  /// Falta autorizar Drive y no era momento de pedirlo. La sincronización
+  /// automática termina así en silencio: pedir permiso abre una ventana que
+  /// el usuario no provocó.
+  const DriveSyncResult.faltaPermiso()
+      : agregados = -3,
+        eliminados = 0,
+        actualizados = 0,
+        ignorados = 0;
+
   bool get fallo => agregados == -1;
   bool get sinCarpeta => agregados == -2;
+  bool get faltaPermiso => agregados == -3;
   bool get sinCambios =>
       agregados == 0 && eliminados == 0 && actualizados == 0;
 
   /// Frase para mostrarle al usuario.
   String get resumen {
     if (fallo) return 'No se pudo consultar Google Drive';
+    if (faltaPermiso) return 'Falta autorizar el acceso a Google Drive';
     if (sinCarpeta) {
       return 'No se encontró la carpeta "Bitácora" en tu Google Drive';
     }

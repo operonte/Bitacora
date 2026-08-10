@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/meeting_model.dart';
+import '../utils/hive_box_helper.dart';
 import '../utils/logger.dart';
 import '../notification_service.dart';
 import 'career_service.dart';
+import 'encryption_service.dart';
 
 class MeetingService extends ChangeNotifier {
   static final MeetingService _instance = MeetingService._internal();
@@ -25,7 +27,10 @@ class MeetingService extends ChangeNotifier {
 
   Future<void> init() async {
     try {
-      _meetingBox = await Hive.openBox(_boxName);
+      _meetingBox = await openHiveBoxSafelyUntyped(
+        _boxName,
+        cipher: EncryptionService.cipher,
+      );
       Logger.info('MeetingService inicializado', tag: 'MeetingService');
     } catch (e) {
       Logger.error('Error inicializando MeetingService: $e', error: e, tag: 'MeetingService');

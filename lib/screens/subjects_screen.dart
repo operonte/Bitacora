@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-import '../services/supabase_db_service.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/subject_model.dart';
+import '../providers/app_state.dart';
 import '../colors.dart';
 import '../utils/error_handler.dart';
+import '../utils/input_sanitizer.dart';
 import '../utils/validators.dart';
 
 class SubjectsScreen extends StatefulWidget {
@@ -13,44 +16,24 @@ class SubjectsScreen extends StatefulWidget {
 }
 
 class _SubjectsScreenState extends State<SubjectsScreen> {
-  List<Subject> _subjects = [];
-  bool _isLoading = true;
-  final SupabaseDbService _dbService = SupabaseDbService();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    try {
-      final subjects = await _dbService.getSubjects();
-      setState(() {
-        _subjects = subjects;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-      if (mounted) {
-        final appException = ErrorMessages.fromBackendError(e);
-        ErrorHandler.showErrorSnackBar(context, appException);
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+    final subjects = appState.subjects;
+    // AppState.isLoading es compartido con tasks/forceSync: solo se muestra
+    // acá mientras todavía no hay nada que mostrar, para no hacer parpadear
+    // esta pantalla por una carga ajena (p.ej. refrescar tareas en otra).
+    final isLoading = appState.isLoading && subjects.isEmpty;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mis Materias'),
       ),
-      body: _isLoading
+      body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _subjects.isEmpty
+          : subjects.isEmpty
           ? _buildEmptyState()
-          : _buildSubjectsList(),
+          : _buildSubjectsList(subjects),
       floatingActionButton: FloatingActionButton(
         onPressed: _addSubject,
         backgroundColor: AppColors.primary,
@@ -87,14 +70,14 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
     );
   }
 
-  Widget _buildSubjectsList() {
+  Widget _buildSubjectsList(List<Subject> subjects) {
     return RefreshIndicator(
-      onRefresh: _loadData,
+      onRefresh: () => context.read<AppState>().loadSubjects(),
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: _subjects.length,
+        itemCount: subjects.length,
         itemBuilder: (context, index) {
-          final subject = _subjects[index];
+          final subject = subjects[index];
           return _buildSubjectCard(subject);
         },
       ),
@@ -344,46 +327,61 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                     return;
                   }
 
+                  final appState = context.read<AppState>();
                   Navigator.pop(context);
 
-                  try {
-                    final user = _dbService.currentUser;
-                    if (user == null) throw Exception('Usuario no autenticado');
-
-                    final newSubject = Subject(
-                      id: subject?.id,
-                      name: nameController.text.trim(),
-                      professor: professorController.text.trim(),
-                      description: descriptionController.text.trim().isEmpty
-                          ? null
-                          : descriptionController.text.trim(),
-                      visibility: visibility,
-                      userId: user.id,
-                      userName: user.userMetadata?['full_name'] as String? ?? user.userMetadata?['name'] as String? ?? 'Usuario',
-                      createdAt: subject?.createdAt ?? DateTime.now(),
-                    );
-
-                    if (isEditing) {
-                      await _dbService.updateSubject(newSubject);
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Materia actualizada')),
-                      );
-                    } else {
-                      await _dbService.addSubject(newSubject);
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Materia agregada')),
-                      );
-                    }
-
-                    _loadData();
-                  } catch (e) {
+                  final user = Supabase.instance.client.auth.currentUser;
+                  if (user == null) {
                     if (context.mounted) {
-                      final appException = ErrorMessages.fromBackendError(e);
-                      ErrorHandler.showErrorSnackBar(context, appException);
+                      ErrorHandler.showErrorSnackBar(
+                        context,
+                        AppException(
+                          type: AppErrorType.auth,
+                          message: 'Usuario no autenticado',
+                        ),
+                      );
                     }
+                    return;
                   }
+
+                  final descClean =
+                      InputSanitizer.sanitizeText(descriptionController.text);
+                  final newSubject = Subject(
+                    id: subject?.id,
+                    name: InputSanitizer.sanitizeText(nameController.text),
+                    professor:
+                        InputSanitizer.sanitizeText(professorController.text),
+                    description: descClean.isEmpty ? null : descClean,
+                    visibility: visibility,
+                    userId: user.id,
+                    userName: user.userMetadata?['full_name'] as String? ?? user.userMetadata?['name'] as String? ?? 'Usuario',
+                    createdAt: subject?.createdAt ?? DateTime.now(),
+                  );
+
+                  final success = isEditing
+                      ? await appState.updateSubject(newSubject)
+                      : await appState.addSubject(newSubject) != null;
+
+                  if (!context.mounted) return;
+
+                  if (!success) {
+                    ErrorHandler.showErrorSnackBar(
+                      context,
+                      AppException(
+                        type: AppErrorType.unknown,
+                        message: appState.error,
+                      ),
+                    );
+                    return;
+                  }
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        isEditing ? 'Materia actualizada' : 'Materia agregada',
+                      ),
+                    ),
+                  );
                 },
                 child: Text(isEditing ? 'Guardar' : 'Agregar'),
               ),
@@ -409,20 +407,20 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
           ),
           TextButton(
             onPressed: () async {
+              final appState = context.read<AppState>();
               Navigator.pop(context);
-              try {
-                await _dbService.deleteSubject(subject.id!);
-                _loadData();
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Materia eliminada')),
+              final success = await appState.deleteSubject(subject.id!);
+              if (!context.mounted) return;
+              if (!success) {
+                ErrorHandler.showErrorSnackBar(
+                  context,
+                  AppException(type: AppErrorType.unknown, message: appState.error),
                 );
-              } catch (e) {
-                if (context.mounted) {
-                  final appException = ErrorMessages.fromBackendError(e);
-                  ErrorHandler.showErrorSnackBar(context, appException);
-                }
+                return;
               }
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Materia eliminada')),
+              );
             },
             child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
           ),

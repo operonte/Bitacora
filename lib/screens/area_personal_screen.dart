@@ -90,7 +90,16 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       await _studyFileService.syncFromSupabase();
       // El botón hace el barrido completo; la automática, solo el delta. Es la
       // diferencia entre "ponme al día" y "arregla lo que esté descuadrado".
-      final cambios = await _studyFileService.syncDriveChanges(completa: manual);
+      //
+      // Y solo el botón puede abrir la ventana de permisos de Google: la
+      // automática se rinde antes de interrumpir. Sin eso, cada vez que se
+      // abría la app aparecía sola la pantalla que dice "esta app no es
+      // segura" — porque en web el token vive en memoria y se pierde al
+      // recargar.
+      final cambios = await _studyFileService.syncDriveChanges(
+        completa: manual,
+        interactivo: manual,
+      );
       if (!mounted || !manual) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -302,7 +311,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
               onPressed: () {
                 if (formKey.currentState!.validate()) {
                   Navigator.pop(ctx, {
-                    'name': nameController.text.trim(),
+                    'name': InputSanitizer.sanitizeText(nameController.text),
                     'subject': subject,
                     // Cadena vacía = sin carrera; el mapa no admite nulos.
                     'careerId': careerId ?? '',
@@ -741,12 +750,13 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                 FilledButton.icon(
                   onPressed: () async {
                     if (!formKey.currentState!.validate()) return;
-                    final description = descriptionController.text.trim();
+                    final description =
+                        InputSanitizer.sanitizeText(descriptionController.text);
                     try {
                       await _studyFileService.saveFile(
                         StudyFile.fromMap({
                           ...file.toMap(),
-                          'name': nameController.text.trim(),
+                          'name': InputSanitizer.sanitizeText(nameController.text),
                           'subject': selectedSubject,
                           'career_id': selectedCareerId,
                           // Vacío borra la descripción; solo el material
@@ -1185,7 +1195,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                     try {
                       final material = StudyFile(
                         subject: selectedSubject,
-                        name: titleController.text.trim(),
+                        name: InputSanitizer.sanitizeText(titleController.text),
                         externalUrl: urlController.text.trim(),
                         userId: user.id,
                         category: StudyFileCategory.guia,
