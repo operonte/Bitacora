@@ -129,7 +129,13 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
   }
 
   Widget _buildCareerField() {
-    final careers = CareerService().getCareers();
+    // Sin las desactivadas, salvo que sea la ya elegida — para no reasignar
+    // en silencio una reunión existente a otra carrera al abrir el
+    // formulario. El servidor igual rechaza guardar en una carrera inactiva.
+    final careers = CareerService()
+        .getCareers()
+        .where((c) => c.isActive || c.id == _selectedCareerId)
+        .toList();
     if (careers.isEmpty) return const SizedBox.shrink();
 
     return Padding(
@@ -146,7 +152,10 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
         ),
         items: [
           for (final c in careers)
-            DropdownMenuItem<String>(value: c.id, child: Text(c.name)),
+            DropdownMenuItem<String>(
+              value: c.id,
+              child: Text(c.isActive ? c.name : '${c.name} (inactiva)'),
+            ),
         ],
         validator: (value) => value == null ? 'Elige una carrera' : null,
         onChanged: (value) => setState(() {

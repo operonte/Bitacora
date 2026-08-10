@@ -8,12 +8,19 @@ class Career {
   final List<Subject> predefinedSubjects;
   final String? description;
 
+  /// Si es falsa, la carrera no admite tareas, reuniones ni archivos nuevos
+  /// (lo exige un trigger en el servidor), pero lo que ya existe se conserva
+  /// y se sigue mostrando igual. Es la alternativa a borrarla: borrar solo
+  /// funciona si no tiene nada asociado.
+  final bool isActive;
+
   const Career({
     required this.id,
     required this.name,
     required this.accessKey,
     required this.predefinedSubjects,
     this.description,
+    this.isActive = true,
   });
 
   Career copyWith({
@@ -22,6 +29,7 @@ class Career {
     String? accessKey,
     List<Subject>? predefinedSubjects,
     String? description,
+    bool? isActive,
   }) {
     return Career(
       id: id ?? this.id,
@@ -29,6 +37,7 @@ class Career {
       accessKey: accessKey ?? this.accessKey,
       predefinedSubjects: predefinedSubjects ?? this.predefinedSubjects,
       description: description ?? this.description,
+      isActive: isActive ?? this.isActive,
     );
   }
 }

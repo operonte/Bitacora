@@ -42,8 +42,9 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
             if (c.name.toLowerCase().contains(q)) return true;
             // También busca dentro de las materias: con muchas carreras es más
             // rápido acordarse de un ramo que del nombre exacto de la carrera.
-            return c.predefinedSubjects
-                .any((s) => s.name.toLowerCase().contains(q));
+            return c.predefinedSubjects.any(
+              (s) => s.name.toLowerCase().contains(q),
+            );
           }).toList();
     lista.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return lista;
@@ -248,6 +249,7 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                 accessKey: accessKey,
                 description: description.isEmpty ? null : description,
                 predefinedSubjects: career.predefinedSubjects,
+                isActive: career.isActive,
               );
 
               try {
@@ -279,6 +281,38 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
     );
   }
 
+  /// Activa o desactiva la carrera. Desactivada, conserva todo su contenido
+  /// (se sigue mostrando igual) pero el servidor rechaza tareas, reuniones,
+  /// archivos y miembros nuevos — es la alternativa a borrarla cuando ya
+  /// tiene algo asociado.
+  Future<void> _toggleActive(Career career) async {
+    final activando = !career.isActive;
+    try {
+      await _careerService.updateCareer(career.copyWith(isActive: activando));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              activando
+                  ? 'Carrera "${career.name}" activada'
+                  : 'Carrera "${career.name}" desactivada: no admite contenido nuevo',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo cambiar: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   /// Borrar una carrera no es solo borrar una fila: `user_careers` tiene
   /// borrado en cascada, así que expulsa de golpe a todos sus miembros y deja
   /// huérfanas sus tareas, reuniones y archivos compartidos.
@@ -297,12 +331,22 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
 
     if (!mounted) return;
 
+    // Con algo asociado, el servidor rechaza el borrado (trigger
+    // careers_block_delete_with_data): no tiene sentido dejar escribir el
+    // nombre para confirmar algo que va a fallar igual. Mejor guiar hacia
+    // desactivarla, que si tiene ese efecto.
+    final bloqueado =
+        impacto != null &&
+        (impacto.tasks > 0 || impacto.meetings > 0 || impacto.files > 0);
+
     final nombreController = TextEditingController();
     final confirmado = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Text('Eliminar carrera'),
           content: SingleChildScrollView(
             child: Column(
@@ -320,7 +364,10 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                 else if (impacto.isEmpty)
                   const Text(
                     'No tiene miembros ni contenido compartido.',
-                    style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
                   )
                 else ...[
                   Container(
@@ -333,50 +380,77 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _impactRow('${impacto.members} miembros',
-                            'pierden el acceso'),
-                        _impactRow('${impacto.tasks} tareas compartidas',
-                            'quedan sin carrera'),
-                        _impactRow('${impacto.meetings} reuniones',
-                            'quedan sin carrera'),
-                        _impactRow('${impacto.files} archivos',
-                            'quedan sin carrera'),
+                        _impactRow(
+                          '${impacto.members} miembros',
+                          'pierden el acceso',
+                        ),
+                        _impactRow(
+                          '${impacto.tasks} tareas compartidas',
+                          bloqueado
+                              ? 'bloquean el borrado'
+                              : 'pierden el acceso',
+                        ),
+                        _impactRow(
+                          '${impacto.meetings} reuniones',
+                          bloqueado
+                              ? 'bloquean el borrado'
+                              : 'pierden el acceso',
+                        ),
+                        _impactRow(
+                          '${impacto.files} archivos',
+                          bloqueado
+                              ? 'bloquean el borrado'
+                              : 'pierden el acceso',
+                        ),
                       ],
                     ),
                   ),
                 ],
                 const SizedBox(height: 16),
-                const Text(
-                  'No se puede deshacer. Escribe el nombre de la carrera para '
-                  'confirmar:',
-                  style: TextStyle(fontSize: 13),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: nombreController,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: career.name,
-                    border: const OutlineInputBorder(),
+                if (bloqueado)
+                  const Text(
+                    'No se puede borrar mientras tenga tareas, reuniones o '
+                    'archivos asociados. Cierra este diálogo y usa el '
+                    'interruptor de la lista para desactivarla en su lugar: '
+                    'deja de admitir contenido nuevo sin perder lo que ya '
+                    'tiene.',
+                    style: TextStyle(fontSize: 13, color: AppColors.warning),
+                  )
+                else ...[
+                  const Text(
+                    'No se puede deshacer. Escribe el nombre de la carrera para '
+                    'confirmar:',
+                    style: TextStyle(fontSize: 13),
                   ),
-                  onChanged: (_) => setDialogState(() {}),
-                ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: nombreController,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: career.name,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                ],
               ],
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
+              child: Text(bloqueado ? 'Cerrar' : 'Cancelar'),
             ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-              onPressed: nombreController.text.trim().toLowerCase() ==
-                      career.name.trim().toLowerCase()
-                  ? () => Navigator.pop(ctx, true)
-                  : null,
-              child: const Text('Eliminar'),
-            ),
+            if (!bloqueado)
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+                onPressed:
+                    nombreController.text.trim().toLowerCase() ==
+                        career.name.trim().toLowerCase()
+                    ? () => Navigator.pop(ctx, true)
+                    : null,
+                child: const Text('Eliminar'),
+              ),
           ],
         ),
       ),
@@ -408,26 +482,22 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
   }
 
   static Widget _impactRow(String cantidad, String consecuencia) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Text(
-          '• $cantidad $consecuencia',
-          style: const TextStyle(fontSize: 13),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Text(
+      '• $cantidad $consecuencia',
+      style: const TextStyle(fontSize: 13),
+    ),
+  );
 
   void _openSubjects(Career career) => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CareerSubjectsScreen(career: career),
-        ),
-      );
+    context,
+    MaterialPageRoute(builder: (_) => CareerSubjectsScreen(career: career)),
+  );
 
   void _openMembers(Career career) => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CareerMembersScreen(career: career),
-        ),
-      );
+    context,
+    MaterialPageRoute(builder: (_) => CareerMembersScreen(career: career)),
+  );
 
   Future<void> _showChangePasswordDialog() async {
     final formKey = GlobalKey<FormState>();
@@ -439,7 +509,9 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Text('Cambiar contraseña'),
           content: Form(
             key: formKey,
@@ -449,7 +521,10 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                 const Text(
                   'Es la que se escribe en el campo de clave de acceso para '
                   'entrar acá. Se guarda cifrada en el servidor.',
-                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -460,17 +535,19 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                     labelText: 'Contraseña nueva',
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
-                      icon: Icon(obscure
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined),
-                      onPressed: () =>
-                          setDialogState(() => obscure = !obscure),
+                      icon: Icon(
+                        obscure
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                      ),
+                      onPressed: () => setDialogState(() => obscure = !obscure),
                     ),
                   ),
                   validator: (val) =>
-                      (val == null || val.length < AdminAuthService.minPasswordLength)
-                          ? 'Mínimo ${AdminAuthService.minPasswordLength} caracteres'
-                          : null,
+                      (val == null ||
+                          val.length < AdminAuthService.minPasswordLength)
+                      ? 'Mínimo ${AdminAuthService.minPasswordLength} caracteres'
+                      : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -501,7 +578,9 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                   if (ctx.mounted) {
                     ScaffoldMessenger.of(ctx).showSnackBar(
                       SnackBar(
-                        content: Text(e.toString().replaceAll('Exception: ', '')),
+                        content: Text(
+                          e.toString().replaceAll('Exception: ', ''),
+                        ),
                         backgroundColor: AppColors.error,
                       ),
                     );
@@ -634,80 +713,101 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
               else
                 Expanded(
                   child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: visibles.length,
-            itemBuilder: (context, index) {
-              final career = visibles[index];
-              // La etiqueta "(predefinida)" salía siempre: se calculaba con
-              // `Careers.all`, que fusiona las definidas en el código con las
-              // que vienen de Supabase, así que cualquier carrera cargada del
-              // servidor quedaba marcada como predefinida. Se compara contra
-              // las del código y nada más.
-              final isPredefined =
-                  Careers.predefined.any((c) => c.id == career.id);
-              return Card(
-                elevation: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                child: ListTile(
-                  leading: const Icon(Icons.work, color: AppColors.primary),
-                  title: Text(career.name),
-                  subtitle: Text(
-                    '${career.predefinedSubjects.length} materias'
-                    '${isPredefined ? ' · definida en la app' : ' · creada aquí'}',
-                  ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'materias':
-                          _openSubjects(career);
-                        case 'miembros':
-                          _openMembers(career);
-                        case 'editar':
-                          _showEditCareerDialog(career);
-                        case 'eliminar':
-                          _showDeleteCareerDialog(career);
-                      }
+                    padding: const EdgeInsets.all(16),
+                    itemCount: visibles.length,
+                    itemBuilder: (context, index) {
+                      final career = visibles[index];
+                      // La etiqueta "(predefinida)" salía siempre: se calculaba con
+                      // `Careers.all`, que fusiona las definidas en el código con las
+                      // que vienen de Supabase, así que cualquier carrera cargada del
+                      // servidor quedaba marcada como predefinida. Se compara contra
+                      // las del código y nada más.
+                      final isPredefined = Careers.predefined.any(
+                        (c) => c.id == career.id,
+                      );
+                      return Card(
+                        elevation: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        child: Opacity(
+                          opacity: career.isActive ? 1 : 0.6,
+                          child: ListTile(
+                            leading: Icon(
+                              Icons.work,
+                              color: career.isActive
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
+                            ),
+                            title: Text(career.name),
+                            subtitle: Text(
+                              '${career.predefinedSubjects.length} materias'
+                              '${isPredefined ? ' · definida en la app' : ' · creada aquí'}'
+                              '${career.isActive ? '' : ' · desactivada'}',
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Switch(
+                                  value: career.isActive,
+                                  onChanged: (_) => _toggleActive(career),
+                                ),
+                                PopupMenuButton<String>(
+                                  onSelected: (value) {
+                                    switch (value) {
+                                      case 'materias':
+                                        _openSubjects(career);
+                                      case 'miembros':
+                                        _openMembers(career);
+                                      case 'editar':
+                                        _showEditCareerDialog(career);
+                                      case 'eliminar':
+                                        _showDeleteCareerDialog(career);
+                                    }
+                                  },
+                                  itemBuilder: (context) => const [
+                                    PopupMenuItem(
+                                      value: 'materias',
+                                      child: ListTile(
+                                        leading: Icon(Icons.menu_book_outlined),
+                                        title: Text('Materias'),
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'miembros',
+                                      child: ListTile(
+                                        leading: Icon(Icons.group_outlined),
+                                        title: Text('Miembros'),
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'editar',
+                                      child: ListTile(
+                                        leading: Icon(Icons.edit_outlined),
+                                        title: Text('Editar'),
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'eliminar',
+                                      child: ListTile(
+                                        leading: Icon(
+                                          Icons.delete_outline_rounded,
+                                          color: AppColors.error,
+                                        ),
+                                        title: Text('Eliminar'),
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            onTap: () => _openSubjects(career),
+                          ),
+                        ),
+                      );
                     },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
-                        value: 'materias',
-                        child: ListTile(
-                          leading: Icon(Icons.menu_book_outlined),
-                          title: Text('Materias'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'miembros',
-                        child: ListTile(
-                          leading: Icon(Icons.group_outlined),
-                          title: Text('Miembros'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'editar',
-                        child: ListTile(
-                          leading: Icon(Icons.edit_outlined),
-                          title: Text('Editar'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'eliminar',
-                        child: ListTile(
-                          leading: Icon(Icons.delete_outline_rounded,
-                              color: AppColors.error),
-                          title: Text('Eliminar'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                    ],
-                  ),
-                  onTap: () => _openSubjects(career),
-                ),
-              );
-            },
                   ),
                 ),
             ],

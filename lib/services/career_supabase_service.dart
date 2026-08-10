@@ -25,6 +25,7 @@ class CareerSupabaseService {
       accessKey: '',
       description: row['description'] as String?,
       predefinedSubjects: subjects,
+      isActive: row['is_active'] as bool? ?? true,
     );
   }
 
@@ -36,6 +37,7 @@ class CareerSupabaseService {
       'predefined_subjects': career.predefinedSubjects
           .map((s) => s.toMap())
           .toList(),
+      'is_active': career.isActive,
     };
   }
 

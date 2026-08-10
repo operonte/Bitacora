@@ -81,6 +81,13 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   /// no se puede usar la app sin pertenecer a alguna.
   List<Career> get _careers => _careerService.getCareers();
 
+  /// [_careers] sin las desactivadas, salvo que sea la ya elegida — para no
+  /// reasignar en silencio una tarea existente a otra carrera al abrir el
+  /// formulario. El servidor igual rechaza guardar en una carrera inactiva.
+  List<Career> get _selectableCareers => _careers
+      .where((c) => c.isActive || c.id == _selectedCareer?.id)
+      .toList();
+
   void _initializeData() {
     // Al editar se respeta la carrera guardada en la tarea; al crear, la
     // activa como propuesta.
@@ -252,19 +259,23 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               // Carrera antes que asignatura, a propósito: la primera acota
               // las opciones de la segunda.
               DropdownButtonFormField<String>(
-                initialValue: _careers.any((c) => c.id == _selectedCareer?.id)
-                    ? _selectedCareer?.id
-                    : null,
+                initialValue:
+                    _selectableCareers.any((c) => c.id == _selectedCareer?.id)
+                        ? _selectedCareer?.id
+                        : null,
                 decoration: const InputDecoration(
                   labelText: 'Carrera',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.workspace_premium_outlined),
                   helperText: 'Define qué asignaturas puedes elegir',
                 ),
-                items: _careers
+                items: _selectableCareers
                     .map((c) => DropdownMenuItem<String>(
                           value: c.id,
-                          child: Text(c.name, overflow: TextOverflow.ellipsis),
+                          child: Text(
+                            c.isActive ? c.name : '${c.name} (inactiva)',
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ))
                     .toList(),
                 validator: (v) =>
@@ -552,13 +563,14 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
 
       final titleClean = InputSanitizer.sanitizeText(_titleController.text);
       final descClean = InputSanitizer.sanitizeText(_descriptionController.text);
+      final professorClean = InputSanitizer.sanitizeText(_selectedProfessor);
 
       final task = Task(
         id: widget.task?.id,
         title: titleClean,
         description: descClean,
         subject: _selectedSubject,
-        professor: _selectedProfessor,
+        professor: professorClean,
         dueDate: DateTime(
           _dueDate.year,
           _dueDate.month,

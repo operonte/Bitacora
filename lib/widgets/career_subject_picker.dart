@@ -55,7 +55,14 @@ class CareerSubjectPicker extends StatefulWidget {
 }
 
 class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
-  late final List<Career> _careers = CareerService().getCareers();
+  // Las carreras desactivadas no se ofrecen para elegir de nuevo, pero si el
+  // archivo que se está editando ya estaba en una, se conserva en la lista
+  // para no reasignarlo en silencio a otra carrera distinta al abrir el
+  // formulario.
+  late final List<Career> _careers = CareerService()
+      .getCareers()
+      .where((c) => c.isActive || c.id == widget.initialCareerId)
+      .toList();
   String? _careerId;
   late String _subject;
   List<String> _subjects = const [];
@@ -141,7 +148,10 @@ class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
               for (final c in _careers)
                 DropdownMenuItem<String>(
                   value: c.id,
-                  child: Text(c.name, overflow: TextOverflow.ellipsis),
+                  child: Text(
+                    c.isActive ? c.name : '${c.name} (inactiva)',
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
             ],
             validator: (val) => val == null ? 'Elige una carrera' : null,
