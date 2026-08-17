@@ -44,7 +44,7 @@ void main() {
       );
     });
 
-    test('rejects files over the 50 MB limit', () {
+    test('rejects files over the size limit', () {
       final result = FileSecurityValidator.validateFile(
         fileName: 'grande.pdf',
         sizeInBytes: FileSecurityValidator.maxFileSizeBytes + 1,

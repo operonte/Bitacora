@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/logger.dart';
 import '../utils/drive_token_stub.dart'
     if (dart.library.html) '../utils/drive_token_web.dart';
+import 'drive_upload_stub.dart'
+    if (dart.library.html) 'drive_upload_web.dart';
 
 // Google OAuth Client ID (mismo que está en web/index.html)
 const _googleClientId =
@@ -442,15 +444,27 @@ class GoogleDriveService {
   ///
   /// Usa subida "resumable" (en un solo request) en vez de "multipart": la
   /// API de Drive solo garantiza multipart para archivos de hasta 5MB, y
-  /// esta app permite archivos de hasta 50MB.
+  /// esta app permite archivos de hasta 250MB
+  /// (`FileSecurityValidator.maxFileSizeMb`).
+  ///
+  /// El contenido llega por [filePath] en móvil y escritorio, y por [bytes] en
+  /// web. Con la ruta, el archivo se lee del disco a medida que se sube en vez
+  /// de cargarse entero: es lo que evita que Android cierre la app al subir un
+  /// video grande. Ver `drive_upload_stub.dart`.
   Future<DriveUploadResult> uploadStudyFile({
     required String fileName,
-    required Uint8List bytes,
+    required int sizeBytes,
     required String mimeType,
+    String? filePath,
+    Uint8List? bytes,
     String? career,
     String? subject,
     String? subfolder,
+    void Function(double progress)? onProgress,
   }) async {
+    if (filePath == null && bytes == null) {
+      throw ArgumentError('Hace falta filePath o bytes para subir el archivo.');
+    }
     final token = await getOrRequestToken();
 
     if (token == null || token.isEmpty) {
@@ -469,11 +483,14 @@ class GoogleDriveService {
       return await _uploadWithToken(
         token,
         fileName: fileName,
+        sizeBytes: sizeBytes,
+        filePath: filePath,
         bytes: bytes,
         mimeType: mimeType,
         career: career,
         subject: subject,
         subfolder: subfolder,
+        onProgress: onProgress,
       );
     } on _DriveAuthExpiredException {
       // El token venció justo antes/durante la subida: pedir uno nuevo
@@ -489,11 +506,14 @@ class GoogleDriveService {
       return await _uploadWithToken(
         freshToken,
         fileName: fileName,
+        sizeBytes: sizeBytes,
+        filePath: filePath,
         bytes: bytes,
         mimeType: mimeType,
         career: career,
         subject: subject,
         subfolder: subfolder,
+        onProgress: onProgress,
       );
     }
   }
@@ -501,8 +521,11 @@ class GoogleDriveService {
   Future<DriveUploadResult> _uploadWithToken(
     String token, {
     required String fileName,
-    required Uint8List bytes,
+    required int sizeBytes,
     required String mimeType,
+    String? filePath,
+    Uint8List? bytes,
+    void Function(double progress)? onProgress,
     String? career,
     String? subject,
     String? subfolder,
@@ -527,7 +550,7 @@ class GoogleDriveService {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json; charset=UTF-8',
         'X-Upload-Content-Type': effectiveMimeType,
-        'X-Upload-Content-Length': '${bytes.length}',
+        'X-Upload-Content-Length': '$sizeBytes',
       },
       body: jsonEncode(metadata),
     );
@@ -550,14 +573,17 @@ class GoogleDriveService {
       throw Exception('Google Drive no devolvió una URL de subida.');
     }
 
-    // 2. Enviar los bytes del archivo completos en un único PUT.
-    final uploadResponse = await http.put(
+    // 2. Enviar el archivo completo en un único PUT. En móvil y escritorio el
+    //    cuerpo sale del disco a medida que se manda, sin pasar por memoria.
+    final uploadResponse = await putUploadBody(
       Uri.parse(uploadUri),
-      headers: {
-        'Content-Type': effectiveMimeType,
-        'Content-Length': '${bytes.length}',
-      },
-      body: bytes,
+      contentType: effectiveMimeType,
+      size: sizeBytes,
+      path: filePath,
+      bytes: bytes,
+      onProgress: onProgress == null || sizeBytes <= 0
+          ? null
+          : (sent) => onProgress((sent / sizeBytes).clamp(0.0, 1.0)),
     );
 
     if (uploadResponse.statusCode == 200 || uploadResponse.statusCode == 201) {

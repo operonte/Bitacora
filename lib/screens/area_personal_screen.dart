@@ -30,6 +30,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   late TabController _tabController;
   final StudyFileService _studyFileService = StudyFileService();
   bool _isUploading = false;
+
+  /// Avance de la subida en curso, de 0 a 1.
+  double _uploadProgress = 0;
   bool _isSyncing = false;
 
   /// Filtro de carrera de cada pestaña, por separado: null = todas. No se
@@ -160,8 +163,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       final file = await CustomFilePicker.pickFile();
       if (file == null) return;
 
-      final bytes = file.bytes;
-      if (bytes.isEmpty) {
+      if (file.head.isEmpty) {
         if (mounted) {
           messenger.showSnackBar(
             const SnackBar(content: Text('No se pudieron obtener los datos del archivo.')),
@@ -170,11 +172,11 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         return;
       }
 
-      // 1. Validar Seguridad y Magic Bytes
+      // 1. Validar Seguridad y Magic Bytes (basta la cabecera del archivo)
       final validation = FileSecurityValidator.validateFile(
         fileName: file.name,
         sizeInBytes: file.size,
-        bytes: bytes,
+        bytes: file.head,
       );
 
       if (!validation.isValid) {
@@ -192,16 +194,22 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       final customSubject = details['subject']!;
 
       // 3. Proceder con la subida a Google Drive
-      setState(() => _isUploading = true);
+      setState(() {
+        _isUploading = true;
+        _uploadProgress = 0;
+      });
 
       final customCareerId = details['careerId'] ?? '';
 
       final uploadRes = await GoogleDriveService().uploadStudyFile(
         fileName: customName,
-        bytes: bytes,
+        sizeBytes: file.size,
+        filePath: file.path,
+        bytes: file.bytes,
         mimeType: file.extension.isNotEmpty ? file.extension : 'application/octet-stream',
         career: CareerService().careerNameFor(customCareerId),
         subject: customSubject,
+        onProgress: _onUploadProgress,
       );
 
       final studyFile = StudyFile(
@@ -236,9 +244,32 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         );
       }
     } finally {
-      if (mounted) setState(() => _isUploading = false);
+      await CustomFilePicker.clearTemporaryFiles();
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+          _uploadProgress = 0;
+        });
+      }
     }
   }
+
+  /// Refresca el porcentaje de la subida, pero solo cada 1%.
+  ///
+  /// El archivo se lee del disco en bloques de decenas de KB, así que uno de
+  /// 250 MB dispararía miles de `setState` y trabaría la pantalla entera.
+  void _onUploadProgress(double progress) {
+    if (!mounted) return;
+    final avanzo = (progress - _uploadProgress).abs() >= 0.01;
+    if (!avanzo && progress < 1) return;
+    setState(() => _uploadProgress = progress);
+  }
+
+  /// Texto del botón mientras sube: con archivos grandes, un spinner sin
+  /// información deja al usuario a ciegas varios minutos.
+  String get _uploadLabel => _uploadProgress > 0
+      ? 'Subiendo ${(_uploadProgress * 100).round()}%'
+      : 'Subiendo...';
 
   Future<Map<String, String>?> _showFileDetailsDialog(String originalName) async {
     final propias = context.read<AppState>().subjects.map((s) => s.name).toList();
@@ -483,12 +514,18 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
               backgroundColor: Theme.of(context).primaryColor,
               elevation: 4,
               shape: const CircleBorder(),
-              tooltip: tooltip,
+              tooltip: showSpinner && _uploadProgress > 0
+                  ? 'Subiendo ${(_uploadProgress * 100).round()}%'
+                  : tooltip,
               child: showSpinner
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                        value: _uploadProgress > 0 ? _uploadProgress : null,
+                      ),
                     )
                   : const Icon(
                       Icons.add,
@@ -635,13 +672,17 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
             ElevatedButton.icon(
               onPressed: _isUploading ? null : _pickAndUploadFile,
               icon: _isUploading
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                        value: _uploadProgress > 0 ? _uploadProgress : null,
+                      ),
                     )
                   : const Icon(Icons.upload_file_rounded),
-              label: Text(_isUploading ? 'Subiendo...' : 'Subir Archivo de Estudio'),
+              label: Text(_isUploading ? _uploadLabel : 'Subir Archivo de Estudio'),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1030,8 +1071,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       final file = await CustomFilePicker.pickFile();
       if (file == null) return;
 
-      final bytes = file.bytes;
-      if (bytes.isEmpty) {
+      if (file.head.isEmpty) {
         if (mounted) {
           messenger.showSnackBar(
             const SnackBar(content: Text('No se pudieron obtener los datos del archivo.')),
@@ -1043,7 +1083,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       final validation = FileSecurityValidator.validateFile(
         fileName: file.name,
         sizeInBytes: file.size,
-        bytes: bytes,
+        bytes: file.head,
       );
       if (!validation.isValid) {
         if (mounted) {
@@ -1055,17 +1095,23 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       final details = await _showFileDetailsDialog(file.name);
       if (details == null) return;
 
-      setState(() => _isUploading = true);
+      setState(() {
+        _isUploading = true;
+        _uploadProgress = 0;
+      });
 
       final uploadRes = await GoogleDriveService().uploadStudyFile(
         fileName: details['name']!,
-        bytes: bytes,
+        sizeBytes: file.size,
+        filePath: file.path,
+        bytes: file.bytes,
         mimeType: file.extension.isNotEmpty ? file.extension : 'application/octet-stream',
         career: CareerService().careerNameFor(details['careerId']),
         subject: details['subject']!,
         // Fuera de la carpeta de trabajos, para que el escaneo de Drive no
         // registre las guías también como archivos personales.
         subfolder: GoogleDriveService.teachingMaterialFolderName,
+        onProgress: _onUploadProgress,
       );
 
       final materialCareerId = details['careerId'] ?? '';
@@ -1101,7 +1147,13 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         );
       }
     } finally {
-      if (mounted) setState(() => _isUploading = false);
+      await CustomFilePicker.clearTemporaryFiles();
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+          _uploadProgress = 0;
+        });
+      }
     }
   }
 

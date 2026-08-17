@@ -14,7 +14,8 @@ class FileValidationResult {
 }
 
 class FileSecurityValidator {
-  static const int maxFileSizeBytes = 50 * 1024 * 1024; // 50 MB
+  static const int maxFileSizeMb = 250;
+  static const int maxFileSizeBytes = maxFileSizeMb * 1024 * 1024;
 
   static const Set<String> _allowedExtensions = {
     // Documentos
@@ -36,6 +37,11 @@ class FileSecurityValidator {
   };
 
   /// Valida el nombre, extensión, tamaño y cabecera de bytes del archivo.
+  ///
+  /// [bytes] solo necesita los primeros bytes del archivo: la inspección de
+  /// magic bytes nunca mira más allá del cuarto. No hay que pasarle el archivo
+  /// completo — cargar en memoria un video de 250 MB es justamente lo que
+  /// cerraba la app en Android.
   static FileValidationResult validateFile({
     required String fileName,
     required int sizeInBytes,
@@ -45,7 +51,8 @@ class FileSecurityValidator {
     if (sizeInBytes > maxFileSizeBytes) {
       return FileValidationResult(
         isValid: false,
-        errorMessage: 'El archivo supera el límite máximo permitido de 50 MB.',
+        errorMessage:
+            'El archivo supera el límite máximo permitido de $maxFileSizeMb MB.',
       );
     }
 

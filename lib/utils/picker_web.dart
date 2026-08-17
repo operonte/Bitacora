@@ -1,6 +1,7 @@
 // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:async';
 import 'dart:html' as html;
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'custom_file_picker.dart';
 
@@ -30,11 +31,15 @@ Future<PickedFileData?> pickFilePlatform() async {
     }
 
     if (bytes != null && !completer.isCompleted) {
+      // En web el navegador ya tiene el archivo en memoria y no hay techo por
+      // pestaña, así que se sigue subiendo con los bytes completos: es el
+      // camino que ya está probado en producción.
       completer.complete(PickedFileData(
         name: file.name,
-        bytes: bytes,
         size: file.size,
         extension: file.name.contains('.') ? file.name.split('.').last : '',
+        bytes: bytes,
+        head: bytes.sublist(0, math.min(CustomFilePicker.headBytes, bytes.length)),
       ));
     } else {
       if (!completer.isCompleted) completer.complete(null);
@@ -43,3 +48,6 @@ Future<PickedFileData?> pickFilePlatform() async {
 
   return completer.future;
 }
+
+/// En web no queda ninguna copia temporal que limpiar.
+Future<void> clearTemporaryFilesPlatform() async {}
