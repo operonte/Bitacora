@@ -106,6 +106,19 @@ class StudyFileCard extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (file.isGuia && file.isShared) ...[
+                          const SizedBox(width: 6),
+                          const Icon(Icons.groups_outlined, size: 12, color: AppColors.accentTeal),
+                          const SizedBox(width: 2),
+                          const Text(
+                            'Compartido',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.accentTeal,
+                            ),
+                          ),
+                        ],
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(

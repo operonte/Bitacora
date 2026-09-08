@@ -430,6 +430,25 @@ class NotificationService {
     );
   }
 
+  /// Aviso instantáneo de un anuncio de carrera. Solo mientras la app está
+  /// abierta: no hay FCM en el proyecto, así que esto no llega con la app
+  /// cerrada — lo dispara el cliente al recibir el evento por Realtime, no
+  /// el servidor. Reservado a los urgentes: el resto se ve en la lista sin
+  /// sonar, para no entrenar a la gente a ignorar todos los avisos.
+  Future<void> notifyAnnouncement({
+    required String title,
+    required String author,
+    String? subject,
+  }) async {
+    if (!await isEnabled) return;
+
+    await _showNow(
+      id: _instantIdBase + DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      title: '📣 ${subject != null && subject.isNotEmpty ? subject : 'Anuncio'}',
+      body: '$author: $title',
+    );
+  }
+
   // ==================== PLOMERÍA ====================
 
   static const NotificationDetails _detalles = NotificationDetails(

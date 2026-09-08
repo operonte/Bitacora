@@ -271,11 +271,21 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       ? 'Subiendo ${(_uploadProgress * 100).round()}%'
       : 'Subiendo...';
 
-  Future<Map<String, String>?> _showFileDetailsDialog(String originalName) async {
+  Future<Map<String, String>?> _showFileDetailsDialog(
+    String originalName, {
+    bool isTeachingMaterial = false,
+  }) async {
     final propias = context.read<AppState>().subjects.map((s) => s.name).toList();
+
+    // Ofrecer el interruptor de compartir si sos docente en al menos una
+    // carrera: si esa carrera puntual termina sin serlo, el servidor lo
+    // rechaza igual (study_files_insert exige is_docente()).
+    final showShareOption = isTeachingMaterial &&
+        CareerService().getCareers().any((c) => CareerService().isDocente(c.id));
 
     String? careerId;
     String subject = '';
+    var shareChecked = false;
 
     final nameController = TextEditingController(text: originalName);
     final formKey = GlobalKey<FormState>();
@@ -285,7 +295,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       barrierDismissible: false,
       builder: (ctx) {
         final primaryColor = Theme.of(context).primaryColor;
-        return AlertDialog(
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
             children: [
@@ -329,6 +340,20 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                       subject = s;
                     },
                   ),
+                  if (showShareOption) ...[
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      value: shareChecked,
+                      onChanged: (v) => setLocal(() => shareChecked = v ?? false),
+                      title: const Text('Compartir con la carrera'),
+                      subtitle: const Text(
+                        'Lo verán los alumnos de esa asignatura',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -346,6 +371,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                     'subject': subject,
                     // Cadena vacía = sin carrera; el mapa no admite nulos.
                     'careerId': careerId ?? '',
+                    'isShared': shareChecked.toString(),
                   });
                 }
               },
@@ -354,6 +380,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
               label: const Text('Subir Archivo'),
             ),
           ],
+          ),
         );
       },
     );
@@ -714,6 +741,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     // terminar de clasificarlos.
     String? selectedCareerId = file.careerId;
     String selectedSubject = file.subject;
+    var shareChecked = file.isShared;
 
     final nameController = TextEditingController(text: file.name);
     final descriptionController =
@@ -724,7 +752,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       context: context,
       builder: (ctx) {
         final primaryColor = Theme.of(context).primaryColor;
-        return AlertDialog(
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20)),
               title: Row(
@@ -779,6 +808,21 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                           selectedSubject = sub;
                         },
                       ),
+                      if (file.isGuia &&
+                          CareerService().isDocente(selectedCareerId)) ...[
+                        const SizedBox(height: 8),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          value: shareChecked,
+                          onChanged: (v) => setLocal(() => shareChecked = v ?? false),
+                          title: const Text('Compartir con la carrera'),
+                          subtitle: const Text(
+                            'Lo verán los alumnos de esa asignatura',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -804,6 +848,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                           // docente muestra el campo, el resto la conserva.
                           'description':
                               file.isGuia ? description : file.description,
+                          'is_shared': file.isGuia ? shareChecked : file.isShared,
                         }),
                       );
                       if (ctx.mounted) Navigator.pop(ctx, true);
@@ -823,7 +868,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                   label: const Text('Guardar'),
                 ),
               ],
-            );
+            ),
+        );
       },
     );
 
@@ -1092,7 +1138,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         return;
       }
 
-      final details = await _showFileDetailsDialog(file.name);
+      final details = await _showFileDetailsDialog(file.name, isTeachingMaterial: true);
       if (details == null) return;
 
       setState(() {
@@ -1118,6 +1164,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       final material = StudyFile(
         subject: details['subject']!,
         name: details['name']!,
+        isShared: details['isShared'] == 'true',
         driveFileId: uploadRes.fileId,
         driveLink: uploadRes.webViewLink,
         mimeType: file.extension,
@@ -1169,8 +1216,11 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     }
 
     final propias = context.read<AppState>().subjects.map((s) => s.name).toList();
+    final showShareOption =
+        CareerService().getCareers().any((c) => CareerService().isDocente(c.id));
     String? selectedCareerId;
     String selectedSubject = '';
+    var shareChecked = false;
 
     final titleController = TextEditingController();
     final urlController = TextEditingController();
@@ -1181,7 +1231,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       barrierDismissible: false,
       builder: (ctx) {
         final primaryColor = Theme.of(context).primaryColor;
-        return AlertDialog(
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               title: Row(
                 children: [
@@ -1232,6 +1283,20 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                           selectedSubject = sub;
                         },
                       ),
+                      if (showShareOption) ...[
+                        const SizedBox(height: 8),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          value: shareChecked,
+                          onChanged: (v) => setLocal(() => shareChecked = v ?? false),
+                          title: const Text('Compartir con la carrera'),
+                          subtitle: const Text(
+                            'Lo verán los alumnos de esa asignatura',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1252,6 +1317,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                         userId: user.id,
                         category: StudyFileCategory.guia,
                         careerId: selectedCareerId,
+                        isShared: shareChecked,
                       );
                       await _studyFileService.saveFile(material);
                       if (ctx.mounted) Navigator.pop(ctx, true);
@@ -1271,7 +1337,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                   label: const Text('Guardar'),
                 ),
               ],
-            );
+            ),
+        );
       },
     );
 

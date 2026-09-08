@@ -83,6 +83,7 @@ class SupabaseDbService {
     };
     if (isShared) {
       map['created_by'] = _uid;
+      map['is_official'] = task.isOfficial;
     } else {
       map['is_completed'] = task.isCompleted;
       map['is_submitted'] = task.isSubmitted;
@@ -459,6 +460,8 @@ class SupabaseDbService {
       return task.copyWith(
         isCompleted: progress['isCompleted'] ?? task.isCompleted,
         isSubmitted: progress['isSubmitted'] ?? task.isSubmitted,
+        teacherComment: progress['teacherComment'] as String?,
+        grade: progress['grade'] as String?,
       );
     }).toList();
   }
@@ -611,6 +614,57 @@ class SupabaseDbService {
         await _cache.markPendingSync('task', task.id!, 'update');
       }
     }
+  }
+
+  /// Progreso de cada miembro de la carrera en una tarea compartida: quién la
+  /// marcó realizada/enviada y quién no. El RPC en el servidor exige haber
+  /// creado la tarea — si no, lanza y no llega ninguna fila; no hay una
+  /// política RLS nueva que exponga `task_progress` de otros usuarios.
+  Future<List<Map<String, dynamic>>> getTaskSubmissionStatus(String taskId) async {
+    final rows = await _client.rpc(
+      'get_task_submission_status',
+      params: {'p_task_id': taskId},
+    );
+    return List<Map<String, dynamic>>.from(rows as List);
+  }
+
+  /// Deja (o borra, con texto vacío) el comentario del docente para un
+  /// alumno puntual en una tarea. Igual que arriba, el RPC exige ser quien
+  /// creó la tarea — no hay caché local porque es un dato de otra persona,
+  /// no del usuario actual.
+  Future<void> setTaskTeacherComment(
+    String taskId,
+    String studentUserId,
+    String comment,
+  ) async {
+    await _client.rpc('set_task_teacher_comment', params: {
+      'p_task_id': taskId,
+      'p_user_id': studentUserId,
+      'p_comment': comment,
+    });
+  }
+
+  /// Nota libre (docente, sin escala fija) para un alumno en una tarea.
+  /// Mismo RPC-y-listo que [setTaskTeacherComment]: exige ser quien creó la
+  /// tarea, sin política RLS nueva sobre task_progress.
+  Future<void> setTaskGrade(
+    String taskId,
+    String studentUserId,
+    String grade,
+  ) async {
+    await _client.rpc('set_task_grade', params: {
+      'p_task_id': taskId,
+      'p_user_id': studentUserId,
+      'p_grade': grade,
+    });
+  }
+
+  /// Riesgo por alumno en la carrera: tareas oficiales vencidas sin entregar
+  /// y porcentaje de asistencia marcada. Regla simple, no analítica ni IA —
+  /// el RPC exige ser docente de esa carrera.
+  Future<List<Map<String, dynamic>>> getStudentRisk(String careerId) async {
+    final rows = await _client.rpc('get_student_risk', params: {'p_career_id': careerId});
+    return List<Map<String, dynamic>>.from(rows as List);
   }
 
   // ── SUBJECTS ─────────────────────────────────────────────────

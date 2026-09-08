@@ -30,6 +30,13 @@ class Task {
   /// Ahora son dos cosas separadas: la carrera dice *de qué* es la tarea,
   /// esto dice *quién la ve*. Por defecto privada, igual que las reuniones.
   bool isShared;
+
+  /// Creada por un docente y marcada como oficial: solo quien la creó puede
+  /// editarla o borrarla, aunque el resto de la carrera pueda seguir
+  /// tocando sus propias tareas compartidas normales. Lo exige también
+  /// `shared_tasks_update`/`_delete` en el servidor, no solo la UI.
+  bool isOfficial;
+
   List<String>
   collaborators; // IDs de usuarios con los que se comparte la tarea
 
@@ -41,6 +48,12 @@ class Task {
   /// a otra persona. Son de solo lectura, por eso no van en [toMap].
   String? updatedByName;
   DateTime? updatedAt;
+
+  /// Comentario y nota que el docente dejó en *mi* progreso de esta tarea
+  /// compartida. Los pone [SupabaseDbService.applyCurrentUserProgress] desde
+  /// task_progress — de solo lectura acá, por eso tampoco van en [toMap].
+  String? teacherComment;
+  String? grade;
 
   Task({
     this.id,
@@ -58,9 +71,12 @@ class Task {
     required this.userName,
     this.careerId,
     this.isShared = false,
+    this.isOfficial = false,
     this.collaborators = const [],
     this.updatedByName,
     this.updatedAt,
+    this.teacherComment,
+    this.grade,
   }) {
     _validate();
   }
@@ -142,6 +158,7 @@ class Task {
       'userName': userName,
       'careerId': careerId,
       'isShared': isShared,
+      'isOfficial': isOfficial,
       'collaborators': collaborators,
       // Solo para el caché local: al servidor no se mandan (los pone el
       // trigger), pero sin esto la autoría desaparecería estando offline.
@@ -214,6 +231,7 @@ class Task {
       userName: userName.isEmpty ? 'Usuario desconocido' : userName,
       careerId: campo('careerId', 'career_id')?.toString(),
       isShared: isShared ?? campo('isShared', 'is_shared') as bool? ?? false,
+      isOfficial: campo('isOfficial', 'is_official') as bool? ?? false,
       collaborators:
           List<String>.from(campo('collaborators', 'collaborators') as List? ?? []),
       updatedByName: updatedByName.isEmpty ? null : updatedByName,
@@ -239,9 +257,12 @@ class Task {
     String? userName,
     String? careerId,
     bool? isShared,
+    bool? isOfficial,
     List<String>? collaborators,
     String? updatedByName,
     DateTime? updatedAt,
+    String? teacherComment,
+    String? grade,
   }) {
     return Task(
       id: id ?? this.id,
@@ -259,9 +280,12 @@ class Task {
       userName: userName ?? this.userName,
       careerId: careerId ?? this.careerId,
       isShared: isShared ?? this.isShared,
+      isOfficial: isOfficial ?? this.isOfficial,
       collaborators: collaborators ?? this.collaborators,
       updatedByName: updatedByName ?? this.updatedByName,
       updatedAt: updatedAt ?? this.updatedAt,
+      teacherComment: teacherComment ?? this.teacherComment,
+      grade: grade ?? this.grade,
     );
   }
 

@@ -27,6 +27,7 @@ import 'services/meeting_service.dart';
 import 'services/study_file_service.dart';
 import 'services/google_drive_service.dart';
 import 'services/task_progress_service.dart';
+import 'services/attendance_service.dart';
 import 'services/supabase_service.dart';
 import 'providers/app_state.dart';
 import 'providers/theme_provider.dart';
@@ -58,6 +59,7 @@ Future<void> main() async {
     await cacheService.initialize();
 
     await TaskProgressService().initialize();
+    await AttendanceService().init();
 
     final careerService = CareerService();
     await careerService.initialize();

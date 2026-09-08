@@ -41,6 +41,104 @@ class _CareerMembersScreenState extends State<CareerMembersScreen> {
     }
   }
 
+  /// Inscribe a alguien sin repartirle la clave de acceso — para cuando la
+  /// perdió, o nunca la tuvo. Reutiliza admin_find_user + admin_add_member,
+  /// que ya existían para el "Deshacer" de _remove pero nunca tenían un
+  /// botón propio.
+  Future<void> _addMemberByEmail() async {
+    final controller = TextEditingController();
+    String? errorText;
+
+    final email = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Agregar por correo'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.emailAddress,
+            decoration: InputDecoration(
+              labelText: 'Correo de la cuenta de Google',
+              border: const OutlineInputBorder(),
+              errorText: errorText,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final value = controller.text.trim();
+                if (value.isEmpty) return;
+                Navigator.pop(ctx, value);
+              },
+              child: const Text('Buscar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (email == null || !mounted) return;
+
+    try {
+      final found = await AdminAuthService.findUser(email);
+      if (found == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No hay ninguna cuenta con ese correo — tiene que haber iniciado sesión en Bitácora al menos una vez.'),
+            ),
+          );
+        }
+        return;
+      }
+      await AdminAuthService.addMember(widget.career.id, found.userId);
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${found.label} agregado a ${widget.career.name}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo agregar: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleDocente(AdminMember member) async {
+    final nuevoRol = member.isDocente ? 'estudiante' : 'docente';
+    try {
+      await AdminAuthService.setMemberRole(
+          widget.career.id, member.userId, nuevoRol);
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(nuevoRol == 'docente'
+                ? '${member.label} ahora es docente de ${widget.career.name}'
+                : '${member.label} ya no es docente'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo cambiar el rol: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _remove(AdminMember member) async {
     final confirmado = await showDialog<bool>(
       context: context,
@@ -115,6 +213,11 @@ class _CareerMembersScreenState extends State<CareerMembersScreen> {
         ],
       ),
       body: _buildBody(),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _addMemberByEmail,
+        icon: const Icon(Icons.person_add_alt_1_outlined),
+        label: const Text('Agregar por correo'),
+      ),
     );
   }
 
@@ -171,6 +274,11 @@ class _CareerMembersScreenState extends State<CareerMembersScreen> {
                   const Icon(Icons.shield_outlined,
                       size: 16, color: AppColors.primary),
                 ],
+                if (m.isDocente) ...[
+                  const SizedBox(width: 8),
+                  const Icon(Icons.school_outlined,
+                      size: 16, color: AppColors.warning),
+                ],
               ],
             ),
             subtitle: Text(
@@ -182,9 +290,30 @@ class _CareerMembersScreenState extends State<CareerMembersScreen> {
               style: const TextStyle(fontSize: 12),
             ),
             trailing: PopupMenuButton<String>(
-              onSelected: (_) => _remove(m),
-              itemBuilder: (context) => const [
+              onSelected: (value) {
+                if (value == 'quitar') {
+                  _remove(m);
+                } else if (value == 'docente') {
+                  _toggleDocente(m);
+                }
+              },
+              itemBuilder: (context) => [
                 PopupMenuItem(
+                  value: 'docente',
+                  child: ListTile(
+                    leading: Icon(
+                      m.isDocente
+                          ? Icons.school
+                          : Icons.school_outlined,
+                      color: AppColors.warning,
+                    ),
+                    title: Text(m.isDocente
+                        ? 'Quitar rol de docente'
+                        : 'Hacer docente'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem(
                   value: 'quitar',
                   child: ListTile(
                     leading: Icon(Icons.person_remove_outlined,

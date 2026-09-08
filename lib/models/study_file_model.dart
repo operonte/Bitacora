@@ -36,6 +36,13 @@ class StudyFile {
   /// sube (política study_files_own). Null en los subidos antes de que
   /// existiera este campo, que aparecen como "Sin carrera".
   final String? careerId;
+
+  /// Solo aplica a [StudyFileCategory.guia]: si es visible para el resto de
+  /// la carrera (según semestre de la asignatura) o solo para quien lo subió.
+  /// Falso por defecto — compartir es una decisión explícita del docente,
+  /// igual que en tareas y reuniones.
+  final bool isShared;
+
   final DateTime createdAt;
 
   StudyFile({
@@ -51,6 +58,7 @@ class StudyFile {
     this.description,
     this.externalUrl,
     this.careerId,
+    this.isShared = false,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -74,6 +82,7 @@ class StudyFile {
       'description': description,
       'external_url': externalUrl,
       'career_id': careerId,
+      'is_shared': isShared,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -96,6 +105,7 @@ class StudyFile {
       description: _nullIfEmpty(map['description']),
       externalUrl: _nullIfEmpty(map['external_url']),
       careerId: _nullIfEmpty(map['career_id']),
+      isShared: map['is_shared'] == true,
       createdAt: _parseDate(map['created_at']),
     );
   }
@@ -113,6 +123,7 @@ class StudyFile {
     String? description,
     String? externalUrl,
     String? careerId,
+    bool? isShared,
     DateTime? createdAt,
   }) {
     return StudyFile(
@@ -128,6 +139,7 @@ class StudyFile {
       description: description ?? this.description,
       externalUrl: externalUrl ?? this.externalUrl,
       careerId: careerId ?? this.careerId,
+      isShared: isShared ?? this.isShared,
       createdAt: createdAt ?? this.createdAt,
     );
   }

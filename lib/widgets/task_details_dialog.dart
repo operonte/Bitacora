@@ -1,8 +1,48 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/task_model.dart';
 import '../providers/app_state.dart';
+import '../services/supabase_db_service.dart';
 import '../utils/error_handler.dart';
+
+/// Comentarios de feedback guardados por el docente para no reescribir lo
+/// mismo en cada entrega ("falta la bibliografía", "revisa el punto 3").
+/// Por dispositivo, vía SharedPreferences: es una lista de atajos personales,
+/// no un dato que otro miembro de la carrera necesite ver.
+class _CommentTemplates {
+  static const _key = 'teacher_comment_templates';
+
+  static Future<List<String>> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key);
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      return List<String>.from(jsonDecode(raw) as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> add(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final current = await load();
+    if (current.contains(trimmed)) return;
+    current.add(trimmed);
+    await prefs.setString(_key, jsonEncode(current));
+  }
+
+  static Future<void> remove(String text) async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = await load()..remove(text);
+    await prefs.setString(_key, jsonEncode(current));
+  }
+}
 
 /// Diálogo de detalle de una tarea, con checkboxes de estado.
 ///
@@ -74,6 +114,14 @@ class TaskDetailsDialog {
                 ),
                 const SizedBox(height: 8),
                 Text('Descripción: ${task.description}'),
+                if ((task.grade?.isNotEmpty ?? false) ||
+                    (task.teacherComment?.isNotEmpty ?? false)) ...[
+                  const SizedBox(height: 12),
+                  const Text('Del docente:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  if (task.grade?.isNotEmpty ?? false) Text('Nota: ${task.grade}'),
+                  if (task.teacherComment?.isNotEmpty ?? false)
+                    Text('"${task.teacherComment}"', style: const TextStyle(fontStyle: FontStyle.italic)),
+                ],
                 const SizedBox(height: 16),
                 const Text(
                   'Estado:',
@@ -120,11 +168,249 @@ class TaskDetailsDialog {
           },
         ),
         actions: [
+          // Solo quien creó la tarea la ve: el RPC del servidor exige lo
+          // mismo, esto solo evita mostrar un botón que va a fallar.
+          if (task.isShared &&
+              task.userId == Supabase.instance.client.auth.currentUser?.id)
+            TextButton(
+              onPressed: () => _showSubmissionStatus(context, task),
+              child: const Text('Ver progreso del grupo'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cerrar'),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Quién de la carrera marcó esta tarea realizada/enviada. Solo tiene
+  /// sentido para quien la creó — es lo que exige get_task_submission_status
+  /// en el servidor; ver [show] arriba.
+  static void _showSubmissionStatus(BuildContext context, Task task) {
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          var future = SupabaseDbService().getTaskSubmissionStatus(task.id!);
+          void refresh() => setDialogState(() {
+                future = SupabaseDbService().getTaskSubmissionStatus(task.id!);
+              });
+
+          return AlertDialog(
+            title: Text('Progreso — ${task.title}'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: future,
+                builder: (ctx, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text('No se pudo cargar el progreso: ${snapshot.error}'),
+                    );
+                  }
+                  final rows = snapshot.data ?? [];
+                  if (rows.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Text('Todavía nadie más pertenece a esta carrera.'),
+                    );
+                  }
+                  return ListView(
+                    shrinkWrap: true,
+                    children: rows
+                        .map((r) => _submissionTile(context, task.id!, r, refresh))
+                        .toList(),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cerrar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  static Widget _submissionTile(
+    BuildContext context,
+    String taskId,
+    Map<String, dynamic> row,
+    VoidCallback onCommentSaved,
+  ) {
+    final completed = row['is_completed'] as bool? ?? false;
+    final submitted = row['is_submitted'] as bool? ?? false;
+    final displayName = (row['display_name'] as String?)?.trim();
+    final name = (displayName != null && displayName.isNotEmpty)
+        ? displayName
+        : (row['email'] as String? ?? 'Sin nombre');
+    final studentUserId = row['user_id'].toString();
+    final comment = (row['teacher_comment'] as String?)?.trim();
+    final grade = (row['grade'] as String?)?.trim();
+    final hasFeedback = (comment?.isNotEmpty ?? false) || (grade?.isNotEmpty ?? false);
+
+    late final IconData icon;
+    late final Color color;
+    late final String label;
+    if (completed && submitted) {
+      icon = Icons.check_circle;
+      color = Colors.green;
+      label = 'Entregada';
+    } else if (completed) {
+      icon = Icons.warning_amber_rounded;
+      color = Colors.orange;
+      label = 'Realizada, no enviada';
+    } else {
+      icon = Icons.radio_button_unchecked;
+      color = Colors.grey;
+      label = 'Pendiente';
+    }
+
+    final subtitleParts = [
+      label,
+      if (grade?.isNotEmpty ?? false) 'Nota: $grade',
+      if (comment?.isNotEmpty ?? false) '"$comment"',
+    ];
+
+    return ListTile(
+      dense: true,
+      leading: Icon(icon, color: color),
+      title: Text(name),
+      subtitle: Text(
+        subtitleParts.join(' · '),
+        style: hasFeedback ? const TextStyle(fontStyle: FontStyle.italic) : null,
+      ),
+      trailing: IconButton(
+        icon: Icon(hasFeedback ? Icons.comment : Icons.comment_outlined, size: 18),
+        tooltip: 'Nota y comentario',
+        onPressed: () => _editCommentDialog(
+          context,
+          taskId: taskId,
+          studentUserId: studentUserId,
+          studentName: name,
+          initialComment: comment ?? '',
+          initialGrade: grade ?? '',
+          onSaved: onCommentSaved,
+        ),
+      ),
+    );
+  }
+
+  static Future<void> _editCommentDialog(
+    BuildContext context, {
+    required String taskId,
+    required String studentUserId,
+    required String studentName,
+    required String initialComment,
+    required String initialGrade,
+    required VoidCallback onSaved,
+  }) async {
+    final controller = TextEditingController(text: initialComment);
+    final gradeController = TextEditingController(text: initialGrade);
+    var templates = await _CommentTemplates.load();
+
+    if (!context.mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text('Nota y comentario para $studentName'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: gradeController,
+                  maxLength: 10,
+                  decoration: const InputDecoration(
+                    labelText: 'Nota (opcional)',
+                    hintText: 'Ej: 6.5, Aprobado, 18/20',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: controller,
+                  maxLines: 3,
+                  maxLength: 500,
+                  decoration: const InputDecoration(
+                    labelText: 'Comentario (opcional)',
+                    hintText: 'Ej: falta la bibliografía',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                if (templates.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  const Text('Plantillas', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: templates
+                        .map((t) => InputChip(
+                              label: Text(t, overflow: TextOverflow.ellipsis),
+                              onPressed: () => controller.text = t,
+                              onDeleted: () async {
+                                await _CommentTemplates.remove(t);
+                                setLocal(() => templates = templates.where((x) => x != t).toList());
+                              },
+                            ))
+                        .toList(),
+                  ),
+                ],
+                TextButton.icon(
+                  onPressed: () async {
+                    await _CommentTemplates.add(controller.text);
+                    setLocal(() {});
+                    final refreshed = await _CommentTemplates.load();
+                    setLocal(() => templates = refreshed);
+                  },
+                  icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                  label: const Text('Guardar como plantilla'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  final service = SupabaseDbService();
+                  await service.setTaskTeacherComment(taskId, studentUserId, controller.text);
+                  await service.setTaskGrade(taskId, studentUserId, gradeController.text);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  onSaved();
+                } catch (e) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(content: Text('No se pudo guardar: $e')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
       ),
     );
   }

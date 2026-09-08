@@ -6,6 +6,10 @@ enum AppThemeMode { light, dark, system }
 
 enum MascotOption { none, robot, cat }
 
+/// Cómo se muestran las reuniones: lista cronológica u horario semanal
+/// tipo grilla (día x hora), pensado para las recurrentes.
+enum MeetingsViewMode { list, schedule }
+
 class ThemeProvider extends ChangeNotifier {
   static final ThemeProvider _instance = ThemeProvider._internal();
   factory ThemeProvider() => _instance;
@@ -13,12 +17,15 @@ class ThemeProvider extends ChangeNotifier {
 
   static const _modeKey = 'app_theme_mode';
   static const _paletteKey = 'app_theme_palette';
+  static const _meetingsViewKey = 'meetings_view_mode';
 
   AppThemeMode _mode = AppThemeMode.system;
   AppColorPalette _palette = AppColorPalette.teal;
+  MeetingsViewMode _meetingsViewMode = MeetingsViewMode.list;
 
   AppThemeMode get mode => _mode;
   AppColorPalette get palette => _palette;
+  MeetingsViewMode get meetingsViewMode => _meetingsViewMode;
 
   /// La mascota no se elige por separado: viene con la paleta.
   /// Verde -> robot hackercore. Rosa -> gato. El resto, sin mascota.
@@ -59,6 +66,9 @@ class ThemeProvider extends ChangeNotifier {
     final storedPalette = prefs.getInt(_paletteKey) ?? 0; // default: teal
     _palette = AppColorPalette.values[storedPalette.clamp(0, 2)];
 
+    final storedMeetingsView = prefs.getInt(_meetingsViewKey) ?? 0; // default: lista
+    _meetingsViewMode = MeetingsViewMode.values[storedMeetingsView.clamp(0, 1)];
+
     notifyListeners();
   }
 
@@ -74,6 +84,13 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_paletteKey, palette.index);
+  }
+
+  Future<void> setMeetingsViewMode(MeetingsViewMode mode) async {
+    _meetingsViewMode = mode;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_meetingsViewKey, mode.index);
   }
 
   String get modeLabel {

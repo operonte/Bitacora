@@ -40,12 +40,16 @@ class TaskProgressService {
 
   String _key(String userId, String taskId) => '$userId:$taskId';
 
-  Map<String, bool>? getProgress(String userId, String taskId) {
+  Map<String, dynamic>? getProgress(String userId, String taskId) {
     final raw = _box?.get(_key(userId, taskId));
     if (raw == null) return null;
     return {
       'isCompleted': raw['isCompleted'] as bool? ?? false,
       'isSubmitted': raw['isSubmitted'] as bool? ?? false,
+      // Las pone el docente, nunca este dispositivo: no hay conflicto de
+      // última escritura que resolver, siempre valen las del servidor.
+      'teacherComment': raw['teacherComment'] as String?,
+      'grade': raw['grade'] as String?,
     };
   }
 
@@ -116,6 +120,8 @@ class TaskProgressService {
           'isCompleted': row['is_completed'] as bool? ?? false,
           'isSubmitted': row['is_submitted'] as bool? ?? false,
           'updatedAt': row['updated_at'] as int? ?? 0,
+          'teacherComment': row['teacher_comment'] as String?,
+          'grade': row['grade'] as String?,
         };
       }
     } catch (e) {
@@ -176,7 +182,18 @@ class TaskProgressService {
           'isCompleted': remoteRaw['isCompleted'] as bool? ?? false,
           'isSubmitted': remoteRaw['isSubmitted'] as bool? ?? false,
           'updatedAt': _updatedAtOf(remoteRaw),
+          'teacherComment': remoteRaw['teacherComment'],
+          'grade': remoteRaw['grade'],
         });
+      } else {
+        // El estado propio (completada/enviada) del teléfono está más al
+        // día que el del servidor, pero comentario y nota los pone el
+        // docente — nunca este dispositivo — así que no hay nada que
+        // resolver por fecha: siempre valen los del servidor.
+        final merged = Map<String, dynamic>.from(localRaw);
+        merged['teacherComment'] = remoteRaw['teacherComment'];
+        merged['grade'] = remoteRaw['grade'];
+        await _box!.put(key, merged);
       }
     }
   }

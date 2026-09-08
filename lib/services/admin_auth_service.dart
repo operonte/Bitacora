@@ -159,6 +159,39 @@ class AdminAuthService {
     });
   }
 
+  /// Marca a alguien como docente o estudiante en [careerId]. El rol es por
+  /// carrera: la misma persona puede ser docente en una y estudiante en otra.
+  static Future<void> setMemberRole(
+    String careerId,
+    String userId,
+    String role,
+  ) async {
+    await _client.rpc('admin_set_member_role', params: {
+      'p_career_id': careerId,
+      'p_user_id': userId,
+      'p_role': role,
+    });
+  }
+
+  /// Borra cualquier anuncio, sin importar quién lo creó — para bajar uno
+  /// inapropiado sin tener que ser su autor.
+  static Future<void> deleteAnnouncement(String announcementId) async {
+    await _client.rpc('admin_delete_announcement', params: {
+      'p_announcement_id': announcementId,
+    });
+  }
+
+  /// Quién dicta qué en [careerId], para verlo de un vistazo sin entrar
+  /// miembro por miembro.
+  static Future<List<TeachingAssignment>> teachingAssignments(String careerId) async {
+    final rows = await _client.rpc('admin_list_teaching_assignments', params: {
+      'p_career_id': careerId,
+    }) as List;
+    return rows
+        .map((r) => TeachingAssignment.fromMap(Map<String, dynamic>.from(r as Map)))
+        .toList();
+  }
+
   static Future<bool> _rpcBool(String fn, [Map<String, dynamic>? params]) async {
     if (_client.auth.currentUser == null) return false;
     try {
@@ -180,9 +213,16 @@ class AdminMember {
   final bool isAdmin;
   final DateTime? joinedAt;
 
+  /// 'estudiante' o 'docente' en esta carrera. Ausente en la lista de
+  /// administradores (esa función no lo devuelve, y no aplica: el permiso de
+  /// admin no es por carrera).
+  final String role;
+
   /// Solo en la lista de administradores: si además tiene contraseña. Sin
   /// ella el permiso no sirve de nada — no puede abrir el panel.
   final bool hasPassword;
+
+  bool get isDocente => role == 'docente';
 
   const AdminMember({
     required this.userId,
@@ -190,6 +230,7 @@ class AdminMember {
     this.email,
     this.isAdmin = false,
     this.joinedAt,
+    this.role = 'estudiante',
     this.hasPassword = false,
   });
 
@@ -209,6 +250,7 @@ class AdminMember {
         joinedAt: map['joined_at'] == null
             ? null
             : DateTime.tryParse(map['joined_at'].toString()),
+        role: map['role']?.toString() ?? 'estudiante',
         hasPassword: map['has_password'] == true,
       );
 }
@@ -223,4 +265,32 @@ class CareerImpact {
   const CareerImpact(this.members, this.tasks, this.meetings, this.files);
 
   bool get isEmpty => members == 0 && tasks == 0 && meetings == 0 && files == 0;
+}
+
+/// Una fila de "quién dicta qué": un docente y una de sus asignaturas.
+class TeachingAssignment {
+  final String userId;
+  final String? displayName;
+  final String? email;
+  final String subject;
+
+  const TeachingAssignment({
+    required this.userId,
+    this.displayName,
+    this.email,
+    required this.subject,
+  });
+
+  String get teacherLabel {
+    final nombre = displayName?.trim();
+    if (nombre != null && nombre.isNotEmpty) return nombre;
+    return email ?? 'Sin nombre';
+  }
+
+  factory TeachingAssignment.fromMap(Map<String, dynamic> map) => TeachingAssignment(
+        userId: map['user_id'].toString(),
+        displayName: map['display_name']?.toString(),
+        email: map['email']?.toString(),
+        subject: map['subject']?.toString() ?? '',
+      );
 }

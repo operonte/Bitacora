@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/task_model.dart';
 import '../services/career_service.dart';
 import '../colors.dart';
@@ -37,6 +38,12 @@ class TaskCard extends StatelessWidget {
     final label = TaskColorHelper.getUrgencyText(urgency);
     final isOverdue = urgency == TaskUrgency.overdue;
     final careerName = CareerService().careerNameFor(task.careerId);
+
+    // Una tarea oficial solo la toca quien la creó — el servidor ya lo exige
+    // (shared_tasks_update/_delete), esto solo evita ofrecer un botón que va
+    // a terminar en un error de permiso.
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    final canEdit = !task.isOfficial || uid == task.userId;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
@@ -199,6 +206,23 @@ class TaskCard extends StatelessWidget {
                                       color: subtextColor,
                                     ),
                                   ),
+                                  if (task.isOfficial) ...[
+                                    const SizedBox(width: 6),
+                                    const Icon(
+                                      Icons.verified_outlined,
+                                      size: 12,
+                                      color: AppColors.accentTeal,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    const Text(
+                                      'Oficial',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: AppColors.accentTeal,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ],
@@ -375,20 +399,29 @@ class TaskCard extends StatelessWidget {
                                   const SizedBox(width: 8),
                                 ],
 
-                                // Botones editar / eliminar
-                                _IconActionButton(
-                                  icon: Icons.edit_outlined,
-                                  color: AppColors.primary,
-                                  onTap: onEdit,
-                                  tooltip: 'Editar',
-                                ),
-                                const SizedBox(width: 4),
-                                _IconActionButton(
-                                  icon: Icons.delete_outline_rounded,
-                                  color: AppColors.error,
-                                  onTap: onDelete,
-                                  tooltip: 'Eliminar',
-                                ),
+                                // Botones editar / eliminar — ocultos si la
+                                // tarea es oficial y no es de quien la ve: el
+                                // servidor los rechazaría igual.
+                                if (canEdit) ...[
+                                  _IconActionButton(
+                                    icon: Icons.edit_outlined,
+                                    color: AppColors.primary,
+                                    onTap: onEdit,
+                                    tooltip: 'Editar',
+                                  ),
+                                  const SizedBox(width: 4),
+                                  _IconActionButton(
+                                    icon: Icons.delete_outline_rounded,
+                                    color: AppColors.error,
+                                    onTap: onDelete,
+                                    tooltip: 'Eliminar',
+                                  ),
+                                ] else
+                                  const Tooltip(
+                                    message: 'Tarea oficial: solo quien la creó puede tocarla',
+                                    child: Icon(Icons.lock_outline,
+                                        size: 16, color: AppColors.textSecondary),
+                                  ),
                               ],
                             ),
 
@@ -421,6 +454,48 @@ class TaskCard extends StatelessWidget {
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
+                                  ],
+                                ),
+                              ),
+                            ],
+
+                            // Nota y/o comentario que el docente dejó en MI
+                            // progreso — solo aparece si hay algo que mostrar.
+                            if ((task.grade?.isNotEmpty ?? false) ||
+                                (task.teacherComment?.isNotEmpty ?? false)) ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: AppColors.accentTeal.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (task.grade?.isNotEmpty ?? false)
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.grade_outlined, size: 14, color: AppColors.accentTeal),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Nota: ${task.grade}',
+                                            style: const TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: AppColors.accentTeal,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    if (task.teacherComment?.isNotEmpty ?? false) ...[
+                                      if (task.grade?.isNotEmpty ?? false) const SizedBox(height: 4),
+                                      Text(
+                                        '"${task.teacherComment}"',
+                                        style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),

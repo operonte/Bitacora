@@ -4,6 +4,7 @@ import '../services/admin_auth_service.dart';
 import 'admin/admins_screen.dart';
 import 'admin/career_members_screen.dart';
 import 'admin/career_subjects_screen.dart';
+import 'admin/career_teachers_screen.dart';
 import '../models/career_model.dart';
 import '../services/career_supabase_service.dart';
 
@@ -499,6 +500,11 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
     MaterialPageRoute(builder: (_) => CareerMembersScreen(career: career)),
   );
 
+  void _openTeachers(Career career) => Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => CareerTeachersScreen(career: career)),
+  );
+
   Future<void> _showChangePasswordDialog() async {
     final formKey = GlobalKey<FormState>();
     final nuevaController = TextEditingController();
@@ -758,6 +764,8 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                                         _openSubjects(career);
                                       case 'miembros':
                                         _openMembers(career);
+                                      case 'docentes':
+                                        _openTeachers(career);
                                       case 'editar':
                                         _showEditCareerDialog(career);
                                       case 'eliminar':
@@ -778,6 +786,14 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                                       child: ListTile(
                                         leading: Icon(Icons.group_outlined),
                                         title: Text('Miembros'),
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'docentes',
+                                      child: ListTile(
+                                        leading: Icon(Icons.school_outlined),
+                                        title: Text('Docentes'),
                                         contentPadding: EdgeInsets.zero,
                                       ),
                                     ),

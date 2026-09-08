@@ -14,6 +14,10 @@ import '../notification_service.dart';
 import '../providers/app_state.dart';
 import '../providers/theme_provider.dart';
 import 'onboarding_screen.dart';
+import 'attendance_screen.dart';
+import 'announcements_screen.dart';
+import 'teacher_panel_screen.dart';
+import 'teacher_subjects_screen.dart';
 
 class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
@@ -198,6 +202,141 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
           ),
 
           const SizedBox(height: 24),
+
+          // ── Reuniones ────────────────────────────────────────
+          _sectionHeader(context, 'Reuniones', Icons.event_note_outlined),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                const ListTile(
+                  title: Text(
+                    'Vista de reuniones',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+                ...MeetingsViewMode.values.map((mode) {
+                  final icons = {
+                    MeetingsViewMode.list: Icons.view_list_outlined,
+                    MeetingsViewMode.schedule: Icons.calendar_view_week_outlined,
+                  };
+                  final labels = {
+                    MeetingsViewMode.list: 'Lista',
+                    MeetingsViewMode.schedule: 'Horario semanal',
+                  };
+                  final subtitles = {
+                    MeetingsViewMode.list: 'Orden cronológico, la más próxima primero',
+                    MeetingsViewMode.schedule: 'Grilla de día y hora, como un horario de clases',
+                  };
+                  final selected = themeProvider.meetingsViewMode == mode;
+                  return ListTile(
+                    leading: Icon(
+                      icons[mode],
+                      color: selected ? themeProvider.primaryColor : null,
+                    ),
+                    title: Text(labels[mode]!),
+                    subtitle: Text(subtitles[mode]!),
+                    trailing: selected
+                        ? Icon(
+                            Icons.check_circle,
+                            color: themeProvider.primaryColor,
+                          )
+                        : null,
+                    onTap: () => themeProvider.setMeetingsViewMode(mode),
+                  );
+                }),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // ── Anuncios ────────────────────────────────────────
+          // Para todos: cualquier miembro los lee. Publicar es lo único que
+          // se reserva a docentes, dentro de la propia pantalla.
+          if (_selectedCareer != null) ...[
+            _sectionHeader(context, 'Comunicación', Icons.campaign_outlined),
+            const SizedBox(height: 8),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.campaign_outlined, color: AppColors.primary),
+                title: const Text('Anuncios'),
+                subtitle: Text('Avisos de ${_selectedCareer!.name}'),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AnnouncementsScreen(career: _selectedCareer!),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // ── Herramientas de docente ────────────────────────────
+          // Solo si sos docente en la carrera activa. El servidor exige lo
+          // mismo en cada RPC — esto solo evita mostrar algo que va a fallar.
+          if (_selectedCareer != null &&
+              _careerService.isDocente(_selectedCareer!.id)) ...[
+            _sectionHeader(context, 'Herramientas de docente', Icons.school),
+            const SizedBox(height: 8),
+            Card(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.checklist_rtl, color: AppColors.primary),
+                    title: const Text('Asistencia'),
+                    subtitle: Text('Marcar asistencia de ${_selectedCareer!.name}'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AttendanceScreen(career: _selectedCareer!),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.warning_amber_rounded, color: AppColors.warning),
+                    title: const Text('Panel de riesgo'),
+                    subtitle: const Text('Quién se está quedando atrás'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TeacherPanelScreen(career: _selectedCareer!),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.menu_book_outlined, color: AppColors.primary),
+                    title: const Text('Mis asignaturas'),
+                    subtitle: const Text('Qué materias impartís, para cruzar con el semestre del alumno'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TeacherSubjectsScreen(career: _selectedCareer!),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // ── Mi semestre ──────────────────────────────────────
+          // Para cualquier miembro: es lo que decide qué material y qué
+          // asistencia de su carrera le corresponde ver.
+          if (_selectedCareer != null) ...[
+            _sectionHeader(context, 'Mi semestre', Icons.calendar_view_month_outlined),
+            const SizedBox(height: 8),
+            _buildSemesterPicker(_selectedCareer!),
+            const SizedBox(height: 24),
+          ],
 
           // ── Estudias dos o más carreras ───────────────────────
           _sectionHeader(context, 'Estudias dos o más carreras', Icons.school_outlined),
@@ -486,6 +625,59 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
             child: const Text('Guardar'),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Semestres cargados en el catálogo de [career] — los mismos valores que
+  /// ya etiquetan cada materia, para no inventar una lista aparte.
+  List<String> _semestresDe(Career career) => career.predefinedSubjects
+      .map((s) => s.semester?.trim() ?? '')
+      .where((s) => s.isNotEmpty)
+      .toSet()
+      .toList()
+    ..sort();
+
+  Widget _buildSemesterPicker(Career career) {
+    final opciones = _semestresDe(career);
+    if (opciones.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            '${career.name} todavía no tiene sus materias organizadas por semestre.',
+            style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+          ),
+        ),
+      );
+    }
+    final actual = _careerService.semesterFor(career.id);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: DropdownButtonFormField<String?>(
+          initialValue: opciones.contains(actual) ? actual : null,
+          decoration: const InputDecoration(
+            labelText: '¿En qué semestre estás?',
+            border: InputBorder.none,
+          ),
+          items: [
+            const DropdownMenuItem<String?>(value: null, child: Text('Sin elegir')),
+            ...opciones.map((s) => DropdownMenuItem<String?>(value: s, child: Text(s))),
+          ],
+          onChanged: (value) async {
+            if (value == null) return;
+            try {
+              await _careerService.setMySemester(career.id, value);
+              if (mounted) {
+                setState(() {});
+                _showSnack('Semestre guardado', Colors.green);
+              }
+            } catch (e) {
+              _showSnack('No se pudo guardar: $e', AppColors.error);
+            }
+          },
+        ),
       ),
     );
   }

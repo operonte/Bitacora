@@ -41,6 +41,8 @@ class CareerService extends ChangeNotifier {
   static const _careersKey = 'careers';
   static const _activeKey = 'active_career_id';
   static const _legacyKey = 'selected_career';
+  static const _rolesKey = 'career_roles';
+  static const _semestersKey = 'career_semesters';
 
   /// Inicializa el servicio
   Future<void> initialize() async {
@@ -129,6 +131,51 @@ class CareerService extends ChangeNotifier {
         .map((c) => c.id)
         .toSet();
     return matches.length == 1 ? matches.first : null;
+  }
+
+  /// Rol del usuario en [careerId] ('estudiante' por defecto, 'docente' si
+  /// un admin lo asignó). Se cachea junto con las membresías y se refresca
+  /// en cada [syncMembershipsFromServer], como el resto de la lista.
+  String roleFor(String? careerId) {
+    if (careerId == null || careerId.isEmpty) return 'estudiante';
+    final raw = _careerBox?.get(_rolesKey);
+    if (raw is! Map) return 'estudiante';
+    return raw[careerId] as String? ?? 'estudiante';
+  }
+
+  /// True si el usuario es docente en [careerId]. Es la carrera, no el
+  /// usuario, la que tiene rol: alguien puede ser docente en una y
+  /// estudiante en otra.
+  bool isDocente(String? careerId) => roleFor(careerId) == 'docente';
+
+  /// Semestre/trimestre que el propio alumno eligió para [careerId], o null
+  /// si todavía no lo eligió. Es lo que se cruza contra `Subject.semester`
+  /// del catálogo para saber qué material/asistencia le corresponde ver.
+  String? semesterFor(String? careerId) {
+    if (careerId == null || careerId.isEmpty) return null;
+    final raw = _careerBox?.get(_semestersKey);
+    if (raw is! Map) return null;
+    final value = raw[careerId] as String?;
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  /// Guarda el semestre elegido, en el servidor y en caché local. Cualquier
+  /// miembro puede cambiar el suyo — no hace falta ser admin.
+  Future<void> setMySemester(String careerId, String semester) async {
+    try {
+      await Supabase.instance.client.rpc('set_my_semester', params: {
+        'p_career_id': careerId,
+        'p_semester': semester,
+      });
+    } catch (e) {
+      Logger.warning('No se pudo guardar el semestre: $e', tag: 'CareerService');
+      rethrow;
+    }
+    final current = _careerBox?.get(_semestersKey);
+    final updated = current is Map ? Map<String, String>.from(current) : <String, String>{};
+    updated[careerId] = semester;
+    await _careerBox?.put(_semestersKey, updated);
+    notifyListeners();
   }
 
   /// Indica si el usuario pertenece a la carrera [careerId].
@@ -241,14 +288,29 @@ class CareerService extends ChangeNotifier {
     if (uid == null) return;
 
     Set<String> confirmed;
+    Map<String, String> roles;
+    Map<String, String> semesters;
     try {
-      final rows =
-          await client.from('user_careers').select('career_id').eq('user_id', uid);
+      final rows = await client
+          .from('user_careers')
+          .select('career_id, role, semester')
+          .eq('user_id', uid);
       confirmed = rows
           .map((r) => (r as Map)['career_id']?.toString())
           .whereType<String>()
           .where((id) => id.isNotEmpty)
           .toSet();
+      roles = {
+        for (final r in rows)
+          if ((r as Map)['career_id']?.toString().isNotEmpty ?? false)
+            r['career_id'].toString(): r['role']?.toString() ?? 'estudiante',
+      };
+      semesters = {
+        for (final r in rows)
+          if (((r as Map)['career_id']?.toString().isNotEmpty ?? false) &&
+              r['semester'] != null)
+            r['career_id'].toString(): r['semester'].toString(),
+      };
     } catch (e) {
       Logger.warning(
         'No se pudieron leer las membresías del servidor, se conserva la lista local: $e',
@@ -257,12 +319,22 @@ class CareerService extends ChangeNotifier {
       return;
     }
 
+    // El rol y el semestre se guardan siempre, aunque la lista de carreras no
+    // haya cambiado: un admin puede nombrar docente a alguien, o el propio
+    // alumno cambiar su semestre, sin que se agregue o quite ninguna
+    // carrera, y eso también tiene que reflejarse.
+    await _careerBox?.put(_rolesKey, roles);
+    await _careerBox?.put(_semestersKey, semesters);
+
     final local = getCareers();
     final localIds = local.map((c) => c.id).toSet();
 
     final removed = localIds.difference(confirmed);
     final added = confirmed.difference(localIds);
-    if (removed.isEmpty && added.isEmpty) return;
+    if (removed.isEmpty && added.isEmpty) {
+      notifyListeners();
+      return;
+    }
 
     final updated = local.where((c) => confirmed.contains(c.id)).toList();
 

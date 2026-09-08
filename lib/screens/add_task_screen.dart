@@ -61,6 +61,11 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   /// una decisión, no la consecuencia de qué carrera estaba activa.
   bool _isShared = false;
 
+  /// Solo la puede tocar quien la creó, aunque el resto sea miembro de la
+  /// carrera. El servidor exige ser docente de [_selectedCareer] para poner
+  /// esto en true — ver shared_tasks_insert/_update en la migración.
+  bool _isOfficial = false;
+
   /// La lista vive en el modelo para que no vuelva a divergir: el formulario
   /// ofrecía 9 tipos y la validación aceptaba 11, así que una tarea creada en
   /// otra versión con 'laboratorio' era válida pero no se podía elegir al
@@ -104,6 +109,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
 
     if (task != null) {
       _isShared = task.isShared;
+      _isOfficial = task.isOfficial;
       _titleController.text = task.title;
       _descriptionController.text = task.description;
       _selectedSubject = task.subject;
@@ -488,9 +494,34 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                         : 'Solo la ves tú',
                     style: const TextStyle(fontSize: 12),
                   ),
-                  onChanged: (v) => setState(() => _isShared = v),
+                  onChanged: (v) => setState(() {
+                    _isShared = v;
+                    if (!v) _isOfficial = false;
+                  }),
                 ),
               ),
+              // Solo docentes de la carrera pueden marcar una tarea como
+              // oficial, y solo tiene sentido si además es compartida.
+              if (_isShared && _careerService.isDocente(_selectedCareer?.id)) ...[
+                const SizedBox(height: 8),
+                Card(
+                  margin: EdgeInsets.zero,
+                  child: SwitchListTile(
+                    value: _isOfficial,
+                    activeThumbColor: AppColors.accentTeal,
+                    secondary: Icon(
+                      Icons.verified_outlined,
+                      color: _isOfficial ? AppColors.accentTeal : null,
+                    ),
+                    title: const Text('Tarea oficial'),
+                    subtitle: const Text(
+                      'Solo vos vas a poder editarla o borrarla',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    onChanged: (v) => setState(() => _isOfficial = v),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _isLoading ? null : _saveTask,
@@ -600,6 +631,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         createdAt: widget.task?.createdAt ?? DateTime.now(),
         careerId: _selectedCareer?.id,
         isShared: _isShared,
+        isOfficial: _isOfficial,
       );
 
       // Los avisos no se programan acá: addTask y updateTask ya llaman a

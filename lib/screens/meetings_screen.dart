@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/meeting_model.dart';
+import '../providers/theme_provider.dart';
 import '../utils/input_sanitizer.dart';
 import '../services/meeting_service.dart';
 import '../widgets/subject_group_list.dart';
@@ -141,6 +143,7 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
   Widget build(BuildContext context) {
     final career = CareerService().getSelectedCareer();
     final careerName = career?.name ?? '';
+    final viewMode = context.watch<ThemeProvider>().meetingsViewMode;
 
     return ListenableBuilder(
       listenable: _meetingService,
@@ -158,16 +161,18 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
               ? _buildEmptyMeetingsState()
               : RefreshIndicator(
                   onRefresh: () => _meetingService.syncFromSupabase(),
-                  child: SubjectGroupList<Meeting>(
-                    items: meetings,
-                    subjectOf: (m) => m.subject,
-                    countLabelOf: (count) => '$count ${count == 1 ? 'reunión' : 'reuniones'}',
-                    itemBuilder: _buildMeetingCard,
-                    dateOf: (m) => m.effectiveDate,
-                    header: _buildCareerFilter(),
-                    searchHint: 'Buscar reunión o materia',
-                    searchTextOf: (m) => '${m.title} ${m.subject} ${m.professor}',
-                  ),
+                  child: viewMode == MeetingsViewMode.schedule
+                      ? _buildScheduleView(meetings)
+                      : SubjectGroupList<Meeting>(
+                          items: meetings,
+                          subjectOf: (m) => m.subject,
+                          countLabelOf: (count) => '$count ${count == 1 ? 'reunión' : 'reuniones'}',
+                          itemBuilder: _buildMeetingCard,
+                          dateOf: (m) => m.effectiveDate,
+                          header: _buildCareerFilter(),
+                          searchHint: 'Buscar reunión o materia',
+                          searchTextOf: (m) => '${m.title} ${m.subject} ${m.professor}',
+                        ),
                 ),
         );
 
@@ -322,6 +327,221 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
       default:
         return Theme.of(context).primaryColor;
     }
+  }
+
+  static const _weekdayShort = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+  /// Vista de horario semanal, tipo horario de clases: columnas por día,
+  /// filas por hora. Solo tiene sentido para lo que se repite cada semana a
+  /// la misma hora, así que las recurrentes van siempre y las puntuales solo
+  /// si su fecha cae en la semana actual — si no, se vería como "de esta
+  /// semana" algo que puede ser dentro de un mes. El resto queda abajo, en
+  /// una lista aparte, para no perderlas de vista.
+  Widget _buildScheduleView(List<Meeting> meetings) {
+    final now = DateTime.now();
+    final startOfWeek = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+    final endOfWeek = startOfWeek.add(const Duration(days: 7));
+
+    final inGrid = <Meeting>[];
+    final outsideGrid = <Meeting>[];
+    for (final m in meetings) {
+      final date = m.effectiveDate;
+      final isThisWeek = !date.isBefore(startOfWeek) && date.isBefore(endOfWeek);
+      if (m.isRecurrent || isThisWeek) {
+        inGrid.add(m);
+      } else {
+        outsideGrid.add(m);
+      }
+    }
+    outsideGrid.sort((a, b) => a.effectiveDate.compareTo(b.effectiveDate));
+
+    var minHour = 8;
+    var maxHour = 20;
+    if (inGrid.isNotEmpty) {
+      minHour = inGrid.map((m) => m.effectiveDate.hour).reduce((a, b) => a < b ? a : b);
+      maxHour = inGrid.map((m) => m.effectiveDate.hour).reduce((a, b) => a > b ? a : b);
+    }
+    final hours = [for (var h = minHour; h <= maxHour; h++) h];
+
+    final cells = <int, Map<int, List<Meeting>>>{};
+    for (final m in inGrid) {
+      final weekday = m.effectiveDate.weekday;
+      final hour = m.effectiveDate.hour;
+      final byHour = cells.putIfAbsent(weekday, () => {});
+      byHour.putIfAbsent(hour, () => []).add(m);
+    }
+
+    final header = _buildCareerFilter();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        if (header != null) header,
+        _buildWeeklyGrid(hours, cells),
+        if (outsideGrid.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          const Text(
+            'OTRAS REUNIONES',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...outsideGrid.map(_buildMeetingCard),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildWeeklyGrid(List<int> hours, Map<int, Map<int, List<Meeting>>> cells) {
+    const hourColWidth = 46.0;
+    const dayColWidth = 88.0;
+    const rowHeight = 52.0;
+
+    Widget hourCell(int? hour) => SizedBox(
+          width: hourColWidth,
+          height: rowHeight,
+          child: Center(
+            child: hour == null
+                ? null
+                : Text(
+                    '${hour.toString().padLeft(2, '0')}:00',
+                    style: const TextStyle(fontSize: 10.5, color: AppColors.textSecondary),
+                  ),
+          ),
+        );
+
+    Widget dayHeaderCell(int weekday) => SizedBox(
+          width: dayColWidth,
+          height: rowHeight,
+          child: Center(
+            child: Text(
+              _weekdayShort[weekday - 1],
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+          ),
+        );
+
+    Widget dayCell(int weekday, int hour) {
+      final meetingsHere = cells[weekday]?[hour] ?? const <Meeting>[];
+      if (meetingsHere.isEmpty) {
+        return Container(
+          width: dayColWidth,
+          height: rowHeight,
+          margin: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(8),
+          ),
+        );
+      }
+      final first = meetingsHere.first;
+      final color = _getTypeColor(first.effectiveType);
+      return Container(
+        width: dayColWidth,
+        height: rowHeight,
+        margin: const EdgeInsets.all(2),
+        child: Material(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _showMeetingsAtSlot(meetingsHere),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    first.subject.isNotEmpty ? first.subject : first.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: color),
+                  ),
+                  if (meetingsHere.length > 1)
+                    Text(
+                      '+${meetingsHere.length - 1}',
+                      style: TextStyle(fontSize: 9, color: color),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Column(
+              children: [
+                hourCell(null),
+                for (final h in hours) hourCell(h),
+              ],
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Column(
+                  children: [
+                    Row(children: [for (var wd = 1; wd <= 7; wd++) dayHeaderCell(wd)]),
+                    for (final h in hours)
+                      Row(children: [for (var wd = 1; wd <= 7; wd++) dayCell(wd, h)]),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Una celda puede tener más de una reunión (dos materias compartidas a la
+  /// misma hora). Se abre una hoja con la tarjeta completa de cada una —así
+  /// no se pierden los botones de editar/eliminar/conectarse.
+  void _showMeetingsAtSlot(List<Meeting> meetingsHere) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (ctx, scrollController) => ListView(
+          controller: scrollController,
+          padding: const EdgeInsets.all(16),
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.textSecondary.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            ...meetingsHere.map(_buildMeetingCard),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildMeetingCard(Meeting meeting) {

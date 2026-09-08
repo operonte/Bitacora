@@ -94,7 +94,13 @@ class StudyFileService extends ChangeNotifier {
           })
           .whereType<StudyFile>()
           .where((f) => f.category == category)
-          .where((f) => userId == null || f.userId.isEmpty || f.userId == userId)
+          // Un archivo compartido de otro docente pasa igual: el filtro de
+          // dueño solo aplica a lo que no está marcado para compartir.
+          .where((f) =>
+              f.isShared ||
+              userId == null ||
+              f.userId.isEmpty ||
+              f.userId == userId)
           .where((f) {
             if (careerId == null) return true;
             final id = f.careerId;
@@ -299,11 +305,13 @@ class StudyFileService extends ChangeNotifier {
         }
       }
 
-      // 2. Traer la lista oficial desde Supabase y sincronizar la memoria local
+      // 2. Traer la lista oficial desde Supabase y sincronizar la memoria
+      // local. Sin filtrar por user_id: la política study_files_select ya
+      // devuelve lo propio más el material docente compartido que le
+      // corresponde ver — filtrar acá otra vez lo dejaría afuera.
       final List<dynamic> response = await Supabase.instance.client
           .from('study_files')
           .select()
-          .eq('user_id', user.id)
           .order('created_at', ascending: false);
 
       final remoteIds = <String>{};
