@@ -166,9 +166,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       await _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlyError(e))));
       }
     } finally {
       if (mounted) setState(() => _uploadingPhoto = false);
@@ -181,12 +181,19 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       await _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlyError(e))));
       }
     }
   }
+
+  /// El RPC de subir/borrar fotos extra devuelve un PostgrestException, no
+  /// una Exception simple — `.toString()` de esa no da un texto limpio para
+  /// mostrar (sale "PostgrestException(message: ..., code: ...)" entero).
+  String _friendlyError(Object e) => e is PostgrestException
+      ? e.message
+      : e.toString().replaceAll('Exception: ', '');
 
   @override
   Widget build(BuildContext context) {

@@ -138,36 +138,15 @@ class ProfileService {
     await _client.auth.updateUser(UserAttributes(data: {'avatar_url': url}));
   }
 
+  /// Agrega una foto extra de forma atómica (RPC add_profile_photo, un solo
+  /// UPDATE con array_append en Postgres) — antes esto leía la lista,
+  /// la modificaba en Dart y la reescribía entera, así que dos llamadas
+  /// casi simultáneas podían pisarse y perder una foto.
   Future<void> addExtraPhoto(String url) async {
-    final uid = _client.auth.currentUser?.id;
-    if (uid == null) throw Exception('Usuario no autenticado');
-    final current = await getMyProfile();
-    final list = List<String>.from(
-      (current?['extra_photo_urls'] as List?) ?? [],
-    );
-    if (list.length >= maxExtraPhotos) {
-      throw Exception(
-        'Ya tenés el máximo de $maxExtraPhotos fotos. Borrá una para agregar otra.',
-      );
-    }
-    list.add(url);
-    await _client
-        .from('profiles')
-        .update({'extra_photo_urls': list})
-        .eq('id', uid);
+    await _client.rpc('add_profile_photo', params: {'p_url': url});
   }
 
   Future<void> removeExtraPhoto(String url) async {
-    final uid = _client.auth.currentUser?.id;
-    if (uid == null) throw Exception('Usuario no autenticado');
-    final current = await getMyProfile();
-    final list = List<String>.from(
-      (current?['extra_photo_urls'] as List?) ?? [],
-    );
-    list.remove(url);
-    await _client
-        .from('profiles')
-        .update({'extra_photo_urls': list})
-        .eq('id', uid);
+    await _client.rpc('remove_profile_photo', params: {'p_url': url});
   }
 }

@@ -60,7 +60,8 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Crear Nueva Carrera'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Crear carrera'),
         content: Form(
           key: formKey,
           child: SingleChildScrollView(
@@ -118,7 +119,7 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancelar'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () async {
               if (!formKey.currentState!.validate()) {
                 return;
@@ -143,7 +144,7 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('✅ Carrera creada exitosamente'),
-                      backgroundColor: Colors.green,
+                      backgroundColor: AppColors.success,
                     ),
                   );
                 }
@@ -152,7 +153,7 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('Error al crear carrera: $e'),
-                      backgroundColor: Colors.red,
+                      backgroundColor: AppColors.error,
                     ),
                   );
                 }
@@ -176,7 +177,8 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Editar Carrera'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Editar carrera'),
         content: Form(
           key: formKey,
           child: SingleChildScrollView(
@@ -234,7 +236,7 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancelar'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () async {
               if (!formKey.currentState!.validate()) {
                 return;
@@ -260,7 +262,7 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('✅ Carrera actualizada exitosamente'),
-                      backgroundColor: Colors.green,
+                      backgroundColor: AppColors.success,
                     ),
                   );
                 }
@@ -269,7 +271,7 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('Error al actualizar carrera: $e'),
-                      backgroundColor: Colors.red,
+                      backgroundColor: AppColors.error,
                     ),
                   );
                 }
@@ -482,6 +484,44 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
     }
   }
 
+  static Widget _statCard({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    decoration: BoxDecoration(
+      color: AppColors.primary.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, size: 20, color: AppColors.primary),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+              ),
+            ),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
   static Widget _impactRow(String cantidad, String consecuencia) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 2),
     child: Text(
@@ -643,24 +683,34 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
 
           if (snapshot.hasError) {
             return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 80, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Error al cargar carreras: ${snapshot.error}',
-                    style: const TextStyle(fontSize: 16, color: Colors.red),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() {}); // Rebuild para reintentar
-                    },
-                    child: const Text('Reintentar'),
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: AppColors.error,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Error al cargar carreras: ${snapshot.error}',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: AppColors.error,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () {
+                        setState(() {}); // Rebuild para reintentar
+                      },
+                      child: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
               ),
             );
           }
@@ -668,27 +718,67 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
           final careers = snapshot.data ?? [];
 
           if (careers.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.work_outline, size: 80, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text(
-                    'No hay carreras registradas',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                ],
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.work_outline,
+                        size: 40,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'No hay carreras registradas',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           }
 
           final visibles = _filtrar(careers);
+          final activas = careers.where((c) => c.isActive).length;
 
           return Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _statCard(
+                        icon: Icons.work_outline,
+                        label: 'Carreras',
+                        value: '${careers.length}',
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _statCard(
+                        icon: Icons.check_circle_outline,
+                        label: 'Activas',
+                        value: '$activas',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                 child: TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
@@ -731,19 +821,47 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                       final isPredefined = Careers.predefined.any(
                         (c) => c.id == career.id,
                       );
-                      return Card(
-                        elevation: 4,
-                        margin: const EdgeInsets.only(bottom: 16),
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        clipBehavior: Clip.antiAlias,
                         child: Opacity(
                           opacity: career.isActive ? 1 : 0.6,
                           child: ListTile(
-                            leading: Icon(
-                              Icons.work,
-                              color: career.isActive
-                                  ? AppColors.primary
-                                  : AppColors.textSecondary,
+                            leading: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color:
+                                    (career.isActive
+                                            ? AppColors.primary
+                                            : AppColors.textSecondary)
+                                        .withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.work_outline,
+                                size: 20,
+                                color: career.isActive
+                                    ? AppColors.primary
+                                    : AppColors.textSecondary,
+                              ),
                             ),
-                            title: Text(career.name),
+                            title: Text(
+                              career.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             subtitle: Text(
                               '${career.predefinedSubjects.length} materias, '
                               '${career.predefinedSubjects.where((s) => s.isActive).length} activas'
