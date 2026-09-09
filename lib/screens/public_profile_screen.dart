@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../colors.dart';
 import '../services/profile_service.dart';
 
-/// Perfil público de otra persona de tu carrera: solo lectura. El servidor
-/// (get_public_profile) ya exige que compartas una carrera con ella; acá
+/// Perfil público de otra persona de tu carrera: solo lectura, más los
+/// comentarios que le dejen — la alternativa visible-para-todos al chat
+/// privado que se decidió no construir. El servidor (get_public_profile,
+/// profile_comments RLS) ya exige que compartas una carrera con ella; acá
 /// solo se pinta lo que llegó.
 class PublicProfileScreen extends StatefulWidget {
   final String userId;
@@ -22,8 +26,14 @@ class PublicProfileScreen extends StatefulWidget {
 
 class _PublicProfileScreenState extends State<PublicProfileScreen> {
   Map<String, dynamic>? _profile;
+  List<Map<String, dynamic>> _comments = [];
   bool _loading = true;
+  bool _sending = false;
   String? _error;
+  final _commentController = TextEditingController();
+
+  String? get _myId => Supabase.instance.client.auth.currentUser?.id;
+  bool get _esMiPropioPerfil => widget.userId == _myId;
 
   @override
   void initState() {
@@ -31,16 +41,65 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     try {
-      final profile = await ProfileService().getPublicProfile(widget.userId);
-      if (mounted) setState(() => _profile = profile);
+      final results = await Future.wait([
+        ProfileService().getPublicProfile(widget.userId),
+        ProfileService().getComments(widget.userId),
+      ]);
+      if (mounted) {
+        setState(() {
+          _profile = results[0] as Map<String, dynamic>?;
+          _comments = results[1] as List<Map<String, dynamic>>;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _error = e.toString().replaceAll('Exception: ', ''));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _sendComment() async {
+    final text = _commentController.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _sending = true);
+    try {
+      await ProfileService().addComment(widget.userId, text);
+      _commentController.clear();
+      final comments = await ProfileService().getComments(widget.userId);
+      if (mounted) setState(() => _comments = comments);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _deleteComment(String id) async {
+    try {
+      await ProfileService().deleteComment(id);
+      if (mounted) {
+        setState(() => _comments.removeWhere((c) => c['id'] == id));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        );
+      }
     }
   }
 
@@ -85,56 +144,48 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
               ),
             )
           : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+              padding: const EdgeInsets.only(bottom: 40),
               children: [
-                Center(
-                  child: CircleAvatar(
-                    radius: 52,
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                    backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
-                        ? NetworkImage(photoUrl)
-                        : null,
-                    child: (photoUrl == null || photoUrl.isEmpty)
-                        ? const Icon(
-                            Icons.person,
-                            size: 48,
-                            color: AppColors.primary,
-                          )
-                        : null,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Center(
-                  child: Text(
-                    name,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                _banner(photoUrl),
+                const SizedBox(height: 56),
+                Text(
+                  name,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
                 if (bio != null && bio.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Text(bio, textAlign: TextAlign.center),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      bio,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.textSecondary),
+                    ),
+                  ),
                 ],
                 if (extraPhotos.isNotEmpty) ...[
                   const SizedBox(height: 20),
                   SizedBox(
-                    height: 100,
+                    height: 96,
                     child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
                       scrollDirection: Axis.horizontal,
                       itemCount: extraPhotos.length,
                       separatorBuilder: (_, __) => const SizedBox(width: 10),
                       itemBuilder: (_, i) => ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                         child: Image.network(
                           extraPhotos[i],
-                          width: 100,
-                          height: 100,
+                          width: 96,
+                          height: 96,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => Container(
-                            width: 100,
-                            height: 100,
+                            width: 96,
+                            height: 96,
                             color: AppColors.primary.withValues(alpha: 0.1),
                             child: const Icon(Icons.broken_image_outlined),
                           ),
@@ -145,44 +196,13 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                 ],
                 if (details.isNotEmpty) ...[
                   const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).cardColor,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        for (final d in details)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: Row(
-                              children: [
-                                Icon(d.$1, size: 20, color: AppColors.primary),
-                                const SizedBox(width: 12),
-                                Text(
-                                  '${d.$2}: ',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                Expanded(child: Text(d.$3!)),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _infoCard(details),
                   ),
                 ],
                 if (bio == null && extraPhotos.isEmpty && details.isEmpty) ...[
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   const Center(
                     child: Text(
                       'Todavía no completó su perfil.',
@@ -190,8 +210,205 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 28),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: _commentsSection(),
+                ),
               ],
             ),
+    );
+  }
+
+  Widget _banner(String? photoUrl) {
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.topCenter,
+      children: [
+        Container(
+          height: 120,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryLight],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        Positioned(
+          top: 76,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              shape: BoxShape.circle,
+            ),
+            child: CircleAvatar(
+              radius: 48,
+              backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+              backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
+                  ? NetworkImage(photoUrl)
+                  : null,
+              child: (photoUrl == null || photoUrl.isEmpty)
+                  ? const Icon(Icons.person, size: 44, color: AppColors.primary)
+                  : null,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _infoCard(List<(IconData, String, String?)> details) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          for (final d in details)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(d.$1, size: 18, color: AppColors.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    '${d.$2}: ',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Expanded(child: Text(d.$3!)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _commentsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Comentarios (${_comments.length})',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Visibles para toda tu carrera.',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _commentController,
+                maxLength: 300,
+                decoration: const InputDecoration(
+                  hintText: 'Dejá un comentario…',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: _sending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send, color: AppColors.primary),
+              onPressed: _sending ? null : _sendComment,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        for (final c in _comments) _commentTile(c),
+      ],
+    );
+  }
+
+  Widget _commentTile(Map<String, dynamic> c) {
+    final canDelete = c['created_by'] == _myId || _esMiPropioPerfil;
+    final createdAt = DateTime.tryParse(c['created_at'].toString());
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      (c['created_by_name'] as String?) ?? 'Alguien',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    if (createdAt != null) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        DateFormat(
+                          'd MMM, HH:mm',
+                          'es',
+                        ).format(createdAt.toLocal()),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(c['text'] as String? ?? ''),
+              ],
+            ),
+          ),
+          if (canDelete)
+            InkWell(
+              onTap: () => _deleteComment(c['id'].toString()),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(
+                  Icons.close,
+                  size: 16,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

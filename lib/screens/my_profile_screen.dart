@@ -6,6 +6,7 @@ import '../services/profile_service.dart';
 import '../utils/custom_file_picker.dart';
 import '../utils/file_security_validator.dart';
 import '../utils/input_sanitizer.dart';
+import 'public_profile_screen.dart';
 
 /// Mi perfil: lo que antes era un diálogo con nombre y una URL de foto
 /// pegada a mano, ahora una pantalla propia con foto subida de verdad, bio
@@ -194,6 +195,24 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         title: const Text('Mi perfil'),
         actions: [
           if (!_loading)
+            IconButton(
+              icon: const Icon(Icons.visibility_outlined),
+              tooltip: 'Ver como lo ve tu carrera',
+              onPressed: () {
+                final uid = Supabase.instance.client.auth.currentUser?.id;
+                if (uid == null) return;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PublicProfileScreen(
+                      userId: uid,
+                      fallbackName: _nameController.text,
+                    ),
+                  ),
+                );
+              },
+            ),
+          if (!_loading)
             TextButton(
               onPressed: _saving ? null : _save,
               child: _saving
@@ -228,100 +247,134 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               ),
             )
           : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+              padding: const EdgeInsets.only(bottom: 40),
               children: [
-                Center(child: _avatarPicker()),
-                const SizedBox(height: 24),
-                _card(
-                  title: 'Sobre mí',
-                  children: [
-                    TextField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre',
-                        border: OutlineInputBorder(),
+                _banner(),
+                const SizedBox(height: 56),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    children: [
+                      _card(
+                        title: 'Sobre mí',
+                        children: [
+                          TextField(
+                            controller: _nameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Nombre',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _bioController,
+                            maxLines: 3,
+                            maxLength: 300,
+                            decoration: const InputDecoration(
+                              labelText: 'Bio (opcional)',
+                              hintText: 'Contá algo sobre vos',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _bioController,
-                      maxLines: 3,
-                      maxLength: 300,
-                      decoration: const InputDecoration(
-                        labelText: 'Bio (opcional)',
-                        hintText: 'Contá algo sobre vos',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 16),
+                      _card(
+                        title: 'Fotos',
+                        subtitle:
+                            'Hasta ${ProfileService.maxExtraPhotos} fotos además de tu foto principal.',
+                        children: [_extraPhotosStrip()],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _card(
-                  title: 'Fotos',
-                  subtitle:
-                      'Hasta ${ProfileService.maxExtraPhotos} fotos además de tu foto principal.',
-                  children: [_extraPhotosStrip()],
-                ),
-                const SizedBox(height: 16),
-                _card(
-                  title: 'Información personal',
-                  subtitle:
-                      'Todo opcional, y visible para el resto de tu carrera.',
-                  children: [
-                    TextField(
-                      controller: _ageController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Edad (opcional)',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 16),
+                      _card(
+                        title: 'Información personal',
+                        subtitle:
+                            'Todo opcional, y visible para el resto de tu carrera.',
+                        children: [
+                          TextField(
+                            controller: _ageController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Edad (opcional)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _genderController,
+                            decoration: const InputDecoration(
+                              labelText: 'Género (opcional)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _relationshipController,
+                            decoration: const InputDecoration(
+                              labelText: 'Situación sentimental (opcional)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _religionController,
+                            decoration: const InputDecoration(
+                              labelText: 'Creencias / religión (opcional)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _genderController,
-                      decoration: const InputDecoration(
-                        labelText: 'Género (opcional)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _relationshipController,
-                      decoration: const InputDecoration(
-                        labelText: 'Situación sentimental (opcional)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _religionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Creencias / religión (opcional)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
     );
   }
 
-  Widget _avatarPicker() {
+  Widget _banner() {
     final photoUrl = _profile?['photo_url'] as String?;
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.topCenter,
+      children: [
+        Container(
+          height: 120,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryLight],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        Positioned(top: 76, child: _avatarPicker(photoUrl)),
+      ],
+    );
+  }
+
+  Widget _avatarPicker(String? photoUrl) {
     return GestureDetector(
       onTap: _uploadingPhoto ? null : () => _pickAndUpload(asMainPhoto: true),
       child: Stack(
         children: [
-          CircleAvatar(
-            radius: 52,
-            backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-            backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
-                ? NetworkImage(photoUrl)
-                : null,
-            child: (photoUrl == null || photoUrl.isEmpty)
-                ? const Icon(Icons.person, size: 48, color: AppColors.primary)
-                : null,
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              shape: BoxShape.circle,
+            ),
+            child: CircleAvatar(
+              radius: 48,
+              backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+              backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
+                  ? NetworkImage(photoUrl)
+                  : null,
+              child: (photoUrl == null || photoUrl.isEmpty)
+                  ? const Icon(Icons.person, size: 44, color: AppColors.primary)
+                  : null,
+            ),
           ),
           if (_uploadingPhoto)
             Positioned.fill(

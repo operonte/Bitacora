@@ -72,6 +72,39 @@ class ProfileService {
     return List<Map<String, dynamic>>.from(rows as List);
   }
 
+  /// Comentarios públicos en un perfil — la alternativa segura al chat
+  /// privado: visibles para toda la carrera, no ocultos entre dos personas.
+  Future<List<Map<String, dynamic>>> getComments(String profileUserId) async {
+    final rows = await _client
+        .from('profile_comments')
+        .select()
+        .eq('profile_user_id', profileUserId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows as List);
+  }
+
+  Future<void> addComment(String profileUserId, String text) async {
+    final user = _client.auth.currentUser;
+    if (user == null) throw Exception('Usuario no autenticado');
+    final name =
+        (user.userMetadata?['full_name'] as String?)?.trim().isNotEmpty == true
+        ? user.userMetadata!['full_name'] as String
+        : (user.email ?? 'Alguien');
+    await _client.from('profile_comments').insert({
+      'profile_user_id': profileUserId,
+      'created_by': user.id,
+      'created_by_name': name,
+      'text': text,
+    });
+  }
+
+  /// Solo el autor del comentario o el dueño del perfil pueden borrarlo — lo
+  /// exige también la política RLS, esto solo evita mostrar un botón que
+  /// fallaría.
+  Future<void> deleteComment(String commentId) async {
+    await _client.from('profile_comments').delete().eq('id', commentId);
+  }
+
   /// Sube una foto al Drive del usuario, fuera del árbol de archivos de
   /// estudio (carpeta `Bitácora/Perfil`, que `classifyDrivePath` ignora sin
   /// problema por no calzar con ninguna carrera real) y la deja visible por
