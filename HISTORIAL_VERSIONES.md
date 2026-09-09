@@ -43,7 +43,8 @@ hace falta compilar nada.
 
 | Versión | Commit | Fecha | Qué cambió |
 |---|---|---|---|
-| **2.14.0** | `ad7593b` | 2026-09-08 | Mis notas y Mi asistencia para el alumno (Configuración → Mi progreso). **Sin probar en la app corriendo** — solo compilación y tests. |
+| **2.15.0** | `4697ee8` | 2026-09-08 | Agregar reuniones al calendario nativo del teléfono (add_2_calendar, solo Android/iOS). **Sin probar en la app corriendo** — solo compilación (incl. `flutter build web`) y tests. |
+| 2.14.0 | `ad7593b` | 2026-09-08 | Mis notas y Mi asistencia para el alumno (Configuración → Mi progreso). **Sin probar en la app corriendo** — solo compilación y tests. |
 | 2.13.0 | `8614474` | 2026-09-08 | Corrige huso horario de reuniones recurrentes, filtra materias por semestre, color por materia, chips en Vencidas/Entregadas, cuenta regresiva, recordatorio configurable por reunión, % de cumplimiento. **Sin probar en la app corriendo** — solo compilación y tests. |
 | 2.12.0 | `e6da1b5` | 2026-09-08 | Ecosistema docente: rol docente, tareas oficiales, asistencia, anuncios, panel de riesgo. **Sin probar en la app corriendo** — solo compilación y migraciones verificadas. |
 | 2.11.0 | `f3e6374` | 2026-08-17 | Archivos grandes sin cerrar la app, límite 250 MB, progreso de subida |
