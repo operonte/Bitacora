@@ -41,6 +41,18 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   bool _isCompleted = false;
   bool _isSubmitted = false;
 
+  /// `null` = usar el default de la app (2 horas antes).
+  int? _reminderMinutes;
+  static const List<int?> _reminderOptions = [
+    null,
+    30,
+    60,
+    120,
+    360,
+    720,
+    1440,
+  ];
+
   List<Subject> _subjects = [];
   List<Subject> _filteredSubjects = [];
 
@@ -89,9 +101,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   /// [_careers] sin las desactivadas, salvo que sea la ya elegida — para no
   /// reasignar en silencio una tarea existente a otra carrera al abrir el
   /// formulario. El servidor igual rechaza guardar en una carrera inactiva.
-  List<Career> get _selectableCareers => _careers
-      .where((c) => c.isActive || c.id == _selectedCareer?.id)
-      .toList();
+  List<Career> get _selectableCareers =>
+      _careers.where((c) => c.isActive || c.id == _selectedCareer?.id).toList();
 
   void _initializeData() {
     // Al editar se respeta la carrera guardada en la tarea; al crear, la
@@ -100,8 +111,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     if (task != null && task.careerId != null) {
       _selectedCareer = _careers.firstWhere(
         (c) => c.id == task.careerId,
-        orElse: () =>
-            _careerService.getSelectedCareer() ?? _careers.first,
+        orElse: () => _careerService.getSelectedCareer() ?? _careers.first,
       );
     } else {
       _selectedCareer = _careerService.getSelectedCareer();
@@ -110,6 +120,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     if (task != null) {
       _isShared = task.isShared;
       _isOfficial = task.isOfficial;
+      _reminderMinutes = task.reminderMinutes;
       _titleController.text = task.title;
       _descriptionController.text = task.description;
       _selectedSubject = task.subject;
@@ -159,25 +170,28 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     var idx = 0;
     return career.predefinedSubjects
         .where((s) => s.isActive || s.name == _selectedSubject)
-        .where((s) =>
-            semestreActual == null ||
-            (s.semester?.isEmpty ?? true) ||
-            s.semester == semestreActual ||
-            s.name == _selectedSubject)
+        .where(
+          (s) =>
+              semestreActual == null ||
+              (s.semester?.isEmpty ?? true) ||
+              s.semester == semestreActual ||
+              s.name == _selectedSubject,
+        )
         .map((subject) {
-      final index = idx++;
-      return Subject(
-        id: subject.id ?? 'predef_${career.id}_$index',
-        name: subject.name,
-        professor: subject.professor,
-        description: subject.description,
-        visibility: SubjectVisibility.soloYo,
-        userId: subject.userId,
-        userName: subject.userName,
-        createdAt: subject.createdAt,
-        isActive: subject.isActive,
-      );
-    }).toList();
+          final index = idx++;
+          return Subject(
+            id: subject.id ?? 'predef_${career.id}_$index',
+            name: subject.name,
+            professor: subject.professor,
+            description: subject.description,
+            visibility: SubjectVisibility.soloYo,
+            userId: subject.userId,
+            userName: subject.userName,
+            createdAt: subject.createdAt,
+            isActive: subject.isActive,
+          );
+        })
+        .toList();
   }
 
   /// Recalcula la lista ofrecida: las de la carrera elegida más las materias
@@ -186,8 +200,9 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   void _rebuildSubjects() {
     final predefined = _predefinedSubjectsFor(_selectedCareer);
     final names = predefined.map((s) => s.name.toLowerCase()).toSet();
-    final propias =
-        _ownSubjects.where((s) => !names.contains(s.name.toLowerCase()));
+    final propias = _ownSubjects.where(
+      (s) => !names.contains(s.name.toLowerCase()),
+    );
 
     _subjects = [...predefined, ...propias];
     _filteredSubjects = _subjects;
@@ -286,8 +301,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               DropdownButtonFormField<String>(
                 initialValue:
                     _selectableCareers.any((c) => c.id == _selectedCareer?.id)
-                        ? _selectedCareer?.id
-                        : null,
+                    ? _selectedCareer?.id
+                    : null,
                 decoration: const InputDecoration(
                   labelText: 'Carrera',
                   border: OutlineInputBorder(),
@@ -295,21 +310,22 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                   helperText: 'Define qué asignaturas puedes elegir',
                 ),
                 items: _selectableCareers
-                    .map((c) => DropdownMenuItem<String>(
-                          value: c.id,
-                          child: Text(
-                            c.isActive ? c.name : '${c.name} (inactiva)',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ))
+                    .map(
+                      (c) => DropdownMenuItem<String>(
+                        value: c.id,
+                        child: Text(
+                          c.isActive ? c.name : '${c.name} (inactiva)',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
                     .toList(),
                 validator: (v) =>
                     (v == null || v.isEmpty) ? 'Elige una carrera' : null,
                 onChanged: (value) {
                   if (value == null) return;
                   setState(() {
-                    _selectedCareer =
-                        _careers.firstWhere((c) => c.id == value);
+                    _selectedCareer = _careers.firstWhere((c) => c.id == value);
                     _rebuildSubjects();
                     // Autocomplete no vuelve a llamar a optionsBuilder solo
                     // porque _filteredSubjects cambió: si el campo de
@@ -377,8 +393,9 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                             return 'Por favor selecciona una asignatura';
                           }
                           final escrita = value.trim().toLowerCase();
-                          final existe = _subjects
-                              .any((s) => s.name.toLowerCase() == escrita);
+                          final existe = _subjects.any(
+                            (s) => s.name.toLowerCase() == escrita,
+                          );
                           if (!existe) {
                             return 'Elige una de la lista, o créala con el botón +';
                           }
@@ -458,6 +475,23 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                 ],
               ),
               const SizedBox(height: 16),
+              DropdownButtonFormField<int?>(
+                initialValue: _reminderMinutes,
+                decoration: const InputDecoration(
+                  labelText: 'Avisar con anticipación',
+                  prefixIcon: Icon(Icons.notifications_outlined),
+                ),
+                items: _reminderOptions
+                    .map(
+                      (minutes) => DropdownMenuItem(
+                        value: minutes,
+                        child: Text(_reminderLabel(minutes)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) => setState(() => _reminderMinutes = v),
+              ),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
@@ -502,7 +536,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                   subtitle: Text(
                     _isShared
                         ? 'La verán todos los miembros de '
-                            '${_selectedCareer?.name ?? 'la carrera'}'
+                              '${_selectedCareer?.name ?? 'la carrera'}'
                         : 'Solo la ves tú',
                     style: const TextStyle(fontSize: 12),
                   ),
@@ -514,7 +548,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               ),
               // Solo docentes de la carrera pueden marcar una tarea como
               // oficial, y solo tiene sentido si además es compartida.
-              if (_isShared && _careerService.isDocente(_selectedCareer?.id)) ...[
+              if (_isShared &&
+                  _careerService.isDocente(_selectedCareer?.id)) ...[
                 const SizedBox(height: 8),
                 Card(
                   margin: EdgeInsets.zero,
@@ -594,6 +629,16 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     }
   }
 
+  String _reminderLabel(int? minutes) {
+    if (minutes == null) return '2 horas antes (por defecto)';
+    if (minutes < 60) return '$minutes minutos antes';
+    if (minutes < 1440) {
+      final horas = minutes ~/ 60;
+      return horas == 1 ? '1 hora antes' : '$horas horas antes';
+    }
+    return '1 día antes';
+  }
+
   Future<void> _saveTask() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -619,7 +664,9 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       }
 
       final titleClean = InputSanitizer.sanitizeText(_titleController.text);
-      final descClean = InputSanitizer.sanitizeText(_descriptionController.text);
+      final descClean = InputSanitizer.sanitizeText(
+        _descriptionController.text,
+      );
       final professorClean = InputSanitizer.sanitizeText(_selectedProfessor);
 
       final task = Task(
@@ -639,11 +686,15 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         isCompleted: _isCompleted,
         isSubmitted: _isSubmitted,
         userId: user.id,
-        userName: user.userMetadata?['full_name'] as String? ?? user.userMetadata?['name'] as String? ?? 'Usuario',
+        userName:
+            user.userMetadata?['full_name'] as String? ??
+            user.userMetadata?['name'] as String? ??
+            'Usuario',
         createdAt: widget.task?.createdAt ?? DateTime.now(),
         careerId: _selectedCareer?.id,
         isShared: _isShared,
         isOfficial: _isOfficial,
+        reminderMinutes: _reminderMinutes,
       );
 
       // Los avisos no se programan acá: addTask y updateTask ya llaman a
@@ -712,7 +763,10 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                 if (!success) {
                   ErrorHandler.showErrorSnackBar(
                     context,
-                    AppException(type: AppErrorType.unknown, message: appState.error),
+                    AppException(
+                      type: AppErrorType.unknown,
+                      message: appState.error,
+                    ),
                   );
                   return;
                 }

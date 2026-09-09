@@ -80,6 +80,7 @@ class SupabaseDbService {
       if (task.careerId != null && task.careerId!.isNotEmpty)
         'career_id': task.careerId,
       'collaborators': task.collaborators,
+      'reminder_minutes': task.reminderMinutes,
     };
     if (isShared) {
       map['created_by'] = _uid;
@@ -150,7 +151,8 @@ class SupabaseDbService {
   /// verla. Es preferible que falle y se reintente más tarde como compartida.
   Future<String> createTaskRemote(Task task) async {
     final activeCareer = CareerService().getSelectedCareer();
-    final effectiveCareerId = (task.careerId != null && task.careerId!.isNotEmpty)
+    final effectiveCareerId =
+        (task.careerId != null && task.careerId!.isNotEmpty)
         ? task.careerId
         : activeCareer?.id;
 
@@ -224,8 +226,11 @@ class SupabaseDbService {
     Future<int> updateIn(String table, {required bool asShared}) async {
       final row = _taskToRow(task, isShared: asShared);
       stripAuthorFields(row);
-      final updated =
-          await _client.from(table).update(row).eq('id', task.id!).select('id');
+      final updated = await _client
+          .from(table)
+          .update(row)
+          .eq('id', task.id!)
+          .select('id');
       return (updated as List).length;
     }
 
@@ -540,18 +545,18 @@ class SupabaseDbService {
         isSubmitted: isSubmitted,
       );
       if (cached != null) {
-        await _cache.cacheTask(cached.copyWith(
-          isCompleted: isCompleted,
-          isSubmitted: isSubmitted,
-        ));
+        await _cache.cacheTask(
+          cached.copyWith(isCompleted: isCompleted, isSubmitted: isSubmitted),
+        );
       }
     } else {
       try {
         Logger.database('Actualizando estado de tarea personal: $taskId');
-        await _client.from('tasks').update({
-          'is_completed': isCompleted,
-          'is_submitted': isSubmitted,
-        }).eq('id', taskId).eq('user_id', uid);
+        await _client
+            .from('tasks')
+            .update({'is_completed': isCompleted, 'is_submitted': isSubmitted})
+            .eq('id', taskId)
+            .eq('user_id', uid);
 
         if (cached != null) {
           final updated = cached.copyWith(
@@ -598,9 +603,11 @@ class SupabaseDbService {
       await _cache.cacheTask(updated);
     } else {
       try {
-        await _client.from('tasks').update({
-          'is_completed': newCompleted,
-        }).eq('id', task.id!).eq('user_id', uid);
+        await _client
+            .from('tasks')
+            .update({'is_completed': newCompleted})
+            .eq('id', task.id!)
+            .eq('user_id', uid);
         final updated = task.copyWith(isCompleted: newCompleted);
         await _cache.cacheTask(updated);
       } catch (e) {
@@ -620,7 +627,9 @@ class SupabaseDbService {
   /// marcó realizada/enviada y quién no. El RPC en el servidor exige haber
   /// creado la tarea — si no, lanza y no llega ninguna fila; no hay una
   /// política RLS nueva que exponga `task_progress` de otros usuarios.
-  Future<List<Map<String, dynamic>>> getTaskSubmissionStatus(String taskId) async {
+  Future<List<Map<String, dynamic>>> getTaskSubmissionStatus(
+    String taskId,
+  ) async {
     final rows = await _client.rpc(
       'get_task_submission_status',
       params: {'p_task_id': taskId},
@@ -637,11 +646,14 @@ class SupabaseDbService {
     String studentUserId,
     String comment,
   ) async {
-    await _client.rpc('set_task_teacher_comment', params: {
-      'p_task_id': taskId,
-      'p_user_id': studentUserId,
-      'p_comment': comment,
-    });
+    await _client.rpc(
+      'set_task_teacher_comment',
+      params: {
+        'p_task_id': taskId,
+        'p_user_id': studentUserId,
+        'p_comment': comment,
+      },
+    );
   }
 
   /// Nota libre (docente, sin escala fija) para un alumno en una tarea.
@@ -652,18 +664,24 @@ class SupabaseDbService {
     String studentUserId,
     String grade,
   ) async {
-    await _client.rpc('set_task_grade', params: {
-      'p_task_id': taskId,
-      'p_user_id': studentUserId,
-      'p_grade': grade,
-    });
+    await _client.rpc(
+      'set_task_grade',
+      params: {
+        'p_task_id': taskId,
+        'p_user_id': studentUserId,
+        'p_grade': grade,
+      },
+    );
   }
 
   /// Riesgo por alumno en la carrera: tareas oficiales vencidas sin entregar
   /// y porcentaje de asistencia marcada. Regla simple, no analítica ni IA —
   /// el RPC exige ser docente de esa carrera.
   Future<List<Map<String, dynamic>>> getStudentRisk(String careerId) async {
-    final rows = await _client.rpc('get_student_risk', params: {'p_career_id': careerId});
+    final rows = await _client.rpc(
+      'get_student_risk',
+      params: {'p_career_id': careerId},
+    );
     return List<Map<String, dynamic>>.from(rows as List);
   }
 
@@ -674,8 +692,11 @@ class SupabaseDbService {
     Logger.database('Agregando materia: ${subject.name}');
     final row = _subjectToRow(subject);
     row['user_id'] = _uid;
-    final result =
-        await _client.from('subjects').insert(row).select('id').single();
+    final result = await _client
+        .from('subjects')
+        .insert(row)
+        .select('id')
+        .single();
     final newId = result['id'] as String;
     final newSubject = subject.copyWith(id: newId);
     await _cache.cacheSubject(newSubject);

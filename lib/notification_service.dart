@@ -247,12 +247,15 @@ class NotificationService {
       for (final task in tasks) {
         if (task.id == null) continue;
         final entregada = task.isCompleted && task.isSubmitted;
-        final cuando = task.dueDate.subtract(taskLeadTime);
+        final anticipacion = Duration(
+          minutes: task.reminderMinutes ?? taskLeadTime.inMinutes,
+        );
+        final cuando = task.dueDate.subtract(anticipacion);
 
         if (!entregada && cuando.isAfter(now)) {
           await _scheduleIfChanged(
             id: taskIdToNotificationId(task.id!),
-            title: '⏰ Tarea en 2 horas',
+            title: '⏰ Tarea en ${_lapso(anticipacion)}',
             body: '${task.title} — ${task.subject}',
             scheduledTime: cuando,
           );

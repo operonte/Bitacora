@@ -9,6 +9,7 @@ import '../widgets/task_details_dialog.dart';
 import '../widgets/mascot_widget.dart';
 import '../widgets/subject_filter_chips.dart';
 import '../widgets/completion_rate_banner.dart';
+import 'global_search_screen.dart';
 import '../providers/theme_provider.dart';
 import 'add_task_screen.dart';
 import '../colors.dart';
@@ -60,6 +61,14 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.manage_search),
+            tooltip: 'Buscar en todo (tareas, reuniones, archivos)',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const GlobalSearchScreen()),
+            ),
+          ),
+          IconButton(
             icon: Icon(
               Icons.search,
               color: _searchQuery.isNotEmpty
@@ -67,7 +76,7 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
                   : null,
             ),
             onPressed: _showSearchDialog,
-            tooltip: 'Buscar',
+            tooltip: 'Buscar en pendientes',
           ),
           SyncIndicator(syncService: SyncService()),
           IconButton(

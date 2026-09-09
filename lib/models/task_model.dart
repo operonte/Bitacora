@@ -55,6 +55,11 @@ class Task {
   String? teacherComment;
   String? grade;
 
+  /// Minutos de anticipación del aviso previo a la entrega. `null` = usar el
+  /// default de la app ([NotificationService.taskLeadTime], hoy 2 horas) —
+  /// así una tarea ya creada no cambia de comportamiento por esto.
+  int? reminderMinutes;
+
   Task({
     this.id,
     required this.title,
@@ -77,6 +82,7 @@ class Task {
     this.updatedAt,
     this.teacherComment,
     this.grade,
+    this.reminderMinutes,
   }) {
     _validate();
   }
@@ -160,6 +166,7 @@ class Task {
       'isShared': isShared,
       'isOfficial': isOfficial,
       'collaborators': collaborators,
+      'reminderMinutes': reminderMinutes,
       // Solo para el caché local: al servidor no se mandan (los pone el
       // trigger), pero sin esto la autoría desaparecería estando offline.
       'updatedByName': updatedByName,
@@ -179,11 +186,7 @@ class Task {
   /// [isShared] fuerza el valor de [Task.isShared] cuando quien llama ya lo
   /// sabe por otra vía — leer de `shared_tasks` implica que está compartida,
   /// esté o no la columna en la fila.
-  factory Task.fromMap(
-    Map<String, dynamic> map, [
-    String? id,
-    bool? isShared,
-  ]) {
+  factory Task.fromMap(Map<String, dynamic> map, [String? id, bool? isShared]) {
     // Cada campo se busca primero con su nombre de caché y después con el de
     // la base. `??` no sirve acá: un false o un 0 legítimos harían caer al
     // segundo nombre.
@@ -204,10 +207,14 @@ class Task {
 
     // Validar tipos de datos críticos
     if (dueDate is! num) {
-      throw ArgumentError('dueDate debe ser un número (milisegundos), se recibió: ${dueDate.runtimeType}');
+      throw ArgumentError(
+        'dueDate debe ser un número (milisegundos), se recibió: ${dueDate.runtimeType}',
+      );
     }
     if (createdAt is! num) {
-      throw ArgumentError('createdAt debe ser un número (milisegundos), se recibió: ${createdAt.runtimeType}');
+      throw ArgumentError(
+        'createdAt debe ser un número (milisegundos), se recibió: ${createdAt.runtimeType}',
+      );
     }
 
     // updatedAt llega en milisegundos desde la caché y como texto ISO desde
@@ -232,12 +239,15 @@ class Task {
       careerId: campo('careerId', 'career_id')?.toString(),
       isShared: isShared ?? campo('isShared', 'is_shared') as bool? ?? false,
       isOfficial: campo('isOfficial', 'is_official') as bool? ?? false,
-      collaborators:
-          List<String>.from(campo('collaborators', 'collaborators') as List? ?? []),
+      collaborators: List<String>.from(
+        campo('collaborators', 'collaborators') as List? ?? [],
+      ),
       updatedByName: updatedByName.isEmpty ? null : updatedByName,
       updatedAt: updatedAtRaw is num
           ? DateTime.fromMillisecondsSinceEpoch(updatedAtRaw.toInt())
           : DateTime.tryParse(updatedAtRaw?.toString() ?? ''),
+      reminderMinutes: (campo('reminderMinutes', 'reminder_minutes') as num?)
+          ?.toInt(),
     );
   }
 
@@ -263,6 +273,7 @@ class Task {
     DateTime? updatedAt,
     String? teacherComment,
     String? grade,
+    int? reminderMinutes,
   }) {
     return Task(
       id: id ?? this.id,
@@ -286,6 +297,7 @@ class Task {
       updatedAt: updatedAt ?? this.updatedAt,
       teacherComment: teacherComment ?? this.teacherComment,
       grade: grade ?? this.grade,
+      reminderMinutes: reminderMinutes ?? this.reminderMinutes,
     );
   }
 
