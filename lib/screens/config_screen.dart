@@ -6,7 +6,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import '../app_info.dart';
 import '../colors.dart';
-import '../utils/input_sanitizer.dart';
 import '../models/career_model.dart';
 import '../auth_service.dart';
 import '../services/career_service.dart';
@@ -20,6 +19,8 @@ import 'teacher_panel_screen.dart';
 import 'teacher_subjects_screen.dart';
 import 'my_grades_screen.dart';
 import 'my_attendance_screen.dart';
+import 'my_profile_screen.dart';
+import 'career_members_directory_screen.dart';
 
 class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
@@ -339,21 +340,43 @@ class _ConfigScreenState extends State<ConfigScreen>
             _sectionHeader(context, 'Comunicación', Icons.campaign_outlined),
             const SizedBox(height: 8),
             Card(
-              child: ListTile(
-                leading: const Icon(
-                  Icons.campaign_outlined,
-                  color: AppColors.primary,
-                ),
-                title: const Text('Anuncios'),
-                subtitle: Text('Avisos de ${_selectedCareer!.name}'),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        AnnouncementsScreen(career: _selectedCareer!),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(
+                      Icons.campaign_outlined,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text('Anuncios'),
+                    subtitle: Text('Avisos de ${_selectedCareer!.name}'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            AnnouncementsScreen(career: _selectedCareer!),
+                      ),
+                    ),
                   ),
-                ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.groups_outlined,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text('Miembros'),
+                    subtitle: Text('Directorio de ${_selectedCareer!.name}'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CareerMembersDirectoryScreen(
+                          career: _selectedCareer!,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 24),
@@ -719,92 +742,15 @@ class _ConfigScreenState extends State<ConfigScreen>
         ),
       ),
       title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text('$email • Toca para editar perfil'),
+      subtitle: Text('$email • Toca para ver tu perfil'),
       trailing: const Icon(Icons.edit_outlined, size: 20),
-      onTap: _editProfileDialog,
-    );
-  }
-
-  Future<void> _editProfileDialog() async {
-    final user = _authService.currentUser;
-    if (user == null) return;
-
-    final nameController = TextEditingController(
-      text: _authService.userDisplayName ?? '',
-    );
-    final photoController = TextEditingController(
-      text: _authService.userPhotoURL ?? '',
-    );
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.person_pin, color: AppColors.primary),
-            SizedBox(width: 8),
-            Text('Editar Perfil'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre completo (opcional)',
-                prefixIcon: Icon(Icons.person),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: photoController,
-              decoration: const InputDecoration(
-                labelText: 'URL Foto de perfil (opcional)',
-                prefixIcon: Icon(Icons.link),
-                hintText: 'https://ejemplo.com/mi_foto.jpg',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final photoUrl = photoController.text.trim();
-              if (photoUrl.isNotEmpty &&
-                  !InputSanitizer.isSafeExternalUrl(photoUrl)) {
-                _showSnack(
-                  'La URL de la foto debe empezar con http:// o https://',
-                  AppColors.error,
-                );
-                return;
-              }
-              try {
-                await Supabase.instance.client.auth.updateUser(
-                  UserAttributes(
-                    data: {
-                      'full_name': InputSanitizer.sanitizeText(
-                        nameController.text,
-                      ),
-                      'avatar_url': photoUrl,
-                    },
-                  ),
-                );
-                if (ctx.mounted) Navigator.pop(ctx);
-                setState(() {});
-                _showSnack('✅ Perfil actualizado correctamente', Colors.green);
-              } catch (e) {
-                _showSnack('Error al actualizar perfil: $e', AppColors.error);
-              }
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const MyProfileScreen()),
+        );
+        if (mounted) setState(() {});
+      },
     );
   }
 

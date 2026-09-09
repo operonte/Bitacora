@@ -2,25 +2,48 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../colors.dart';
+import '../models/career_model.dart';
 import '../models/meeting_model.dart';
 import '../models/study_file_model.dart';
 import '../models/task_model.dart';
 import '../providers/app_state.dart';
+import '../services/career_service.dart';
 import '../services/meeting_service.dart';
 import '../services/study_file_service.dart';
+import '../services/supabase_db_service.dart';
 import '../utils/input_sanitizer.dart';
 import '../widgets/task_details_dialog.dart';
 import 'add_meeting_screen.dart';
+import 'student_profile_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Busca en tareas, reuniones y archivos a la vez.
+/// Un alumno encontrado, con la carrera en la que se lo busca — hace falta
+/// para poder abrir su Ficha después.
+class _StudentHit {
+  final Career career;
+  final String userId;
+  final String name;
+  final String email;
+  _StudentHit({
+    required this.career,
+    required this.userId,
+    required this.name,
+    required this.email,
+  });
+}
+
+/// Busca en tareas, reuniones, archivos y —si sos docente— alumnos, a la vez.
 ///
-/// Cada una de las tres ya tenía su propio buscador, pero cada uno solo
-/// mira su propia lista — si no te acordás si algo era una tarea o quedó
-/// como archivo adjunto, tenías que probar en varias pantallas. Esta no trae
-/// nada nuevo del servidor: filtra sobre lo que ya está cargado en memoria
-/// (AppState, MeetingService, StudyFileService), así que no hace ninguna
-/// consulta nueva.
+/// Tareas, reuniones y archivos ya tenían su propio buscador, pero cada uno
+/// solo mira su propia lista — si no te acordás si algo era una tarea o
+/// quedó como archivo adjunto, tenías que probar en varias pantallas. Esos
+/// tres no traen nada nuevo del servidor: filtran sobre lo que ya está
+/// cargado en memoria (AppState, MeetingService, StudyFileService).
+///
+/// Los alumnos son la excepción: no hay una lista de alumnos ya cargada en
+/// ningún lado, así que al abrir la pantalla se pide una sola vez (por cada
+/// carrera donde sos docente) y se filtra en memoria de ahí en más — no se
+/// vuelve a pedir en cada letra que se tipea.
 class GlobalSearchScreen extends StatefulWidget {
   const GlobalSearchScreen({super.key});
 
@@ -31,6 +54,52 @@ class GlobalSearchScreen extends StatefulWidget {
 class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   final _controller = TextEditingController();
   String _query = '';
+
+  /// Null mientras se está cargando (o si no sos docente en ninguna
+  /// carrera, se queda en lista vacía).
+  List<_StudentHit>? _students;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStudents();
+  }
+
+  Future<void> _loadStudents() async {
+    final misCarreras = CareerService()
+        .getCareers()
+        .where((c) => CareerService().isDocente(c.id))
+        .toList();
+    if (misCarreras.isEmpty) {
+      if (mounted) setState(() => _students = []);
+      return;
+    }
+
+    final hits = <_StudentHit>[];
+    for (final career in misCarreras) {
+      try {
+        final rows = await SupabaseDbService().getStudentRisk(career.id);
+        for (final r in rows) {
+          final displayName = (r['display_name'] as String?)?.trim();
+          final email = (r['email'] as String?) ?? '';
+          hits.add(
+            _StudentHit(
+              career: career,
+              userId: r['user_id'].toString(),
+              name: (displayName != null && displayName.isNotEmpty)
+                  ? displayName
+                  : (email.isNotEmpty ? email : 'Sin nombre'),
+              email: email,
+            ),
+          );
+        }
+      } catch (_) {
+        // Sin red: esta carrera queda afuera de la búsqueda por ahora, el
+        // resto (tareas/reuniones/archivos) sigue andando igual.
+      }
+    }
+    if (mounted) setState(() => _students = hits);
+  }
 
   @override
   void dispose() {
@@ -84,17 +153,26 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
             ...StudyFileService().getFiles(category: StudyFileCategory.trabajo),
             ...StudyFileService().getFiles(category: StudyFileCategory.guia),
           ].where((f) => _matches(_query, [f.name, f.subject])).toList();
+    final students = _query.isEmpty || _students == null
+        ? const <_StudentHit>[]
+        : _students!.where((s) => _matches(_query, [s.name, s.email])).toList();
 
     final hasResults =
-        tasks.isNotEmpty || meetings.isNotEmpty || files.isNotEmpty;
+        tasks.isNotEmpty ||
+        meetings.isNotEmpty ||
+        files.isNotEmpty ||
+        students.isNotEmpty;
+    final esDocente = (_students?.isNotEmpty ?? false);
 
     return Scaffold(
       appBar: AppBar(
         title: TextField(
           controller: _controller,
           autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Buscar en tareas, reuniones y archivos...',
+          decoration: InputDecoration(
+            hintText: esDocente
+                ? 'Buscar tareas, reuniones, archivos o alumnos...'
+                : 'Buscar en tareas, reuniones y archivos...',
             border: InputBorder.none,
           ),
           style: const TextStyle(fontSize: 16),
@@ -168,6 +246,25 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                       title: Text(f.name),
                       subtitle: Text(f.subject),
                       onTap: () => _openLink(f.openUrl),
+                    ),
+                ],
+                if (students.isNotEmpty) ...[
+                  _sectionHeader('Alumnos', Icons.person_search_outlined),
+                  for (final s in students)
+                    ListTile(
+                      leading: const Icon(Icons.person_outline),
+                      title: Text(s.name),
+                      subtitle: Text(s.career.name),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => StudentProfileScreen(
+                            career: s.career,
+                            studentId: s.userId,
+                            studentName: s.name,
+                          ),
+                        ),
+                      ),
                     ),
                 ],
               ],

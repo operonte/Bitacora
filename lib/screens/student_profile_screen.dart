@@ -8,6 +8,7 @@ import '../services/attendance_service.dart';
 import '../services/study_file_service.dart';
 import '../services/supabase_db_service.dart';
 import '../utils/input_sanitizer.dart';
+import 'public_profile_screen.dart';
 
 enum _EstadoTarea { atrasada, pendiente, entregadaATiempo, entregadaTarde }
 
@@ -136,6 +137,19 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       appBar: AppBar(
         title: Text(widget.studentName),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.badge_outlined),
+            tooltip: 'Ver perfil',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PublicProfileScreen(
+                  userId: widget.studentId,
+                  fallbackName: widget.studentName,
+                ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _load,
