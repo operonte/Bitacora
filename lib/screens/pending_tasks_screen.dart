@@ -1,5 +1,6 @@
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../providers/app_state.dart';
 import '../models/task_model.dart';
 import '../widgets/task_card.dart';
@@ -9,6 +10,7 @@ import '../widgets/task_details_dialog.dart';
 import '../widgets/mascot_widget.dart';
 import '../widgets/subject_filter_chips.dart';
 import '../widgets/completion_rate_banner.dart';
+import '../widgets/month_calendar_grid.dart';
 import 'global_search_screen.dart';
 import '../providers/theme_provider.dart';
 import 'add_task_screen.dart';
@@ -27,11 +29,22 @@ class PendingTasksScreen extends StatefulWidget {
 class _PendingTasksScreenState extends State<PendingTasksScreen> {
   String _selectedSubject = SubjectFilterChips.all;
   String _searchQuery = '';
+  DateTime _monthCursor = DateTime(DateTime.now().year, DateTime.now().month);
+
+  void _changeMonth(int delta) {
+    setState(() {
+      _monthCursor = DateTime(_monthCursor.year, _monthCursor.month + delta);
+    });
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   @override
   Widget build(BuildContext context) {
     final career = CareerService().getSelectedCareer();
     final careerName = career?.name ?? '';
+    final viewMode = context.watch<ThemeProvider>().tasksViewMode;
 
     final appState = context.watch<AppState>();
     final allPendingTasks = appState.pendingTasks;
@@ -108,6 +121,10 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
                   )
                 : filteredTasks.isEmpty
                 ? _buildEmptyState()
+                : viewMode == TasksViewMode.week
+                ? _buildWeekAgenda(context, appState, filteredTasks)
+                : viewMode == TasksViewMode.month
+                ? _buildMonthView(context, appState, filteredTasks)
                 : RefreshIndicator(
                     onRefresh: () => appState.forceSync(),
                     child: ListView.builder(
@@ -145,6 +162,110 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
         shape: const CircleBorder(),
         child: const Icon(Icons.add, color: Colors.white, size: 26),
       ),
+    );
+  }
+
+  /// Los próximos 7 días, uno debajo del otro con su fecha — a diferencia de
+  /// reuniones, una tarea no tiene una hora fija que justifique una grilla
+  /// horizontal, así que acá "semana" es una agenda vertical.
+  Widget _buildWeekAgenda(
+    BuildContext context,
+    AppState appState,
+    List<Task> tasks,
+  ) {
+    final today = DateTime.now();
+    final days = [
+      for (var i = 0; i < 7; i++)
+        DateTime(today.year, today.month, today.day + i),
+    ];
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        for (final day in days) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Text(
+                  DateFormat('EEEE d MMM', 'es').format(day),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: _isSameDay(day, today)
+                        ? Theme.of(context).primaryColor
+                        : context.textSecondaryColor,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Divider(color: context.borderColor)),
+              ],
+            ),
+          ),
+          ...() {
+            final delDia = tasks
+                .where((t) => _isSameDay(t.dueDate, day))
+                .toList();
+            if (delDia.isEmpty) {
+              return [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    'Libre',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: context.textSecondaryColor,
+                    ),
+                  ),
+                ),
+              ];
+            }
+            return delDia
+                .map((t) => _CompactTaskTile(task: t, appState: appState))
+                .toList();
+          }(),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMonthView(
+    BuildContext context,
+    AppState appState,
+    List<Task> tasks,
+  ) {
+    final byDay = <DateTime, List<Task>>{};
+    for (final t in tasks) {
+      final day = DateTime(t.dueDate.year, t.dueDate.month, t.dueDate.day);
+      byDay.putIfAbsent(day, () => []).add(t);
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        MonthCalendarGrid<Task>(
+          monthCursor: _monthCursor,
+          onMonthDelta: _changeMonth,
+          itemsByDay: byDay,
+          colorOf: (t) => SubjectColorHelper.colorFor(t.subject),
+          onDayTap: (tasksThatDay) => showModalBottomSheet(
+            context: context,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            builder: (_) => SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.all(16),
+                children: [
+                  for (final t in tasksThatDay)
+                    _CompactTaskTile(task: t, appState: appState),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -255,6 +376,64 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => AddTaskScreen(task: task)),
+    );
+  }
+}
+
+/// Fila compacta para la vista de semana y el detalle de un día del mes —
+/// la tarjeta completa (TaskCard) es demasiado alta para listar varios días
+/// seguidos en una sola pantalla.
+class _CompactTaskTile extends StatelessWidget {
+  final Task task;
+  final AppState appState;
+  const _CompactTaskTile({required this.task, required this.appState});
+
+  @override
+  Widget build(BuildContext context) {
+    final urgency = task.getUrgency();
+    final color = TaskColorHelper.getUrgencyColor(urgency);
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: Container(
+        width: 8,
+        height: 8,
+        margin: const EdgeInsets.only(top: 6),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: SubjectColorHelper.colorFor(task.subject),
+        ),
+      ),
+      title: Text(
+        task.title,
+        style: TextStyle(
+          decoration: (task.isCompleted && task.isSubmitted)
+              ? TextDecoration.lineThrough
+              : null,
+        ),
+      ),
+      subtitle: Text(task.subject),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          DateFormat('HH:mm').format(task.dueDate),
+          style: TextStyle(
+            fontSize: 11,
+            color: color,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      onTap: () => TaskDetailsDialog.show(
+        context,
+        task: task,
+        appState: appState,
+        isDeliveredView: false,
+      ),
     );
   }
 }

@@ -223,6 +223,60 @@ class _ConfigScreenState extends State<ConfigScreen>
 
           const SizedBox(height: 24),
 
+          // ── Tareas ───────────────────────────────────────────
+          _sectionHeader(context, 'Tareas', Icons.checklist_rtl),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                const ListTile(
+                  title: Text(
+                    'Vista de tareas pendientes',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+                ...TasksViewMode.values.map((mode) {
+                  final icons = {
+                    TasksViewMode.list: Icons.view_list_outlined,
+                    TasksViewMode.week: Icons.view_week_outlined,
+                    TasksViewMode.month: Icons.calendar_month_outlined,
+                  };
+                  final labels = {
+                    TasksViewMode.list: 'Lista',
+                    TasksViewMode.week: 'Semana',
+                    TasksViewMode.month: 'Calendario mensual',
+                  };
+                  final subtitles = {
+                    TasksViewMode.list:
+                        'Orden cronológico, la más próxima primero',
+                    TasksViewMode.week:
+                        'Los próximos 7 días, un día al lado del otro',
+                    TasksViewMode.month:
+                        'El mes completo, para ver exámenes o entregas más lejos',
+                  };
+                  final selected = themeProvider.tasksViewMode == mode;
+                  return ListTile(
+                    leading: Icon(
+                      icons[mode],
+                      color: selected ? themeProvider.primaryColor : null,
+                    ),
+                    title: Text(labels[mode]!),
+                    subtitle: Text(subtitles[mode]!),
+                    trailing: selected
+                        ? Icon(
+                            Icons.check_circle,
+                            color: themeProvider.primaryColor,
+                          )
+                        : null,
+                    onTap: () => themeProvider.setTasksViewMode(mode),
+                  );
+                }),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
           // ── Reuniones ────────────────────────────────────────
           _sectionHeader(context, 'Reuniones', Icons.event_note_outlined),
           const SizedBox(height: 8),

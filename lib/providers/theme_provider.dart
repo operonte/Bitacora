@@ -10,6 +10,11 @@ enum MascotOption { none, robot, cat }
 /// tipo grilla (día x hora), pensado para las recurrentes.
 enum MeetingsViewMode { list, schedule, month }
 
+/// Cómo se muestran las tareas pendientes: lista cronológica, agenda de la
+/// semana (un día al lado del otro, sin hora — las tareas no tienen horario
+/// fijo como las reuniones) o calendario del mes completo.
+enum TasksViewMode { list, week, month }
+
 class ThemeProvider extends ChangeNotifier {
   static final ThemeProvider _instance = ThemeProvider._internal();
   factory ThemeProvider() => _instance;
@@ -18,14 +23,17 @@ class ThemeProvider extends ChangeNotifier {
   static const _modeKey = 'app_theme_mode';
   static const _paletteKey = 'app_theme_palette';
   static const _meetingsViewKey = 'meetings_view_mode';
+  static const _tasksViewKey = 'tasks_view_mode';
 
   AppThemeMode _mode = AppThemeMode.system;
   AppColorPalette _palette = AppColorPalette.teal;
   MeetingsViewMode _meetingsViewMode = MeetingsViewMode.list;
+  TasksViewMode _tasksViewMode = TasksViewMode.list;
 
   AppThemeMode get mode => _mode;
   AppColorPalette get palette => _palette;
   MeetingsViewMode get meetingsViewMode => _meetingsViewMode;
+  TasksViewMode get tasksViewMode => _tasksViewMode;
 
   /// La mascota no se elige por separado: viene con la paleta.
   /// Verde -> robot hackercore. Rosa -> gato. El resto, sin mascota.
@@ -70,6 +78,9 @@ class ThemeProvider extends ChangeNotifier {
         prefs.getInt(_meetingsViewKey) ?? 0; // default: lista
     _meetingsViewMode = MeetingsViewMode.values[storedMeetingsView.clamp(0, 2)];
 
+    final storedTasksView = prefs.getInt(_tasksViewKey) ?? 0; // default: lista
+    _tasksViewMode = TasksViewMode.values[storedTasksView.clamp(0, 2)];
+
     notifyListeners();
   }
 
@@ -92,6 +103,13 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_meetingsViewKey, mode.index);
+  }
+
+  Future<void> setTasksViewMode(TasksViewMode mode) async {
+    _tasksViewMode = mode;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_tasksViewKey, mode.index);
   }
 
   String get modeLabel {

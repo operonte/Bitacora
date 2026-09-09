@@ -10,6 +10,7 @@ import '../providers/theme_provider.dart';
 import '../utils/input_sanitizer.dart';
 import '../services/meeting_service.dart';
 import '../widgets/subject_group_list.dart';
+import '../widgets/month_calendar_grid.dart';
 import 'add_meeting_screen.dart';
 import '../colors.dart';
 import 'config_screen.dart';
@@ -552,186 +553,22 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
       }
     }
 
-    // La grilla arranca en el lunes de la semana del día 1, para que las
-    // columnas queden alineadas con el encabezado Lun..Dom. Anclado en UTC
-    // por el mismo motivo que [_occurrencesInMonth]: sumar/restar Duration
-    // sobre una fecha local puede correrse un día si hay un cambio de huso
-    // horario en el medio.
-    final gridStartUtc = DateTime.utc(
-      monthStart.year,
-      monthStart.month,
-      1,
-    ).subtract(Duration(days: monthStart.weekday - 1));
-    final monthEndUtc = DateTime.utc(
-      monthEnd.year,
-      monthEnd.month,
-      monthEnd.day,
-    );
-    final totalCells =
-        ((monthEndUtc.difference(gridStartUtc).inDays + 1) / 7).ceil() * 7;
-
-    const months = [
-      'enero',
-      'febrero',
-      'marzo',
-      'abril',
-      'mayo',
-      'junio',
-      'julio',
-      'agosto',
-      'septiembre',
-      'octubre',
-      'noviembre',
-      'diciembre',
-    ];
-
     final header = _buildCareerFilter();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
         if (header != null) header,
-        Card(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.chevron_left),
-                      onPressed: () => _changeMonth(-1),
-                    ),
-                    Expanded(
-                      child: Text(
-                        '${months[_monthCursor.month - 1]} ${_monthCursor.year}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.chevron_right),
-                      onPressed: () => _changeMonth(1),
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    for (final label in _weekdayShort)
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            label,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 11,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                for (var week = 0; week < totalCells ~/ 7; week++)
-                  Row(
-                    children: [
-                      for (var wd = 0; wd < 7; wd++)
-                        Expanded(
-                          child: _buildMonthDayCell(
-                            _localDate(
-                              gridStartUtc.add(Duration(days: week * 7 + wd)),
-                            ),
-                            monthStart,
-                            byDay,
-                          ),
-                        ),
-                    ],
-                  ),
-              ],
-            ),
-          ),
+        MonthCalendarGrid<Meeting>(
+          monthCursor: _monthCursor,
+          onMonthDelta: _changeMonth,
+          itemsByDay: byDay,
+          colorOf: (m) => _getTypeColor(m.effectiveType),
+          onDayTap: (meetingsThatDay) => _showMeetingsAtSlot(meetingsThatDay),
         ),
       ],
     );
   }
-
-  Widget _buildMonthDayCell(
-    DateTime day,
-    DateTime monthStart,
-    Map<DateTime, List<Meeting>> byDay,
-  ) {
-    final inMonth = day.month == monthStart.month;
-    final isToday = _isSameDay(day, DateTime.now());
-    final here = byDay[day] ?? const <Meeting>[];
-
-    return AspectRatio(
-      aspectRatio: 1,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: here.isEmpty ? null : () => _showMeetingsAtSlot(here),
-        child: Container(
-          margin: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            color: isToday
-                ? Theme.of(context).primaryColor.withValues(alpha: 0.12)
-                : null,
-            border: isToday
-                ? Border.all(color: Theme.of(context).primaryColor)
-                : null,
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '${day.day}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
-                  color: inMonth
-                      ? (isToday ? Theme.of(context).primaryColor : null)
-                      : AppColors.textSecondary.withValues(alpha: 0.4),
-                ),
-              ),
-              if (here.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 2,
-                  children: [
-                    for (final m in here.take(3))
-                      Container(
-                        width: 5,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _getTypeColor(m.effectiveType),
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  bool _isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
-
-  /// Convierte una fecha UTC (usada solo para la aritmética de días) a un
-  /// DateTime local a medianoche, que es lo que usan [byDay] y el resto de
-  /// la pantalla como clave.
-  DateTime _localDate(DateTime utc) => DateTime(utc.year, utc.month, utc.day);
 
   Widget _buildWeeklyGrid(
     List<int> hours,
