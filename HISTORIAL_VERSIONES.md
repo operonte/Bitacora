@@ -43,7 +43,8 @@ hace falta compilar nada.
 
 | Versión | Commit | Fecha | Qué cambió |
 |---|---|---|---|
-| **2.20.0** | `6a3b264` | 2026-09-09 | Ficha del alumno (docente): tareas con estado/nota + asistencia, tocando una fila del Panel de riesgo. **Sin probar en la app corriendo** — solo compilación y tests. |
+| **2.21.0** | `fa79fde` | 2026-09-09 | Entrega visible al docente (RLS + permisos de Drive reales via `setLinkViewable`/`revokeLinkViewable`) y "guardar copia" propia de un archivo compartido, en ambos sentidos (alumno↔docente). **Sin probar en la app corriendo** — solo compilación y tests. |
+| 2.20.0 | `6a3b264` | 2026-09-09 | Ficha del alumno (docente): tareas con estado/nota + asistencia, tocando una fila del Panel de riesgo. **Sin probar en la app corriendo** — solo compilación y tests. |
 | 2.19.0 | `771068e` | 2026-09-08 | Vista de semana y calendario mensual para tareas pendientes (mismo tratamiento que reuniones). **Sin probar en la app corriendo** — solo compilación y tests. |
 | 2.18.0 | `3648b97` | 2026-09-08 | Pantalla "Hoy" (panel de inicio por rol, docente ve sus herramientas de entrada). Cambio estructural, no solo funcional — investigado contra el rediseño de Google Classroom de julio 2026. **Sin probar en la app corriendo** — solo compilación y tests. |
 | 2.17.0 | `a1827f8` | 2026-09-08 | Recordatorio configurable por tarea, búsqueda global (tareas+reuniones+archivos). **Sin probar en la app corriendo** — solo compilación y tests. |
