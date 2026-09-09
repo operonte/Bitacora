@@ -449,6 +449,7 @@ class NotificationService {
     required String subject,
     String? author,
     required bool isNew,
+    bool isOfficial = false,
   }) async {
     if (!await isEnabled) return;
 
@@ -456,14 +457,40 @@ class NotificationService {
         ? 'Alguien'
         : author.trim();
 
+    final tipo = isOfficial ? 'tarea oficial' : 'tarea compartida';
     await _showNow(
       id:
           _instantIdBase +
           DateTime.now().millisecondsSinceEpoch.remainder(100000),
       title: isNew
-          ? '📌 Nueva tarea compartida'
-          : '✏️ Tarea compartida editada',
+          ? '${isOfficial ? '📋' : '📌'} Nueva $tipo'
+          : '✏️ ${tipo[0].toUpperCase()}${tipo.substring(1)} editada',
       body: '$quien ${isNew ? 'agregó' : 'editó'} "$title" — $subject',
+    );
+  }
+
+  /// Aviso de que el docente dejó (o cambió) una nota o comentario en mi
+  /// progreso de una tarea compartida. Igual que [notifyAnnouncement] y
+  /// [notifySharedTaskChange]: solo mientras la app está abierta, nace de
+  /// Realtime, no de un push del servidor.
+  Future<void> notifyGrade({
+    required String taskTitle,
+    String? grade,
+    String? comment,
+  }) async {
+    if (!await isEnabled) return;
+
+    final body = grade != null && grade.isNotEmpty
+        ? 'Nota: $grade${comment != null && comment.isNotEmpty ? ' — $comment' : ''}'
+        : (comment ?? '');
+    if (body.isEmpty) return;
+
+    await _showNow(
+      id:
+          _instantIdBase +
+          DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      title: '📝 Novedad en "$taskTitle"',
+      body: body,
     );
   }
 

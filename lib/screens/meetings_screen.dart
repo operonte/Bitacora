@@ -31,6 +31,11 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
   /// pierdas una reunión por un filtro que dejaste puesto hace días.
   String? _careerFilter;
 
+  /// Primer día del mes que muestra la vista de calendario mensual. Arranca
+  /// en el mes actual; no se persiste — cada vez que se entra a la pantalla
+  /// vuelve al mes de hoy, para no encontrarla "perdida" en un mes viejo.
+  DateTime _monthCursor = DateTime(DateTime.now().year, DateTime.now().month);
+
   @override
   void initState() {
     super.initState();
@@ -228,6 +233,8 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                   onRefresh: () => _meetingService.syncFromSupabase(),
                   child: viewMode == MeetingsViewMode.schedule
                       ? _buildScheduleView(meetings)
+                      : viewMode == MeetingsViewMode.month
+                      ? _buildMonthView(meetings)
                       : SubjectGroupList<Meeting>(
                           items: meetings,
                           subjectOf: (m) => m.subject,
@@ -479,6 +486,252 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
       ],
     );
   }
+
+  /// En qué fechas de calendario cae [m] dentro de [monthStart]..[monthEnd]
+  /// (un mes completo, ambos límites inclusive). Las puntuales dan a lo sumo
+  /// una fecha; las semanales dan una por cada semana del mes que coincida
+  /// con su día, sin retroceder antes de que la reunión existiera.
+  ///
+  /// La aritmética de "sumar 7 días" se ancla en UTC (sin huso horario) por
+  /// el mismo motivo que [Meeting._nextWeek]: sumar Duration(days: 7) sobre
+  /// una fecha local directamente puede correrse un día si de por medio hay
+  /// un cambio de horario.
+  List<DateTime> _occurrencesInMonth(
+    Meeting m,
+    DateTime monthStart,
+    DateTime monthEnd,
+  ) {
+    final base = DateTime(
+      m.meetingDate.year,
+      m.meetingDate.month,
+      m.meetingDate.day,
+    );
+    if (!m.isRecurrent) {
+      if (!base.isBefore(monthStart) && !base.isAfter(monthEnd)) return [base];
+      return const [];
+    }
+
+    final monthStartUtc = DateTime.utc(
+      monthStart.year,
+      monthStart.month,
+      monthStart.day,
+    );
+    final monthEndUtc = DateTime.utc(
+      monthEnd.year,
+      monthEnd.month,
+      monthEnd.day,
+    );
+    var cursor = DateTime.utc(base.year, base.month, base.day);
+    while (cursor.isBefore(monthStartUtc)) {
+      cursor = cursor.add(const Duration(days: 7));
+    }
+    final result = <DateTime>[];
+    while (!cursor.isAfter(monthEndUtc)) {
+      result.add(DateTime(cursor.year, cursor.month, cursor.day));
+      cursor = cursor.add(const Duration(days: 7));
+    }
+    return result;
+  }
+
+  void _changeMonth(int delta) {
+    setState(() {
+      _monthCursor = DateTime(_monthCursor.year, _monthCursor.month + delta);
+    });
+  }
+
+  Widget _buildMonthView(List<Meeting> meetings) {
+    final monthStart = DateTime(_monthCursor.year, _monthCursor.month, 1);
+    final monthEnd = DateTime(_monthCursor.year, _monthCursor.month + 1, 0);
+
+    // Fecha -> reuniones que caen ese día, entre las puntuales y cada
+    // ocurrencia de las semanales dentro del mes visible.
+    final byDay = <DateTime, List<Meeting>>{};
+    for (final m in meetings) {
+      for (final day in _occurrencesInMonth(m, monthStart, monthEnd)) {
+        byDay.putIfAbsent(day, () => []).add(m);
+      }
+    }
+
+    // La grilla arranca en el lunes de la semana del día 1, para que las
+    // columnas queden alineadas con el encabezado Lun..Dom. Anclado en UTC
+    // por el mismo motivo que [_occurrencesInMonth]: sumar/restar Duration
+    // sobre una fecha local puede correrse un día si hay un cambio de huso
+    // horario en el medio.
+    final gridStartUtc = DateTime.utc(
+      monthStart.year,
+      monthStart.month,
+      1,
+    ).subtract(Duration(days: monthStart.weekday - 1));
+    final monthEndUtc = DateTime.utc(
+      monthEnd.year,
+      monthEnd.month,
+      monthEnd.day,
+    );
+    final totalCells =
+        ((monthEndUtc.difference(gridStartUtc).inDays + 1) / 7).ceil() * 7;
+
+    const months = [
+      'enero',
+      'febrero',
+      'marzo',
+      'abril',
+      'mayo',
+      'junio',
+      'julio',
+      'agosto',
+      'septiembre',
+      'octubre',
+      'noviembre',
+      'diciembre',
+    ];
+
+    final header = _buildCareerFilter();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        if (header != null) header,
+        Card(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left),
+                      onPressed: () => _changeMonth(-1),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '${months[_monthCursor.month - 1]} ${_monthCursor.year}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right),
+                      onPressed: () => _changeMonth(1),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    for (final label in _weekdayShort)
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            label,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                for (var week = 0; week < totalCells ~/ 7; week++)
+                  Row(
+                    children: [
+                      for (var wd = 0; wd < 7; wd++)
+                        Expanded(
+                          child: _buildMonthDayCell(
+                            _localDate(
+                              gridStartUtc.add(Duration(days: week * 7 + wd)),
+                            ),
+                            monthStart,
+                            byDay,
+                          ),
+                        ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMonthDayCell(
+    DateTime day,
+    DateTime monthStart,
+    Map<DateTime, List<Meeting>> byDay,
+  ) {
+    final inMonth = day.month == monthStart.month;
+    final isToday = _isSameDay(day, DateTime.now());
+    final here = byDay[day] ?? const <Meeting>[];
+
+    return AspectRatio(
+      aspectRatio: 1,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: here.isEmpty ? null : () => _showMeetingsAtSlot(here),
+        child: Container(
+          margin: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            color: isToday
+                ? Theme.of(context).primaryColor.withValues(alpha: 0.12)
+                : null,
+            border: isToday
+                ? Border.all(color: Theme.of(context).primaryColor)
+                : null,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '${day.day}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                  color: inMonth
+                      ? (isToday ? Theme.of(context).primaryColor : null)
+                      : AppColors.textSecondary.withValues(alpha: 0.4),
+                ),
+              ),
+              if (here.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 2,
+                  children: [
+                    for (final m in here.take(3))
+                      Container(
+                        width: 5,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _getTypeColor(m.effectiveType),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Convierte una fecha UTC (usada solo para la aritmética de días) a un
+  /// DateTime local a medianoche, que es lo que usan [byDay] y el resto de
+  /// la pantalla como clave.
+  DateTime _localDate(DateTime utc) => DateTime(utc.year, utc.month, utc.day);
 
   Widget _buildWeeklyGrid(
     List<int> hours,

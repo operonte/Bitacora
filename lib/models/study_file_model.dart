@@ -12,8 +12,7 @@ class StudyFileCategory {
 
   /// Normaliza lo que venga de Supabase o de la caché: cualquier valor
   /// desconocido cae en [trabajo], que es el comportamiento histórico.
-  static String parse(Object? raw) =>
-      raw?.toString() == guia ? guia : trabajo;
+  static String parse(Object? raw) => raw?.toString() == guia ? guia : trabajo;
 }
 
 /// Un archivo de estudio: un archivo subido a Google Drive o un enlace
@@ -43,6 +42,12 @@ class StudyFile {
   /// igual que en tareas y reuniones.
   final bool isShared;
 
+  /// Tarea a la que este archivo quedó adjunto, si el usuario lo vinculó
+  /// desde el detalle de una tarea. No cambia dónde vive el archivo ni quién
+  /// lo ve — sigue siendo el mismo de "Mis archivos", solo que además
+  /// aparece ahí.
+  final String? taskId;
+
   final DateTime createdAt;
 
   StudyFile({
@@ -59,6 +64,7 @@ class StudyFile {
     this.externalUrl,
     this.careerId,
     this.isShared = false,
+    this.taskId,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -83,6 +89,7 @@ class StudyFile {
       'external_url': externalUrl,
       'career_id': careerId,
       'is_shared': isShared,
+      'task_id': taskId,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -106,6 +113,7 @@ class StudyFile {
       externalUrl: _nullIfEmpty(map['external_url']),
       careerId: _nullIfEmpty(map['career_id']),
       isShared: map['is_shared'] == true,
+      taskId: _nullIfEmpty(map['task_id']),
       createdAt: _parseDate(map['created_at']),
     );
   }
@@ -124,6 +132,11 @@ class StudyFile {
     String? externalUrl,
     String? careerId,
     bool? isShared,
+    String? taskId,
+    // Para desadjuntar: taskId: null no distingue "no cambiar" de "borrar",
+    // así que hace falta un flag aparte para el único campo que necesita
+    // volver a null explícitamente.
+    bool clearTaskId = false,
     DateTime? createdAt,
   }) {
     return StudyFile(
@@ -140,6 +153,7 @@ class StudyFile {
       externalUrl: externalUrl ?? this.externalUrl,
       careerId: careerId ?? this.careerId,
       isShared: isShared ?? this.isShared,
+      taskId: clearTaskId ? null : (taskId ?? this.taskId),
       createdAt: createdAt ?? this.createdAt,
     );
   }

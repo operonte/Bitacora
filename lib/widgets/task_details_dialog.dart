@@ -4,10 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/task_model.dart';
+import '../models/study_file_model.dart';
 import '../providers/app_state.dart';
 import '../services/supabase_db_service.dart';
+import '../services/study_file_service.dart';
 import '../utils/error_handler.dart';
+import '../utils/input_sanitizer.dart';
 
 /// Comentarios de feedback guardados por el docente para no reescribir lo
 /// mismo en cada entrega ("falta la bibliografía", "revisa el punto 3").
@@ -39,7 +43,8 @@ class _CommentTemplates {
 
   static Future<void> remove(String text) async {
     final prefs = await SharedPreferences.getInstance();
-    final current = await load()..remove(text);
+    final current = await load()
+      ..remove(text);
     await prefs.setString(_key, jsonEncode(current));
   }
 }
@@ -66,7 +71,11 @@ class TaskDetailsDialog {
       bool submitted,
       void Function(void Function()) setDialogState,
     ) async {
-      final success = await appState.updateTaskStatus(task.id!, completed, submitted);
+      final success = await appState.updateTaskStatus(
+        task.id!,
+        completed,
+        submitted,
+      );
       if (!context.mounted) return;
       if (!success) {
         ErrorHandler.showErrorSnackBar(
@@ -117,11 +126,19 @@ class TaskDetailsDialog {
                 if ((task.grade?.isNotEmpty ?? false) ||
                     (task.teacherComment?.isNotEmpty ?? false)) ...[
                   const SizedBox(height: 12),
-                  const Text('Del docente:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  if (task.grade?.isNotEmpty ?? false) Text('Nota: ${task.grade}'),
+                  const Text(
+                    'Del docente:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  if (task.grade?.isNotEmpty ?? false)
+                    Text('Nota: ${task.grade}'),
                   if (task.teacherComment?.isNotEmpty ?? false)
-                    Text('"${task.teacherComment}"', style: const TextStyle(fontStyle: FontStyle.italic)),
+                    Text(
+                      '"${task.teacherComment}"',
+                      style: const TextStyle(fontStyle: FontStyle.italic),
+                    ),
                 ],
+                if (task.id != null) _AttachedFilesSection(task: task),
                 const SizedBox(height: 16),
                 const Text(
                   'Estado:',
@@ -195,8 +212,8 @@ class TaskDetailsDialog {
         builder: (ctx, setDialogState) {
           var future = SupabaseDbService().getTaskSubmissionStatus(task.id!);
           void refresh() => setDialogState(() {
-                future = SupabaseDbService().getTaskSubmissionStatus(task.id!);
-              });
+            future = SupabaseDbService().getTaskSubmissionStatus(task.id!);
+          });
 
           return AlertDialog(
             title: Text('Progreso — ${task.title}'),
@@ -214,20 +231,26 @@ class TaskDetailsDialog {
                   if (snapshot.hasError) {
                     return Padding(
                       padding: const EdgeInsets.all(8),
-                      child: Text('No se pudo cargar el progreso: ${snapshot.error}'),
+                      child: Text(
+                        'No se pudo cargar el progreso: ${snapshot.error}',
+                      ),
                     );
                   }
                   final rows = snapshot.data ?? [];
                   if (rows.isEmpty) {
                     return const Padding(
                       padding: EdgeInsets.all(8),
-                      child: Text('Todavía nadie más pertenece a esta carrera.'),
+                      child: Text(
+                        'Todavía nadie más pertenece a esta carrera.',
+                      ),
                     );
                   }
                   return ListView(
                     shrinkWrap: true,
                     children: rows
-                        .map((r) => _submissionTile(context, task.id!, r, refresh))
+                        .map(
+                          (r) => _submissionTile(context, task.id!, r, refresh),
+                        )
                         .toList(),
                   );
                 },
@@ -260,7 +283,8 @@ class TaskDetailsDialog {
     final studentUserId = row['user_id'].toString();
     final comment = (row['teacher_comment'] as String?)?.trim();
     final grade = (row['grade'] as String?)?.trim();
-    final hasFeedback = (comment?.isNotEmpty ?? false) || (grade?.isNotEmpty ?? false);
+    final hasFeedback =
+        (comment?.isNotEmpty ?? false) || (grade?.isNotEmpty ?? false);
 
     late final IconData icon;
     late final Color color;
@@ -291,10 +315,15 @@ class TaskDetailsDialog {
       title: Text(name),
       subtitle: Text(
         subtitleParts.join(' · '),
-        style: hasFeedback ? const TextStyle(fontStyle: FontStyle.italic) : null,
+        style: hasFeedback
+            ? const TextStyle(fontStyle: FontStyle.italic)
+            : null,
       ),
       trailing: IconButton(
-        icon: Icon(hasFeedback ? Icons.comment : Icons.comment_outlined, size: 18),
+        icon: Icon(
+          hasFeedback ? Icons.comment : Icons.comment_outlined,
+          size: 18,
+        ),
         tooltip: 'Nota y comentario',
         onPressed: () => _editCommentDialog(
           context,
@@ -356,20 +385,29 @@ class TaskDetailsDialog {
                 ),
                 if (templates.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  const Text('Plantillas', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Plantillas',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 6),
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
                     children: templates
-                        .map((t) => InputChip(
-                              label: Text(t, overflow: TextOverflow.ellipsis),
-                              onPressed: () => controller.text = t,
-                              onDeleted: () async {
-                                await _CommentTemplates.remove(t);
-                                setLocal(() => templates = templates.where((x) => x != t).toList());
-                              },
-                            ))
+                        .map(
+                          (t) => InputChip(
+                            label: Text(t, overflow: TextOverflow.ellipsis),
+                            onPressed: () => controller.text = t,
+                            onDeleted: () async {
+                              await _CommentTemplates.remove(t);
+                              setLocal(
+                                () => templates = templates
+                                    .where((x) => x != t)
+                                    .toList(),
+                              );
+                            },
+                          ),
+                        )
                         .toList(),
                   ),
                 ],
@@ -395,8 +433,16 @@ class TaskDetailsDialog {
               onPressed: () async {
                 try {
                   final service = SupabaseDbService();
-                  await service.setTaskTeacherComment(taskId, studentUserId, controller.text);
-                  await service.setTaskGrade(taskId, studentUserId, gradeController.text);
+                  await service.setTaskTeacherComment(
+                    taskId,
+                    studentUserId,
+                    controller.text,
+                  );
+                  await service.setTaskGrade(
+                    taskId,
+                    studentUserId,
+                    gradeController.text,
+                  );
                   if (ctx.mounted) Navigator.pop(ctx);
                   onSaved();
                 } catch (e) {
@@ -462,7 +508,10 @@ class TaskDetailsDialog {
                 if (!success) {
                   ErrorHandler.showErrorSnackBar(
                     context,
-                    AppException(type: AppErrorType.unknown, message: appState.error),
+                    AppException(
+                      type: AppErrorType.unknown,
+                      message: appState.error,
+                    ),
                   );
                   return;
                 }
@@ -480,6 +529,141 @@ class TaskDetailsDialog {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Archivos de "Mis archivos" adjuntados a esta tarea. Adjuntar no sube nada
+/// nuevo — enlaza un archivo que ya subiste por su flujo normal, así no hay
+/// que reimplementar la subida a Drive acá adentro.
+class _AttachedFilesSection extends StatefulWidget {
+  final Task task;
+  const _AttachedFilesSection({required this.task});
+
+  @override
+  State<_AttachedFilesSection> createState() => _AttachedFilesSectionState();
+}
+
+class _AttachedFilesSectionState extends State<_AttachedFilesSection> {
+  final _service = StudyFileService();
+
+  List<StudyFile> get _attached => _service
+      .getFiles(category: StudyFileCategory.trabajo)
+      .where((f) => f.taskId == widget.task.id)
+      .toList();
+
+  Future<void> _attach() async {
+    final candidatos = _service
+        .getFiles(category: StudyFileCategory.trabajo)
+        .where(
+          (f) => f.subject == widget.task.subject && f.taskId != widget.task.id,
+        )
+        .toList();
+
+    if (candidatos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No tenés archivos de "${widget.task.subject}" en Mis archivos. Subilo ahí primero y después volvé a adjuntarlo acá.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final elegido = await showDialog<StudyFile>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Adjuntar archivo'),
+        children: candidatos
+            .map(
+              (f) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, f),
+                child: Row(
+                  children: [
+                    Icon(f.fileIcon, color: f.fileColor, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(f.name)),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+    if (elegido == null) return;
+
+    await _service.saveFile(elegido.copyWith(taskId: widget.task.id));
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _detach(StudyFile file) async {
+    await _service.saveFile(file.copyWith(clearTaskId: true));
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _open(StudyFile file) async {
+    final url = file.openUrl;
+    if (url.isEmpty || !InputSanitizer.isSafeExternalUrl(url)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este archivo no tiene un enlace válido.'),
+        ),
+      );
+      return;
+    }
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo abrir el archivo: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final attached = _attached;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const Text(
+              'Archivos:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: _attach,
+              icon: const Icon(Icons.attach_file, size: 16),
+              label: const Text('Adjuntar'),
+            ),
+          ],
+        ),
+        if (attached.isEmpty)
+          const Text(
+            'Ninguno todavía.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          )
+        else
+          for (final f in attached)
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(f.fileIcon, color: f.fileColor, size: 20),
+              title: Text(f.name, style: const TextStyle(fontSize: 13)),
+              onTap: () => _open(f),
+              trailing: IconButton(
+                icon: const Icon(Icons.close, size: 16),
+                tooltip: 'Quitar',
+                onPressed: () => _detach(f),
+              ),
+            ),
+      ],
     );
   }
 }

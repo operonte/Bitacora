@@ -240,16 +240,20 @@ class _ConfigScreenState extends State<ConfigScreen>
                     MeetingsViewMode.list: Icons.view_list_outlined,
                     MeetingsViewMode.schedule:
                         Icons.calendar_view_week_outlined,
+                    MeetingsViewMode.month: Icons.calendar_month_outlined,
                   };
                   final labels = {
                     MeetingsViewMode.list: 'Lista',
                     MeetingsViewMode.schedule: 'Horario semanal',
+                    MeetingsViewMode.month: 'Calendario mensual',
                   };
                   final subtitles = {
                     MeetingsViewMode.list:
                         'Orden cronológico, la más próxima primero',
                     MeetingsViewMode.schedule:
                         'Grilla de día y hora, como un horario de clases',
+                    MeetingsViewMode.month:
+                        'El mes completo, para ver exámenes o entregas más lejos',
                   };
                   final selected = themeProvider.meetingsViewMode == mode;
                   return ListTile(

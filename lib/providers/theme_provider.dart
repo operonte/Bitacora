@@ -8,7 +8,7 @@ enum MascotOption { none, robot, cat }
 
 /// Cómo se muestran las reuniones: lista cronológica u horario semanal
 /// tipo grilla (día x hora), pensado para las recurrentes.
-enum MeetingsViewMode { list, schedule }
+enum MeetingsViewMode { list, schedule, month }
 
 class ThemeProvider extends ChangeNotifier {
   static final ThemeProvider _instance = ThemeProvider._internal();
@@ -66,8 +66,9 @@ class ThemeProvider extends ChangeNotifier {
     final storedPalette = prefs.getInt(_paletteKey) ?? 0; // default: teal
     _palette = AppColorPalette.values[storedPalette.clamp(0, 2)];
 
-    final storedMeetingsView = prefs.getInt(_meetingsViewKey) ?? 0; // default: lista
-    _meetingsViewMode = MeetingsViewMode.values[storedMeetingsView.clamp(0, 1)];
+    final storedMeetingsView =
+        prefs.getInt(_meetingsViewKey) ?? 0; // default: lista
+    _meetingsViewMode = MeetingsViewMode.values[storedMeetingsView.clamp(0, 2)];
 
     notifyListeners();
   }
