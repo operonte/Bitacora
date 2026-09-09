@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'screens/home_screen.dart';
 import 'screens/pending_tasks_screen.dart';
 import 'screens/overdue_tasks_screen.dart';
 import 'screens/delivered_tasks_screen.dart';
@@ -86,8 +87,9 @@ Future<void> main() async {
       // Con el plugin ya inicializado, se le pasan las reuniones que están en
       // caché para que el resumen de las 8:00 no espere a la primera
       // sincronización con la red. Las tareas las empuja AppState al cargarlas.
-      await notificationService
-          .syncAllMeetingReminders(meetingService.getMeetings());
+      await notificationService.syncAllMeetingReminders(
+        meetingService.getMeetings(),
+      );
     }
 
     runApp(
@@ -97,7 +99,9 @@ Future<void> main() async {
           ChangeNotifierProvider<CareerService>.value(value: careerService),
           ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
           ChangeNotifierProvider<MeetingService>.value(value: meetingService),
-          ChangeNotifierProvider<StudyFileService>.value(value: studyFileService),
+          ChangeNotifierProvider<StudyFileService>.value(
+            value: studyFileService,
+          ),
         ],
         child: const BitacoraApp(),
       ),
@@ -164,17 +168,46 @@ class BitacoraApp extends StatelessWidget {
     final base = brightness == Brightness.light
         ? ThemeData.light().textTheme
         : ThemeData.dark().textTheme;
-    final onColor =
-        brightness == Brightness.light ? AppColors.onSurface : AppColors.darkOnSurface;
+    final onColor = brightness == Brightness.light
+        ? AppColors.onSurface
+        : AppColors.darkOnSurface;
 
     return GoogleFonts.atkinsonHyperlegibleTextTheme(base).copyWith(
-      displayLarge: GoogleFonts.crimsonPro(textStyle: base.displayLarge, color: onColor, fontWeight: FontWeight.w700),
-      displayMedium: GoogleFonts.crimsonPro(textStyle: base.displayMedium, color: onColor, fontWeight: FontWeight.w700),
-      displaySmall: GoogleFonts.crimsonPro(textStyle: base.displaySmall, color: onColor, fontWeight: FontWeight.w700),
-      headlineLarge: GoogleFonts.crimsonPro(textStyle: base.headlineLarge, color: onColor, fontWeight: FontWeight.w700),
-      headlineMedium: GoogleFonts.crimsonPro(textStyle: base.headlineMedium, color: onColor, fontWeight: FontWeight.w700),
-      headlineSmall: GoogleFonts.crimsonPro(textStyle: base.headlineSmall, color: onColor, fontWeight: FontWeight.w600),
-      titleLarge: GoogleFonts.crimsonPro(textStyle: base.titleLarge, color: onColor, fontWeight: FontWeight.w600),
+      displayLarge: GoogleFonts.crimsonPro(
+        textStyle: base.displayLarge,
+        color: onColor,
+        fontWeight: FontWeight.w700,
+      ),
+      displayMedium: GoogleFonts.crimsonPro(
+        textStyle: base.displayMedium,
+        color: onColor,
+        fontWeight: FontWeight.w700,
+      ),
+      displaySmall: GoogleFonts.crimsonPro(
+        textStyle: base.displaySmall,
+        color: onColor,
+        fontWeight: FontWeight.w700,
+      ),
+      headlineLarge: GoogleFonts.crimsonPro(
+        textStyle: base.headlineLarge,
+        color: onColor,
+        fontWeight: FontWeight.w700,
+      ),
+      headlineMedium: GoogleFonts.crimsonPro(
+        textStyle: base.headlineMedium,
+        color: onColor,
+        fontWeight: FontWeight.w700,
+      ),
+      headlineSmall: GoogleFonts.crimsonPro(
+        textStyle: base.headlineSmall,
+        color: onColor,
+        fontWeight: FontWeight.w600,
+      ),
+      titleLarge: GoogleFonts.crimsonPro(
+        textStyle: base.titleLarge,
+        color: onColor,
+        fontWeight: FontWeight.w600,
+      ),
     );
   }
 
@@ -215,9 +248,7 @@ class BitacoraApp extends StatelessWidget {
         shadowColor: primary.withValues(alpha: 0.12),
         surfaceTintColor: Colors.transparent,
         color: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         margin: EdgeInsets.zero,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -225,9 +256,10 @@ class BitacoraApp extends StatelessWidget {
           backgroundColor: primary,
           foregroundColor: Colors.white,
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle:
-              const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
@@ -249,12 +281,17 @@ class BitacoraApp extends StatelessWidget {
           borderRadius: const BorderRadius.all(Radius.circular(12)),
           borderSide: BorderSide(color: primary, width: 2),
         ),
-        labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+        labelStyle: const TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 14,
+        ),
         hintStyle: const TextStyle(color: AppColors.textHint, fontSize: 14),
         filled: true,
         fillColor: Colors.white,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: Colors.white,
@@ -262,14 +299,15 @@ class BitacoraApp extends StatelessWidget {
         unselectedItemColor: AppColors.textSecondary,
         elevation: 12,
         type: BottomNavigationBarType.fixed,
-        selectedLabelStyle:
-            const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
+        selectedLabelStyle: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 11,
+        ),
         unselectedLabelStyle: const TextStyle(fontSize: 11),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: primary.withValues(alpha: 0.08),
-        labelStyle: TextStyle(
-            color: primary, fontWeight: FontWeight.w600),
+        labelStyle: TextStyle(color: primary, fontWeight: FontWeight.w600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
     );
@@ -312,9 +350,7 @@ class BitacoraApp extends StatelessWidget {
         shadowColor: Colors.black.withValues(alpha: 0.4),
         surfaceTintColor: Colors.transparent,
         color: AppColors.darkCard,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         margin: EdgeInsets.zero,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -322,9 +358,10 @@ class BitacoraApp extends StatelessWidget {
           backgroundColor: provider.primaryColor,
           foregroundColor: Colors.white,
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle:
-              const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
@@ -346,14 +383,19 @@ class BitacoraApp extends StatelessWidget {
           borderRadius: const BorderRadius.all(Radius.circular(12)),
           borderSide: BorderSide(color: primaryLight, width: 2),
         ),
-        labelStyle: const TextStyle(color: AppColors.darkTextSecondary, fontSize: 14),
+        labelStyle: const TextStyle(
+          color: AppColors.darkTextSecondary,
+          fontSize: 14,
+        ),
         hintStyle: const TextStyle(color: AppColors.darkTextHint, fontSize: 14),
         prefixIconColor: AppColors.darkTextSecondary,
         suffixIconColor: AppColors.darkTextSecondary,
         filled: true,
         fillColor: AppColors.darkSurface,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: AppColors.darkSurface,
@@ -361,17 +403,23 @@ class BitacoraApp extends StatelessWidget {
         unselectedItemColor: AppColors.darkTextSecondary,
         elevation: 12,
         type: BottomNavigationBarType.fixed,
-        selectedLabelStyle:
-            const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
+        selectedLabelStyle: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 11,
+        ),
         unselectedLabelStyle: const TextStyle(fontSize: 11),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.darkSurface,
         selectedColor: primaryLight.withValues(alpha: 0.25),
         labelStyle: const TextStyle(
-            color: AppColors.darkOnSurface, fontWeight: FontWeight.w600),
+          color: AppColors.darkOnSurface,
+          fontWeight: FontWeight.w600,
+        ),
         secondaryLabelStyle: TextStyle(
-            color: primaryLight, fontWeight: FontWeight.w700),
+          color: primaryLight,
+          fontWeight: FontWeight.w700,
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: const BorderSide(color: AppColors.darkBorder),
@@ -408,9 +456,7 @@ class _AppEntryState extends State<_AppEntry> {
   @override
   Widget build(BuildContext context) {
     if (_onboardingDone == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (!_onboardingDone!) {
@@ -438,6 +484,7 @@ class _MainScreenState extends State<MainScreen> {
   late final Stream<User?> _authStream;
   late final PageController _pageController;
   final List<Widget> _screens = const [
+    HomeScreen(),
     PendingTasksScreen(),
     OverdueTasksScreen(),
     DeliveredTasksScreen(),
@@ -468,8 +515,7 @@ class _MainScreenState extends State<MainScreen> {
           return const Scaffold(
             body: Center(
               child: CircularProgressIndicator(
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(AppColors.primary),
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
               ),
             ),
           );
@@ -533,6 +579,11 @@ class _MainScreenState extends State<MainScreen> {
                           );
                         },
                         items: const [
+                          BottomNavigationBarItem(
+                            icon: Icon(Icons.wb_sunny_outlined),
+                            activeIcon: Icon(Icons.wb_sunny),
+                            label: 'Hoy',
+                          ),
                           BottomNavigationBarItem(
                             icon: Icon(Icons.assignment_outlined),
                             activeIcon: Icon(Icons.assignment),
