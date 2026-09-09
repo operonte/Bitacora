@@ -577,7 +577,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                     ),
                     title: const Text('Tarea oficial'),
                     subtitle: const Text(
-                      'Solo vos vas a poder editarla o borrarla',
+                      'Solo tú vas a poder editarla o borrarla',
                       style: TextStyle(fontSize: 12),
                     ),
                     onChanged: (v) => setState(() => _isOfficial = v),

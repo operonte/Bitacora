@@ -158,7 +158,7 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
             children: [
               Text(
                 _subjectsError ??
-                    'Todavía no marcaste qué asignaturas impartís en '
+                    'Todavía no marcaste qué asignaturas impartes en '
                         '${widget.career.name} — sin eso no hay a quién '
                         'asignarle una tarea.',
                 textAlign: TextAlign.center,
@@ -222,7 +222,7 @@ class _AssignTaskScreenState extends State<AssignTaskScreen> {
                 labelText: 'Asignatura',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.book),
-                helperText: 'Solo las que impartís en esta carrera',
+                helperText: 'Solo las que impartes en esta carrera',
               ),
               items: subjects
                   .map(

@@ -123,7 +123,7 @@ class _CareerMembersDirectoryScreenState
             ? const Icon(Icons.person, color: AppColors.primary)
             : null,
       ),
-      title: Text(esYo ? '$name (vos)' : name),
+      title: Text(esYo ? '$name (tú)' : name),
       trailing: const Icon(Icons.arrow_forward_ios, size: 14),
       onTap: () => Navigator.push(
         context,

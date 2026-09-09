@@ -6,6 +6,7 @@ import '../colors.dart';
 import '../models/career_model.dart';
 import '../services/supabase_db_service.dart';
 import '../utils/input_sanitizer.dart';
+import '../widgets/subject_group_list.dart';
 
 /// Lo que los alumnos subieron a su área personal — sin pasar por ninguna
 /// tarea oficial — en las asignaturas que el docente imparte.
@@ -157,7 +158,7 @@ class _StudentUploadsScreenState extends State<StudentUploadsScreen> {
               const SizedBox(height: 6),
               const Text(
                 'Acá aparece lo que un alumno suba a su área personal en una '
-                'materia que impartís, aunque no esté atado a ninguna tarea.',
+                'materia que impartes, aunque no esté atado a ninguna tarea.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
               ),
@@ -168,15 +169,19 @@ class _StudentUploadsScreenState extends State<StudentUploadsScreen> {
     }
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-        itemCount: uploads.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 8),
-        itemBuilder: (context, i) {
-          final row = uploads[i];
+      child: SubjectGroupList<Map<String, dynamic>>(
+        items: uploads,
+        subjectOf: (r) => r['subject'] as String? ?? '',
+        countLabelOf: (n) => n == 1 ? '1 archivo' : '$n archivos',
+        dateOf: (r) => DateTime.tryParse(r['created_at']?.toString() ?? ''),
+        dateDescending: true,
+        searchTextOf: (r) =>
+            '${r['name']} ${r['display_name']} ${r['subject']} '
+            '${r['description'] ?? ''}',
+        searchHint: 'Buscar por archivo, alumno o asignatura',
+        itemBuilder: (row) {
           final name = row['name'] as String? ?? 'Archivo sin nombre';
           final displayName = row['display_name'] as String? ?? 'Alumno';
-          final subject = row['subject'] as String? ?? '';
           final category = row['category'] as String? ?? 'trabajo';
           final description = row['description'] as String?;
           final createdAtRaw = row['created_at'] as String?;
@@ -188,70 +193,71 @@ class _StudentUploadsScreenState extends State<StudentUploadsScreen> {
               ? row['drive_link'] as String
               : row['external_url'] as String?;
 
-          return Material(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
+          return Card(
+            margin: const EdgeInsets.only(bottom: 6),
             elevation: 0,
+            color: Theme.of(context).cardColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(
+                color: AppColors.primary.withValues(alpha: 0.15),
+              ),
+            ),
             child: InkWell(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
               onTap: () => _openFileLink(link),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.2),
-                  ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     CircleAvatar(
-                      radius: 18,
-                      backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                      radius: 14,
+                      backgroundColor: AppColors.primary.withValues(
+                        alpha: 0.12,
+                      ),
                       child: Icon(
                         _categoryIcon(category),
                         color: AppColors.primary,
-                        size: 18,
+                        size: 14,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontWeight: FontWeight.w600,
-                              fontSize: 13.5,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            '$displayName · $subject',
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
                               fontSize: 12,
                             ),
                           ),
-                          if (description != null && description.trim().isNotEmpty) ...[
-                            const SizedBox(height: 4),
+                          const SizedBox(height: 2),
+                          Text(
+                            createdAt != null
+                                ? '$displayName · '
+                                      '${DateFormat('dd/MM/yyyy').format(createdAt)}'
+                                : displayName,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                          if (description != null &&
+                              description.trim().isNotEmpty) ...[
+                            const SizedBox(height: 2),
                             Text(
                               description,
-                              maxLines: 2,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ],
-                          if (createdAt != null) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              DateFormat('dd/MM/yyyy').format(createdAt),
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 11,
-                              ),
+                              style: const TextStyle(fontSize: 10.5),
                             ),
                           ],
                         ],
@@ -259,7 +265,7 @@ class _StudentUploadsScreenState extends State<StudentUploadsScreen> {
                     ),
                     const Icon(
                       Icons.open_in_new,
-                      size: 18,
+                      size: 14,
                       color: AppColors.textSecondary,
                     ),
                   ],

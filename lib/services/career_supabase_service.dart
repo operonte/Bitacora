@@ -26,6 +26,7 @@ class CareerSupabaseService {
       description: row['description'] as String?,
       predefinedSubjects: subjects,
       isActive: row['is_active'] as bool? ?? true,
+      logoUrl: row['logo_url'] as String?,
     );
   }
 
@@ -38,6 +39,7 @@ class CareerSupabaseService {
           .map((s) => s.toMap())
           .toList(),
       'is_active': career.isActive,
+      'logo_url': career.logoUrl,
     };
   }
 

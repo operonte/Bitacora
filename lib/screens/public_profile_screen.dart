@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../colors.dart';
 import '../models/career_model.dart';
 import '../services/career_service.dart';
 import '../services/profile_service.dart';
+import '../services/story_service.dart';
+import '../services/teacher_subject_service.dart';
+import 'story_viewer_screen.dart';
 import 'student_profile_screen.dart';
 
 /// Perfil público de otra persona de tu carrera: solo lectura, más los
@@ -39,6 +43,8 @@ class PublicProfileScreen extends StatefulWidget {
 class _PublicProfileScreenState extends State<PublicProfileScreen> {
   Map<String, dynamic>? _profile;
   List<Map<String, dynamic>> _comments = [];
+  List<String>? _teachingSubjects;
+  Map<String, dynamic>? _story;
   bool _loading = true;
   bool _sending = false;
   String? _error;
@@ -79,6 +85,26 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
           _profile = results[0] as Map<String, dynamic>?;
           _comments = results[1] as List<Map<String, dynamic>>;
         });
+      }
+      // Aparte del resto: si falla (o no aplica), el perfil se ve igual,
+      // solo sin la lista de asignaturas.
+      if (widget.role == 'docente' && widget.career != null) {
+        try {
+          final subjects = await TeacherSubjectService.subjectsOf(
+            widget.career!.id,
+            widget.userId,
+          );
+          if (mounted) setState(() => _teachingSubjects = subjects);
+        } catch (_) {
+          // Sin bloquear el resto del perfil.
+        }
+      }
+      // Historia activa, si tiene una vigente — tampoco bloquea el resto.
+      try {
+        final story = await StoryService.getActiveStory(widget.userId);
+        if (mounted) setState(() => _story = story);
+      } catch (_) {
+        // Sin bloquear el resto del perfil.
       }
     } catch (e) {
       if (mounted) {
@@ -135,39 +161,49 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     final extraPhotos = List<String>.from(
       (_profile?['extra_photo_urls'] as List?) ?? [],
     );
-    final details = <(IconData, String, String?)>[
-      (Icons.cake_outlined, 'Edad', _profile?['age']?.toString()),
-      (Icons.wc_outlined, 'Género', _profile?['gender'] as String?),
+    final email = _profile?['email'] as String?;
+    final phone = _profile?['phone'] as String?;
+    final socialMedia = _profile?['social_media'] as String?;
+    final details = <(IconData, String, String?, Uri?)>[
+      (Icons.email_outlined, 'Correo', email, _mailtoUri(email)),
+      (Icons.phone_outlined, 'Teléfono', phone, _whatsAppUri(phone)),
+      (
+        Icons.alternate_email_rounded,
+        'Redes sociales',
+        socialMedia,
+        _httpUri(socialMedia),
+      ),
+      (Icons.cake_outlined, 'Edad', _profile?['age']?.toString(), null),
+      (Icons.wc_outlined, 'Género', _profile?['gender'] as String?, null),
       (
         Icons.favorite_outline,
         'Situación sentimental',
         _profile?['relationship_status'] as String?,
+        null,
       ),
       (
         Icons.auto_awesome_outlined,
         'Creencias',
         _profile?['religion'] as String?,
-      ),
-      (Icons.phone_outlined, 'Teléfono', _profile?['phone'] as String?),
-      (
-        Icons.alternate_email_rounded,
-        'Redes sociales',
-        _profile?['social_media'] as String?,
+        null,
       ),
       (
         Icons.interests_outlined,
         'Intereses',
         _profile?['interests'] as String?,
+        null,
       ),
       (
         Icons.history_edu_outlined,
         'Carrera anterior / ocupación',
         _profile?['previous_career'] as String?,
+        null,
       ),
       (
         Icons.work_outline_rounded,
         'Trabajo o profesión',
         _profile?['occupation'] as String?,
+        null,
       ),
     ].where((d) => (d.$3?.trim().isNotEmpty ?? false)).toList();
 
@@ -188,7 +224,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
           : ListView(
               padding: const EdgeInsets.only(bottom: 40),
               children: [
-                _banner(photoUrl),
+                _banner(photoUrl, name),
                 const SizedBox(height: 56),
                 Text(
                   name,
@@ -198,6 +234,32 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                if (widget.role == 'docente' &&
+                    (_teachingSubjects?.isNotEmpty ?? false)) ...[
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: _teachingSubjects!
+                          .map(
+                            (s) => Chip(
+                              label: Text(s, style: const TextStyle(fontSize: 12)),
+                              backgroundColor: AppColors.primary.withValues(
+                                alpha: 0.1,
+                              ),
+                              side: BorderSide.none,
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                ],
                 if (bio != null && bio.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Padding(
@@ -282,7 +344,28 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     );
   }
 
-  Widget _banner(String? photoUrl) {
+  Widget _banner(String? photoUrl, String name) {
+    final historia = _story;
+    final avatar = Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        shape: BoxShape.circle,
+        border: historia != null
+            ? Border.all(color: AppColors.accentTeal, width: 3)
+            : null,
+      ),
+      child: CircleAvatar(
+        radius: 48,
+        backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+        backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
+            ? NetworkImage(photoUrl)
+            : null,
+        child: (photoUrl == null || photoUrl.isEmpty)
+            ? const Icon(Icons.person, size: 44, color: AppColors.primary)
+            : null,
+      ),
+    );
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.topCenter,
@@ -299,29 +382,71 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
         ),
         Positioned(
           top: 76,
-          child: Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              shape: BoxShape.circle,
-            ),
-            child: CircleAvatar(
-              radius: 48,
-              backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-              backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
-                  ? NetworkImage(photoUrl)
-                  : null,
-              child: (photoUrl == null || photoUrl.isEmpty)
-                  ? const Icon(Icons.person, size: 44, color: AppColors.primary)
-                  : null,
-            ),
-          ),
+          child: historia == null
+              ? avatar
+              : GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StoryViewerScreen(
+                        mediaUrl: historia['media_url'] as String,
+                        mediaType: historia['media_type'] as String,
+                        ownerName: name,
+                      ),
+                    ),
+                  ),
+                  child: avatar,
+                ),
         ),
       ],
     );
   }
 
-  Widget _infoCard(List<(IconData, String, String?)> details) {
+  /// null si [value] no es un correo con forma válida — no vale la pena
+  /// abrir el cliente de correo con algo que va a fallar.
+  Uri? _mailtoUri(String? value) {
+    final v = value?.trim();
+    if (v == null || v.isEmpty || !v.contains('@')) return null;
+    return Uri(scheme: 'mailto', path: v);
+  }
+
+  /// wa.me solo acepta dígitos (código de país incluido, sin "+" ni
+  /// espacios) — se limpia el resto, que es lo que la persona puso a mano.
+  Uri? _whatsAppUri(String? value) {
+    final digits = value?.replaceAll(RegExp(r'\D'), '') ?? '';
+    if (digits.isEmpty) return null;
+    return Uri.parse('https://wa.me/$digits');
+  }
+
+  /// Solo si ya es un enlace de verdad (http/https con dominio) — un
+  /// usuario o "@handle" suelto no alcanza para saber a qué red social
+  /// llevarlo, así que en ese caso no es tocable, solo texto.
+  Uri? _httpUri(String? value) {
+    final v = value?.trim();
+    if (v == null || v.isEmpty) return null;
+    final uri = Uri.tryParse(v.contains('://') ? v : 'https://$v');
+    if (uri == null || !uri.hasAuthority) return null;
+    if (uri.scheme != 'http' && uri.scheme != 'https') return null;
+    return uri;
+  }
+
+  Future<void> _abrirUri(Uri uri) async {
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      try {
+        await launchUrl(uri);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('No se pudo abrir: $e')));
+        }
+      }
+    }
+  }
+
+  Widget _infoCard(List<(IconData, String, String?, Uri?)> details) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
@@ -338,25 +463,45 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       child: Column(
         children: [
           for (final d in details)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
+            InkWell(
+              onTap: d.$4 != null ? () => _abrirUri(d.$4!) : null,
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(d.$1, size: 18, color: AppColors.primary),
                     ),
-                    child: Icon(d.$1, size: 18, color: AppColors.primary),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    '${d.$2}: ',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  Expanded(child: Text(d.$3!)),
-                ],
+                    const SizedBox(width: 12),
+                    Text(
+                      '${d.$2}: ',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    Expanded(
+                      child: Text(
+                        d.$3!,
+                        style: d.$4 != null
+                            ? const TextStyle(
+                                color: AppColors.primary,
+                                decoration: TextDecoration.underline,
+                              )
+                            : null,
+                      ),
+                    ),
+                    if (d.$4 != null)
+                      const Icon(
+                        Icons.open_in_new,
+                        size: 14,
+                        color: AppColors.textSecondary,
+                      ),
+                  ],
+                ),
               ),
             ),
         ],
@@ -386,7 +531,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                 controller: _commentController,
                 maxLength: 300,
                 decoration: const InputDecoration(
-                  hintText: 'Dejá un comentario…',
+                  hintText: 'Deja un comentario…',
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),

@@ -17,6 +17,20 @@ class TeacherSubjectService {
     return (rows as List).map((r) => (r as Map)['subject'].toString()).toList();
   }
 
+  /// Qué imparte [teacherId] en [careerId] — para mostrar en su perfil
+  /// público. Cualquiera que comparta la carrera puede consultarlo, no
+  /// hace falta ser docente.
+  static Future<List<String>> subjectsOf(
+    String careerId,
+    String teacherId,
+  ) async {
+    final rows = await _client.rpc('get_teacher_subjects_for', params: {
+      'p_career_id': careerId,
+      'p_teacher_id': teacherId,
+    });
+    return (rows as List).map((r) => (r as Map)['subject'].toString()).toList();
+  }
+
   static Future<void> setTeaching(String careerId, String subject, bool teaching) async {
     await _client.rpc('set_teaching_subject', params: {
       'p_career_id': careerId,

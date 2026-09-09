@@ -192,7 +192,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
       body: _query.isEmpty
           ? const Center(
               child: Text(
-                'Escribí para buscar en todo lo tuyo.',
+                'Escribe para buscar en todo lo tuyo.',
                 style: TextStyle(color: AppColors.textSecondary),
               ),
             )

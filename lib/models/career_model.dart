@@ -14,6 +14,11 @@ class Career {
   /// funciona si no tiene nada asociado.
   final bool isActive;
 
+  /// Logo de la carrera, lo pone el súper usuario desde Administración. Sin
+  /// logo (la mayoría, sobre todo las predefinidas), se sigue mostrando el
+  /// ícono genérico de siempre.
+  final String? logoUrl;
+
   const Career({
     required this.id,
     required this.name,
@@ -21,6 +26,7 @@ class Career {
     required this.predefinedSubjects,
     this.description,
     this.isActive = true,
+    this.logoUrl,
   });
 
   Career copyWith({
@@ -30,6 +36,7 @@ class Career {
     List<Subject>? predefinedSubjects,
     String? description,
     bool? isActive,
+    String? logoUrl,
   }) {
     return Career(
       id: id ?? this.id,
@@ -38,6 +45,7 @@ class Career {
       predefinedSubjects: predefinedSubjects ?? this.predefinedSubjects,
       description: description ?? this.description,
       isActive: isActive ?? this.isActive,
+      logoUrl: logoUrl ?? this.logoUrl,
     );
   }
 }

@@ -295,7 +295,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Todavía no marcaste qué asignaturas impartís en '
+                'Todavía no marcaste qué asignaturas impartes en '
                 '${widget.career.name} — sin eso no hay a quién pasarle '
                 'asistencia.',
                 textAlign: TextAlign.center,

@@ -236,7 +236,7 @@ class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
               labelText: 'Asignatura / Materia',
               helperText: _subjects.isEmpty
                   ? (widget.restrictToTeaching
-                        ? 'Todavía no marcaste qué asignaturas impartís acá '
+                        ? 'Todavía no marcaste qué asignaturas impartes acá '
                               '(Mi Perfil → Mis asignaturas).'
                         : CareerSubjectPicker.sinMateriasHint)
                   : null,

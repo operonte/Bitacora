@@ -6,6 +6,7 @@ import '../models/study_file_model.dart';
 import '../providers/app_state.dart';
 import '../services/study_file_service.dart';
 import '../services/google_drive_service.dart';
+import '../services/app_navigator.dart';
 import '../services/career_service.dart';
 import '../services/supabase_db_service.dart';
 import '../utils/file_security_validator.dart';
@@ -60,6 +61,30 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       text: 'Material docente',
     ),
   };
+
+  /// Espeja [AreaTabTarget] (público, lo usa NotificationService) al enum
+  /// privado de este archivo, y da el índice dentro de [_tabKinds] — o null
+  /// si esta vista no tiene esa pestaña ahora mismo (ej. "Mis archivos"
+  /// pedida mientras la carrera activa es de docente).
+  int? _indexForTarget(AreaTabTarget target) {
+    final kind = switch (target) {
+      AreaTabTarget.files => _AreaTab.files,
+      AreaTabTarget.meetings => _AreaTab.meetings,
+      AreaTabTarget.teaching => _AreaTab.teaching,
+    };
+    final index = _tabKinds.indexOf(kind);
+    return index == -1 ? null : index;
+  }
+
+  void _onPendingAreaTab() {
+    final target = AppNavigator.pendingAreaTab.value;
+    if (target == null) return;
+    AppNavigator.pendingAreaTab.value = null;
+    if (!mounted) return;
+    final index = _indexForTarget(target);
+    if (index != null) _tabController.animateTo(index);
+  }
+
   final StudyFileService _studyFileService = StudyFileService();
   bool _isUploading = false;
 
@@ -86,7 +111,25 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     final career = CareerService().getSelectedCareer();
     _tabsForDocente = career != null && CareerService().isDocente(career.id);
     _tabKinds = _kindsFor(_tabsForDocente);
-    _tabController = TabController(length: _tabKinds.length, vsync: this);
+
+    // Si una notificación (reunión) pidió una pestaña puntual, arranca
+    // directamente ahí — ya sea que esta pantalla se esté creando recién por
+    // eso (arranque en frío) o ya estuviera viva de antes.
+    final pendiente = AppNavigator.pendingAreaTab.value;
+    int inicial = 0;
+    if (pendiente != null) {
+      final index = _indexForTarget(pendiente);
+      if (index != null) {
+        inicial = index;
+        AppNavigator.pendingAreaTab.value = null;
+      }
+    }
+    _tabController = TabController(
+      length: _tabKinds.length,
+      initialIndex: inicial,
+      vsync: this,
+    );
+    AppNavigator.pendingAreaTab.addListener(_onPendingAreaTab);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Un solo sync: trabajos y material docente viven en la misma tabla.
@@ -181,6 +224,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    AppNavigator.pendingAreaTab.removeListener(_onPendingAreaTab);
     _tabController.dispose();
     super.dispose();
   }

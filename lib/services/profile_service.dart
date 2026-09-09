@@ -148,6 +148,18 @@ class ProfileService {
     await _client.auth.updateUser(UserAttributes(data: {'avatar_url': url}));
   }
 
+  /// Foto de portada, atrás del avatar (como Facebook). A diferencia de la
+  /// principal, no la usa nada más que este perfil, así que va directo a
+  /// `profiles` en vez de por Auth.
+  Future<void> setCoverPhoto(String url) async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) throw Exception('Usuario no autenticado');
+    await _client
+        .from('profiles')
+        .update({'cover_photo_url': url})
+        .eq('id', uid);
+  }
+
   /// Agrega una foto extra de forma atómica (RPC add_profile_photo, un solo
   /// UPDATE con array_append en Postgres) — antes esto leía la lista,
   /// la modificaba en Dart y la reescribía entera, así que dos llamadas

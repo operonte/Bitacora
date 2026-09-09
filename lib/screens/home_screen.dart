@@ -345,7 +345,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          if (_riskCount != null && _riskCount! > 0) ...[
+          // La mascota elegida en Configuración también es del docente: sin
+          // esto, solo se veía cuando había riesgo, así que en la práctica
+          // nunca aparecía. Ahora tiene un lugar fijo acá — sad si hay
+          // alumnos en riesgo, content si no, bored mientras se calcula.
+          if (MascotWidget.isEnabled(mascot)) ...[
             const SizedBox(height: 10),
             InkWell(
               borderRadius: BorderRadius.circular(12),
@@ -361,26 +365,31 @@ class _HomeScreenState extends State<HomeScreen> {
               },
               child: Row(
                 children: [
-                  if (MascotWidget.isEnabled(mascot))
-                    MascotWidget(
-                      option: mascot,
-                      state: MascotState.sad,
-                      size: 36,
-                    )
-                  else
-                    const Icon(
-                      Icons.warning_amber_rounded,
-                      color: AppColors.warning,
-                    ),
+                  MascotWidget(
+                    option: mascot,
+                    state: _riskCount == null
+                        ? MascotState.bored
+                        : (_riskCount! > 0
+                              ? MascotState.sad
+                              : MascotState.content),
+                    size: 36,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      '$_riskCount alumno${_riskCount == 1 ? '' : 's'} en '
-                      'riesgo — tocá para ver el panel',
-                      style: const TextStyle(
+                      _riskCount == null
+                          ? 'Revisando cómo viene tu curso…'
+                          : (_riskCount! > 0
+                                ? '$_riskCount alumno${_riskCount == 1 ? '' : 's'} '
+                                      'en riesgo — toca para ver el panel'
+                                : 'Nadie en riesgo por ahora — toca para ver el '
+                                      'panel'),
+                      style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.warning,
+                        color: (_riskCount != null && _riskCount! > 0)
+                            ? AppColors.warning
+                            : AppColors.textSecondary,
                       ),
                     ),
                   ),

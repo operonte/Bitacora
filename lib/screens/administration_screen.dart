@@ -7,6 +7,9 @@ import 'admin/career_subjects_screen.dart';
 import 'admin/career_teachers_screen.dart';
 import '../models/career_model.dart';
 import '../services/career_supabase_service.dart';
+import '../services/google_drive_service.dart';
+import '../utils/custom_file_picker.dart';
+import '../utils/file_security_validator.dart';
 
 /// Pantalla de administración para gestionar carreras y asignaturas.
 ///
@@ -166,6 +169,116 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
     );
   }
 
+  /// Sube el logo a través de la propia cuenta del admin (igual que la foto
+  /// de perfil): no hay bucket de servidor, todo archivo de la app vive en
+  /// el Drive de quien lo sube, compartido por link.
+  Future<String?> _pickAndUploadLogo(
+    BuildContext context,
+    void Function(void Function()) setLocal, {
+    required void Function(bool) setUploading,
+  }) async {
+    final file = await CustomFilePicker.pickFile();
+    if (file == null || file.head.isEmpty) return null;
+
+    final validation = FileSecurityValidator.validateFile(
+      fileName: file.name,
+      sizeInBytes: file.size,
+      bytes: file.head,
+    );
+    if (!validation.isValid || validation.fileCategory != 'Imagen') {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              validation.isValid
+                  ? 'Elige una imagen (jpg, png, webp).'
+                  : (validation.errorMessage ?? 'Archivo no permitido.'),
+            ),
+          ),
+        );
+      }
+      return null;
+    }
+
+    setLocal(() => setUploading(true));
+    try {
+      final res = await GoogleDriveService().uploadStudyFile(
+        fileName: file.name,
+        sizeBytes: file.size,
+        filePath: file.path,
+        bytes: file.bytes,
+        mimeType: file.extension.isNotEmpty
+            ? file.extension
+            : 'application/octet-stream',
+        career: 'Logos de carreras',
+      );
+      await GoogleDriveService().setLinkViewable(res.fileId);
+      return 'https://drive.google.com/uc?export=view&id=${res.fileId}';
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('No se pudo subir el logo: $e')));
+      }
+      return null;
+    } finally {
+      setLocal(() => setUploading(false));
+    }
+  }
+
+  Widget _logoPicker({
+    required String? logoUrl,
+    required bool uploading,
+    required VoidCallback onTap,
+  }) {
+    return Center(
+      child: GestureDetector(
+        onTap: uploading ? null : onTap,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            CircleAvatar(
+              radius: 36,
+              backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+              backgroundImage: (logoUrl != null && logoUrl.isNotEmpty)
+                  ? NetworkImage(logoUrl)
+                  : null,
+              child: uploading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : (logoUrl == null || logoUrl.isEmpty)
+                  ? const Icon(
+                      Icons.school_outlined,
+                      color: AppColors.primary,
+                      size: 30,
+                    )
+                  : null,
+            ),
+            Positioned(
+              bottom: -4,
+              right: -4,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.edit,
+                  size: 14,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showEditCareerDialog(Career career) {
     final nameController = TextEditingController(text: career.name);
     final descriptionController = TextEditingController(
@@ -173,10 +286,13 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
     );
     final accessKeyController = TextEditingController(text: career.accessKey);
     final formKey = GlobalKey<FormState>();
+    var logoUrl = career.logoUrl;
+    var uploadingLogo = false;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Editar carrera'),
         content: Form(
@@ -185,6 +301,26 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                _logoPicker(
+                  logoUrl: logoUrl,
+                  uploading: uploadingLogo,
+                  onTap: () async {
+                    final url = await _pickAndUploadLogo(
+                      context,
+                      setLocal,
+                      setUploading: (v) => uploadingLogo = v,
+                    );
+                    if (url != null) setLocal(() => logoUrl = url);
+                  },
+                ),
+                const SizedBox(height: 4),
+                const Center(
+                  child: Text(
+                    'Toca para cambiar el logo',
+                    style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(
@@ -253,6 +389,7 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
                 description: description.isEmpty ? null : description,
                 predefinedSubjects: career.predefinedSubjects,
                 isActive: career.isActive,
+                logoUrl: logoUrl,
               );
 
               try {
@@ -280,6 +417,7 @@ class _AdministrationScreenState extends State<AdministrationScreen> {
             child: const Text('Guardar'),
           ),
         ],
+        ),
       ),
     );
   }

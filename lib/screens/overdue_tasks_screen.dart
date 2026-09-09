@@ -1,6 +1,5 @@
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
-import '../app_info.dart';
 import '../providers/app_state.dart';
 import '../models/task_model.dart';
 import '../widgets/task_card.dart';
@@ -103,11 +102,6 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
             ),
             onPressed: _showSearchDialog,
             tooltip: 'Buscar',
-          ),
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            onPressed: () => _showAppInfo(),
-            tooltip: 'Acerca de',
           ),
           SyncIndicator(syncService: SyncService()),
           IconButton(
@@ -263,36 +257,6 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
                       ],
                     ),
                   ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAppInfo() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [Icon(Icons.school), SizedBox(width: 8), Text('Bitácora')],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(AppInfo.buildLabel),
-            const SizedBox(height: 8),
-            const Text('Una aplicación para gestionar tus tareas académicas.'),
-            const SizedBox(height: 8),
-            const Text(
-              'Icono representa un libro con casillas de verificación, simbolizando el seguimiento de actividades académicas.',
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
           ),
         ],
       ),

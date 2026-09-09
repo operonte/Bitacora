@@ -9,6 +9,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'models/meeting_model.dart';
 import 'models/task_model.dart';
+import 'services/app_navigator.dart';
 import 'utils/logger.dart';
 
 /// Avisos locales de la app. Son exactamente cuatro:
@@ -195,6 +196,53 @@ class NotificationService {
 
   void _onNotificationTapped(NotificationResponse response) {
     Logger.info('Notificación tocada: ${response.payload}', tag: 'Notif');
+    _routePayload(response.payload);
+  }
+
+  /// Lleva a la persona al área que corresponde según qué tipo de
+  /// notificación tocó — no abre la tarea/reunión puntual (son locales, sin
+  /// más datos que el texto ya mostrado), pero sí la pestaña donde vive.
+  /// `MainScreen`/`AreaPersonalScreen` escuchan [AppNavigator] y hacen la
+  /// navegación real con su propio `context`, porque este servicio no tiene
+  /// ninguno.
+  void _routePayload(String? payload) {
+    if (payload == null || payload.isEmpty) return;
+    final partes = payload.split(':');
+    final tipo = partes.first;
+    switch (tipo) {
+      case 'task':
+        AppNavigator.pendingMainTab.value = 1; // Pendientes
+      case 'meeting':
+        AppNavigator.pendingMainTab.value = 4; // Mi área
+        AppNavigator.pendingAreaTab.value = AreaTabTarget.meetings;
+      case 'announcement':
+        if (partes.length > 1 && partes[1].isNotEmpty) {
+          AppNavigator.pendingAnnouncementCareerId.value = partes[1];
+        }
+      case 'digest':
+        AppNavigator.pendingMainTab.value = 0; // Hoy
+      default:
+        Logger.warning('Payload de notificación desconocido: $payload', tag: 'Notif');
+    }
+  }
+
+  /// Si la app se abrió recién porque tocaron una notificación (proceso
+  /// muerto, no una que ya estaba corriendo), hay que revisar esto aparte:
+  /// [onDidReceiveNotificationResponse] no se dispara para ese caso, el
+  /// plugin lo entrega acá. Se llama una vez, después de [initialize].
+  Future<void> routeIfLaunchedFromNotification() async {
+    if (_unsupported) return;
+    try {
+      final details = await _notifications.getNotificationAppLaunchDetails();
+      if (details?.didNotificationLaunchApp ?? false) {
+        _routePayload(details!.notificationResponse?.payload);
+      }
+    } catch (e) {
+      Logger.warning(
+        'No se pudo revisar si la app se abrió por una notificación: $e',
+        tag: 'Notif',
+      );
+    }
   }
 
   // ==================== INTERRUPTOR ÚNICO ====================
@@ -258,6 +306,7 @@ class NotificationService {
             title: '⏰ Tarea en ${_lapso(anticipacion)}',
             body: '${task.title} — ${task.subject}',
             scheduledTime: cuando,
+            payload: 'task',
           );
         } else {
           await cancelTaskReminders(task.id!);
@@ -329,6 +378,7 @@ class NotificationService {
       body: '${meeting.title} — ${meeting.subject} a las ${_hhmm(ocurrencia)}',
       scheduledTime: cuando,
       repeatWeekly: meeting.isRecurrent,
+      payload: 'meeting',
     );
   }
 
@@ -367,6 +417,7 @@ class NotificationService {
         title: '📅 Tu día en Bitácora',
         body: digestBody(tareas: tareas, reuniones: reuniones),
         scheduledTime: aLas,
+        payload: 'digest',
       );
     }
   }
@@ -455,6 +506,7 @@ class NotificationService {
           DateTime.now().millisecondsSinceEpoch.remainder(100000),
       title: '✅ Entrega nueva',
       body: '$studentName entregó "$taskTitle"',
+      payload: 'task',
     );
   }
 
@@ -488,6 +540,7 @@ class NotificationService {
           ? '${isOfficial ? '📋' : '📌'} Nueva $tipo'
           : '✏️ ${tipo[0].toUpperCase()}${tipo.substring(1)} editada',
       body: '$quien ${isNew ? 'agregó' : 'editó'} "$title" — $subject',
+      payload: 'task',
     );
   }
 
@@ -513,6 +566,7 @@ class NotificationService {
           DateTime.now().millisecondsSinceEpoch.remainder(100000),
       title: '📝 Novedad en "$taskTitle"',
       body: body,
+      payload: 'task',
     );
   }
 
@@ -525,6 +579,7 @@ class NotificationService {
     required String title,
     required String author,
     String? subject,
+    required String careerId,
   }) async {
     if (!await isEnabled) return;
 
@@ -535,6 +590,7 @@ class NotificationService {
       title:
           '📣 ${subject != null && subject.isNotEmpty ? subject : 'Anuncio'}',
       body: '$author: $title',
+      payload: 'announcement:$careerId',
     );
   }
 
@@ -558,6 +614,7 @@ class NotificationService {
     required String body,
     required DateTime scheduledTime,
     bool repeatWeekly = false,
+    String? payload,
   }) async {
     final huella =
         '$title|$body|${scheduledTime.millisecondsSinceEpoch}|$repeatWeekly';
@@ -569,6 +626,7 @@ class NotificationService {
       body: body,
       scheduledTime: scheduledTime,
       repeatWeekly: repeatWeekly,
+      payload: payload,
     );
     _scheduled[id] = huella;
     _cancelled.remove(id);
@@ -592,10 +650,11 @@ class NotificationService {
     required int id,
     required String title,
     required String body,
+    String? payload,
   }) async {
     if (_unsupported) return;
     try {
-      await _notifications.show(id, title, body, _detalles);
+      await _notifications.show(id, title, body, _detalles, payload: payload);
     } catch (e) {
       Logger.warning(
         'No se pudo mostrar la notificación "$title": $e',
@@ -610,6 +669,7 @@ class NotificationService {
     required String body,
     required DateTime scheduledTime,
     bool repeatWeekly = false,
+    String? payload,
   }) async {
     if (_unsupported) return;
     if (scheduledTime.isBefore(DateTime.now())) return;
@@ -650,6 +710,7 @@ class NotificationService {
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         matchDateTimeComponents: repeticion,
+        payload: payload,
       );
       Logger.info(
         'Aviso programado ($mode): $title a las $scheduledTime',
@@ -672,6 +733,7 @@ class NotificationService {
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
           matchDateTimeComponents: repeticion,
+          payload: payload,
         );
       } catch (e2) {
         Logger.error('Fallback también falló', error: e2, tag: 'Notif');

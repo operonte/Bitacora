@@ -111,6 +111,7 @@ class AnnouncementService extends ChangeNotifier {
           title: a.title,
           author: a.createdByName,
           subject: a.subject,
+          careerId: careerId,
         );
       }
     }

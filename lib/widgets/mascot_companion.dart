@@ -45,13 +45,13 @@ class _MascotCompanionState extends State<MascotCompanion> {
   /// filosofía que el panel de riesgo del docente ("regla simple").
   String _tipFor(List<Task> overdue) {
     if (overdue.length == 1) {
-      return 'Tenés 1 tarea atrasada: "${overdue.first.title}". '
-          'Organizá un rato hoy para ponerte al día.';
+      return 'Tienes 1 tarea atrasada: "${overdue.first.title}". '
+          'Organiza un rato hoy para ponerte al día.';
     }
     final oldest = overdue.reduce(
       (a, b) => a.dueDate.isBefore(b.dueDate) ? a : b,
     );
-    return 'Tenés ${overdue.length} tareas atrasadas. Empezá por '
+    return 'Tienes ${overdue.length} tareas atrasadas. Empieza por '
         '"${oldest.title}", es la más antigua.';
   }
 

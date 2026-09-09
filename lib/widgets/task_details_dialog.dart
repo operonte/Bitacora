@@ -76,9 +76,18 @@ class TaskDetailsDialog {
     // si es docente: nadie más la debe, es su propio pendiente.
     final esTareaDeDocente =
         task.isShared && CareerService().isDocente(task.careerId);
+    // Antes solo quien creó la tarea podía ver el progreso; ahora también
+    // vale ser docente de esa asignatura — a veces el docente no crea la
+    // tarea oficial él mismo, y si un alumno la sube igual debería poder
+    // evaluarla ("las mismas reglas"). El servidor
+    // (get_task_submission_status) hace el chequeo real por asignatura; acá
+    // solo evita mostrar el intento a un docente de otra materia. El propio
+    // creador (sea o no docente en esta carrera) sigue viendo su botón
+    // aparte "Ver progreso del grupo".
     final puedeVerProgreso =
         task.isShared &&
-        task.userId == Supabase.instance.client.auth.currentUser?.id;
+        (task.userId == Supabase.instance.client.auth.currentUser?.id ||
+            esTareaDeDocente);
 
     Future<void> updateStatus(
       bool completed,
@@ -756,7 +765,7 @@ class _AttachedFilesSectionState extends State<_AttachedFilesSection> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'No tenés archivos de "${widget.task.subject}" en Mis archivos. Subilo ahí primero y después volvé a adjuntarlo acá.',
+            'No tienes archivos de "${widget.task.subject}" en Mis archivos. Súbelo ahí primero y después vuelve a adjuntarlo acá.',
           ),
         ),
       );

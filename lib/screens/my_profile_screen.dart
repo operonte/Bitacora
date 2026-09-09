@@ -6,6 +6,7 @@ import '../colors.dart';
 import '../models/career_model.dart';
 import '../services/career_service.dart';
 import '../services/profile_service.dart';
+import '../services/story_service.dart';
 import '../utils/custom_file_picker.dart';
 import '../utils/file_security_validator.dart';
 import '../utils/input_sanitizer.dart';
@@ -18,6 +19,7 @@ import 'career_members_directory_screen.dart';
 import 'my_attendance_screen.dart';
 import 'my_grades_screen.dart';
 import 'public_profile_screen.dart';
+import 'story_viewer_screen.dart';
 import 'student_uploads_screen.dart';
 import 'teacher_panel_screen.dart';
 import 'teacher_subjects_screen.dart';
@@ -32,6 +34,11 @@ class MyProfileScreen extends StatefulWidget {
   @override
   State<MyProfileScreen> createState() => _MyProfileScreenState();
 }
+
+/// A qué foto va lo que se elija con el selector de archivos: la principal
+/// (avatar), la de portada (atrás del avatar, como Facebook) o una más de
+/// la tira de fotos extra.
+enum _PhotoTarget { main, cover, extra }
 
 class _MyProfileScreenState extends State<MyProfileScreen> {
   final _service = ProfileService();
@@ -56,6 +63,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   double _uploadProgress = 0;
   String? _error;
 
+  /// Mi historia activa (dura 48 h), o null si no tengo ninguna vigente.
+  Map<String, dynamic>? _myStory;
+  bool _uploadingStory = false;
+  double _storyProgress = 0;
+
   // Información académica: carrera activa, todas las carreras a las que
   // pertenece y sus herramientas — vive acá y no en Configuración porque es
   // "quién sos", no "cómo se ve la app".
@@ -67,6 +79,18 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     super.initState();
     _load();
     _loadCareerData();
+    _loadMyStory();
+  }
+
+  Future<void> _loadMyStory() async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      final story = await StoryService.getActiveStory(uid);
+      if (mounted) setState(() => _myStory = story);
+    } catch (_) {
+      // Sin bloquear el perfil si falla: se ve igual, solo sin el anillo.
+    }
   }
 
   Future<void> _loadCareerData() async {
@@ -177,7 +201,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     }
   }
 
-  Future<void> _pickAndUpload({required bool asMainPhoto}) async {
+  Future<void> _pickAndUpload({required _PhotoTarget target}) async {
     try {
       final file = await CustomFilePicker.pickFile();
       if (file == null) return;
@@ -194,7 +218,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             SnackBar(
               content: Text(
                 validation.isValid
-                    ? 'Elegí una imagen (jpg, png, webp).'
+                    ? 'Elige una imagen (jpg, png, webp).'
                     : (validation.errorMessage ?? 'Archivo no permitido.'),
               ),
             ),
@@ -219,10 +243,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         },
       );
 
-      if (asMainPhoto) {
-        await _service.setMainPhoto(url);
-      } else {
-        await _service.addExtraPhoto(url);
+      switch (target) {
+        case _PhotoTarget.main:
+          await _service.setMainPhoto(url);
+        case _PhotoTarget.cover:
+          await _service.setCoverPhoto(url);
+        case _PhotoTarget.extra:
+          await _service.addExtraPhoto(url);
       }
       await _load();
     } catch (e) {
@@ -333,6 +360,30 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                               border: OutlineInputBorder(),
                             ),
                           ),
+                          if ((_profile?['email'] as String?)
+                                  ?.isNotEmpty ??
+                              false) ...[
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.email_outlined,
+                                  size: 18,
+                                  color: AppColors.textSecondary,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _profile!['email'] as String,
+                                    style: const TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                           const SizedBox(height: 12),
                           TextField(
                             controller: _bioController,
@@ -340,7 +391,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                             maxLength: 300,
                             decoration: const InputDecoration(
                               labelText: 'Bio (opcional)',
-                              hintText: 'Contá algo sobre vos',
+                              hintText: 'Cuéntanos algo sobre ti',
                               border: OutlineInputBorder(),
                             ),
                           ),
@@ -656,7 +707,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 ),
                 title: const Text('Mis asignaturas'),
                 subtitle: const Text(
-                  'Qué materias impartís, para cruzar con el semestre del alumno',
+                  'Qué materias impartes, para cruzar con el semestre del alumno',
                 ),
                 trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                 onTap: () => Navigator.push(
@@ -764,14 +815,71 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   }
 
   /// Semestres cargados en el catálogo de [career] — los mismos valores que
-  /// ya etiquetan cada materia, para no inventar una lista aparte.
-  List<String> _semestresDe(Career career) =>
-      career.predefinedSubjects
-          .map((s) => s.semester?.trim() ?? '')
-          .where((s) => s.isNotEmpty)
-          .toSet()
-          .toList()
-        ..sort();
+  /// ya etiquetan cada materia, para no inventar una lista aparte. Se
+  /// ordenan por el número de trimestre (1, 2, 3…), no alfabéticamente: como
+  /// texto, "10mo" queda antes que "2do".
+  List<String> _semestresDe(Career career) {
+    final valores =
+        career.predefinedSubjects
+            .map((s) => s.semester?.trim() ?? '')
+            .where((s) => s.isNotEmpty)
+            .toSet()
+            .toList();
+    valores.sort((a, b) {
+      final na = _trimestreNumero(a);
+      final nb = _trimestreNumero(b);
+      if (na != null && nb != null) return na.compareTo(nb);
+      if (na != null) return -1;
+      if (nb != null) return 1;
+      return a.compareTo(b);
+    });
+    return valores;
+  }
+
+  /// El valor guardado trae "<Año> · <N>º Trimestre" (viene tal cual de la
+  /// malla cargada); acá solo se muestra la parte del trimestre — el año ya
+  /// está implícito en cuál es, y repetirlo en cada ítem del desplegable
+  /// solo hacía más largo el texto sin sumar información.
+  String _trimestreLabel(String semester) {
+    final idx = semester.indexOf('·');
+    return idx == -1 ? semester : semester.substring(idx + 1).trim();
+  }
+
+  /// No todas las mallas etiquetan el semestre igual: unas carreras usan
+  /// ordinal arábigo ("1er Trimestre"), otras número romano ("Sem. VII") —
+  /// es texto libre, cargado a mano por carrera. Se prueban las dos formas.
+  int? _trimestreNumero(String semester) {
+    final label = _trimestreLabel(semester);
+    final arabigo = RegExp(r'(\d+)').firstMatch(label);
+    if (arabigo != null) return int.tryParse(arabigo.group(1)!);
+    final romano = RegExp(
+      r'\b([IVXLCDM]+)\b',
+      caseSensitive: false,
+    ).firstMatch(label);
+    return romano == null ? null : _romanoANumero(romano.group(1)!);
+  }
+
+  int? _romanoANumero(String romano) {
+    const valores = {
+      'I': 1,
+      'V': 5,
+      'X': 10,
+      'L': 50,
+      'C': 100,
+      'D': 500,
+      'M': 1000,
+    };
+    final letras = romano.toUpperCase().split('');
+    var total = 0;
+    var anterior = 0;
+    for (final letra in letras.reversed) {
+      final valor = valores[letra];
+      if (valor == null) return null;
+      total += valor < anterior ? -valor : valor;
+      anterior = valor;
+    }
+    return total == 0 ? null : total;
+  }
 
   Widget _buildSemesterPicker(Career career) {
     final opciones = _semestresDe(career);
@@ -805,7 +913,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               child: Text('Sin elegir'),
             ),
             ...opciones.map(
-              (s) => DropdownMenuItem<String?>(value: s, child: Text(s)),
+              (s) => DropdownMenuItem<String?>(
+                value: s,
+                child: Text(_trimestreLabel(s)),
+              ),
             ),
           ],
           onChanged: (value) async {
@@ -827,10 +938,24 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
 
   Widget _careerTile(Career career) {
     final isActive = _selectedCareer?.id == career.id;
+    final logoUrl = career.logoUrl;
     return ListTile(
-      leading: Icon(
-        isActive ? Icons.radio_button_checked : Icons.radio_button_off,
-        color: isActive ? AppColors.primary : AppColors.textSecondary,
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (logoUrl != null && logoUrl.isNotEmpty) ...[
+            CircleAvatar(
+              radius: 14,
+              backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+              backgroundImage: NetworkImage(logoUrl),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Icon(
+            isActive ? Icons.radio_button_checked : Icons.radio_button_off,
+            color: isActive ? AppColors.primary : AppColors.textSecondary,
+          ),
+        ],
       ),
       title: Text(
         career.name,
@@ -1038,17 +1163,49 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
 
   Widget _banner() {
     final photoUrl = _profile?['photo_url'] as String?;
+    final coverUrl = _profile?['cover_photo_url'] as String?;
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.topCenter,
       children: [
-        Container(
-          height: 120,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [AppColors.primary, AppColors.primaryLight],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+        GestureDetector(
+          onTap: _uploadingPhoto
+              ? null
+              : () => _pickAndUpload(target: _PhotoTarget.cover),
+          child: Container(
+            height: 120,
+            decoration: BoxDecoration(
+              gradient: (coverUrl == null || coverUrl.isEmpty)
+                  ? const LinearGradient(
+                      colors: [AppColors.primary, AppColors.primaryLight],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                  : null,
+              image: (coverUrl != null && coverUrl.isNotEmpty)
+                  ? DecorationImage(
+                      image: NetworkImage(coverUrl),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
+            ),
+            child: Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.camera_alt,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -1058,15 +1215,22 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   }
 
   Widget _avatarPicker(String? photoUrl) {
-    return GestureDetector(
-      onTap: _uploadingPhoto ? null : () => _pickAndUpload(asMainPhoto: true),
-      child: Stack(
-        children: [
-          Container(
+    final tieneHistoria = _myStory != null;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          onTap: _uploadingPhoto
+              ? null
+              : () => _pickAndUpload(target: _PhotoTarget.main),
+          child: Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               color: Theme.of(context).scaffoldBackgroundColor,
               shape: BoxShape.circle,
+              border: tieneHistoria
+                  ? Border.all(color: AppColors.accentTeal, width: 3)
+                  : null,
             ),
             child: CircleAvatar(
               radius: 48,
@@ -1079,8 +1243,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                   : null,
             ),
           ),
-          if (_uploadingPhoto)
-            Positioned.fill(
+        ),
+        if (_uploadingPhoto)
+          Positioned.fill(
+            child: IgnorePointer(
               child: CircleAvatar(
                 backgroundColor: Colors.black.withValues(alpha: 0.4),
                 child: Text(
@@ -1091,11 +1257,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                   ),
                 ),
               ),
-            )
-          else
-            Positioned(
-              right: 0,
-              bottom: 0,
+            ),
+          )
+        else
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: IgnorePointer(
               child: Container(
                 padding: const EdgeInsets.all(6),
                 decoration: const BoxDecoration(
@@ -1109,9 +1277,191 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 ),
               ),
             ),
-        ],
+          ),
+        // Insignia de historia, esquina opuesta a la de cambiar la foto —
+        // con su propio InkWell, para no competir con el tap de arriba.
+        Positioned(
+          left: -2,
+          top: -2,
+          child: Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: _uploadingStory ? null : _onStoryBadgeTap,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFF7A00), Color(0xFFE1306C)],
+                  ),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    width: 2,
+                  ),
+                ),
+                child: _uploadingStory
+                    ? SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                          value: _storyProgress > 0 ? _storyProgress : null,
+                        ),
+                      )
+                    : Icon(
+                        tieneHistoria
+                            ? Icons.visibility_outlined
+                            : Icons.add,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Sin historia, sube una directo. Con una activa, deja elegir entre
+  /// verla o reemplazarla — tocar la insignia no debería borrarla por
+  /// accidente.
+  Future<void> _onStoryBadgeTap() async {
+    final historia = _myStory;
+    if (historia == null) {
+      await _pickAndUploadStory();
+      return;
+    }
+    final accion = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.visibility_outlined),
+              title: const Text('Ver mi historia'),
+              onTap: () => Navigator.pop(ctx, 'ver'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.refresh),
+              title: const Text('Reemplazar historia'),
+              onTap: () => Navigator.pop(ctx, 'reemplazar'),
+            ),
+          ],
+        ),
       ),
     );
+    if (!mounted || accion == null) return;
+    if (accion == 'ver') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StoryViewerScreen(
+            mediaUrl: historia['media_url'] as String,
+            mediaType: historia['media_type'] as String,
+            ownerName: 'Mi historia',
+            isOwn: true,
+            onDelete: () async {
+              await StoryService.deleteMyStory();
+              await _loadMyStory();
+            },
+          ),
+        ),
+      );
+    } else if (accion == 'reemplazar') {
+      await _pickAndUploadStory();
+    }
+  }
+
+  Future<void> _pickAndUploadStory() async {
+    try {
+      final file = await CustomFilePicker.pickFile();
+      if (file == null || file.head.isEmpty) return;
+
+      final validation = FileSecurityValidator.validateFile(
+        fileName: file.name,
+        sizeInBytes: file.size,
+        bytes: file.head,
+      );
+      final categoria = validation.fileCategory;
+      if (!validation.isValid ||
+          (categoria != 'Imagen' && categoria != 'Video')) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                validation.isValid
+                    ? 'Elige una foto o un video.'
+                    : (validation.errorMessage ?? 'Archivo no permitido.'),
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      final esVideo = categoria == 'Video';
+      // No hay forma de medir la duración real sin sumar un paquete nuevo
+      // de video a la app — este tope de tamaño es solo una referencia
+      // razonable para "unos 30 segundos", no una medición exacta.
+      const videoSizeCapMb = 20;
+      if (esVideo && file.size > videoSizeCapMb * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Ese video es muy pesado para una historia de unos 30 '
+                'segundos (máximo ${videoSizeCapMb}MB).',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      setState(() {
+        _uploadingStory = true;
+        _storyProgress = 0;
+      });
+
+      await StoryService.uploadStory(
+        fileName: file.name,
+        sizeBytes: file.size,
+        mimeType: file.extension.isNotEmpty
+            ? file.extension
+            : 'application/octet-stream',
+        mediaType: esVideo ? 'video' : 'photo',
+        filePath: file.path,
+        bytes: file.bytes,
+        onProgress: (p) {
+          if (mounted) setState(() => _storyProgress = p);
+        },
+      );
+      await _loadMyStory();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Historia publicada — se borra sola en 48 horas'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlyError(e))));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingStory = false);
+    }
   }
 
   Widget _extraPhotosStrip() {
@@ -1162,7 +1512,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             InkWell(
               onTap: _uploadingPhoto
                   ? null
-                  : () => _pickAndUpload(asMainPhoto: false),
+                  : () => _pickAndUpload(target: _PhotoTarget.extra),
               borderRadius: BorderRadius.circular(12),
               child: Container(
                 width: 84,

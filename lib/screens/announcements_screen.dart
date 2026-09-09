@@ -6,6 +6,7 @@ import '../models/career_model.dart';
 import '../services/admin_auth_service.dart';
 import '../services/announcement_service.dart';
 import '../services/career_service.dart';
+import '../services/teacher_subject_service.dart';
 
 /// Anuncios de la carrera: lo que hoy se manda por WhatsApp aparte, dentro
 /// de la app. Un docente publica, todos los miembros lo ven — y si es
@@ -88,14 +89,34 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   }
 
   Future<void> _openCreateDialog() async {
+    // Solo lo que el propio docente imparte, no el catálogo entero de la
+    // carrera — "Toda la carrera" sigue disponible aparte, esa sí aplica
+    // sin importar qué asignaturas dé.
+    List<String> subjects;
+    try {
+      subjects = await TeacherSubjectService.myTeachingSubjects(
+        widget.career.id,
+      );
+      subjects.sort();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'No se pudieron cargar tus asignaturas: $e',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     final titleController = TextEditingController();
     final bodyController = TextEditingController();
     String? subject;
     var urgent = false;
-    final subjects =
-        widget.career.predefinedSubjects.map((s) => s.name).toSet().toList()
-          ..sort();
 
+    if (!mounted) return;
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(

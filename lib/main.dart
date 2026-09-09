@@ -7,11 +7,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'models/career_model.dart';
+import 'screens/announcements_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/pending_tasks_screen.dart';
 import 'screens/overdue_tasks_screen.dart';
 import 'screens/delivered_tasks_screen.dart';
 import 'screens/area_personal_screen.dart';
+import 'services/app_navigator.dart';
 import 'widgets/mascot_companion.dart';
 import 'notification_service.dart';
 import 'colors.dart';
@@ -92,6 +95,10 @@ Future<void> main() async {
       await notificationService.syncAllMeetingReminders(
         meetingService.getMeetings(),
       );
+      // Si la app estaba cerrada y se abrió justo por tocar una notificación,
+      // deja pedida la pestaña correspondiente en AppNavigator antes de que
+      // MainScreen exista — su initState ya la recoge desde ahí.
+      await notificationService.routeIfLaunchedFromNotification();
     }
 
     runApp(
@@ -497,13 +504,65 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _authStream = _authService.userStream;
+
+    // Si la app arrancó por un toque a una notificación (proceso frío), la
+    // pestaña pedida ya está acá antes de este initState — arrancar el
+    // PageController directamente en esa página evita el salto visual y el
+    // riesgo de pedirle a un PageView que todavía no existe que salte.
+    final pendiente = AppNavigator.pendingMainTab.value;
+    if (pendiente != null) {
+      _currentIndex = pendiente;
+      AppNavigator.pendingMainTab.value = null;
+    }
     _pageController = PageController(initialPage: _currentIndex);
+
+    AppNavigator.pendingMainTab.addListener(_onPendingMainTab);
+    AppNavigator.pendingAnnouncementCareerId.addListener(
+      _onPendingAnnouncement,
+    );
   }
 
   @override
   void dispose() {
+    AppNavigator.pendingMainTab.removeListener(_onPendingMainTab);
+    AppNavigator.pendingAnnouncementCareerId.removeListener(
+      _onPendingAnnouncement,
+    );
     _pageController.dispose();
     super.dispose();
+  }
+
+  /// Reacciona cuando la app ya está corriendo y llega el toque a una
+  /// notificación (a diferencia del arranque en frío, que se resuelve en
+  /// [initState]).
+  void _onPendingMainTab() {
+    final target = AppNavigator.pendingMainTab.value;
+    if (target == null) return;
+    AppNavigator.pendingMainTab.value = null;
+    if (!mounted) return;
+    setState(() => _currentIndex = target);
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(target);
+    }
+  }
+
+  void _onPendingAnnouncement() {
+    final careerId = AppNavigator.pendingAnnouncementCareerId.value;
+    if (careerId == null) return;
+    AppNavigator.pendingAnnouncementCareerId.value = null;
+    if (!mounted) return;
+    Career? career;
+    try {
+      career = CareerService().getCareers().firstWhere(
+        (c) => c.id == careerId,
+      );
+    } catch (_) {
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => AnnouncementsScreen(career: career!)),
+    );
   }
 
   @override
