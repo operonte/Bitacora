@@ -161,6 +161,22 @@ class AttendanceService {
     }
   }
 
+  /// Asistencia de un alumno puntual, para el docente — misma forma que
+  /// [getMyAttendance] pero para la Ficha del alumno. No se cachea: es una
+  /// consulta puntual del docente, no algo que haga falta ver sin conexión.
+  Future<List<Map<String, dynamic>>> getStudentAttendance(
+    String careerId,
+    String studentId,
+  ) async {
+    final rows = await _client.rpc(
+      'get_student_attendance',
+      params: {'p_career_id': careerId, 'p_student_id': studentId},
+    );
+    return (rows as List)
+        .map((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+  }
+
   /// Reintenta las filas marcadas `pending` para esta clase. Devuelve las
   /// que siguen sin poder confirmarse (por ejemplo, si seguimos sin red).
   Future<Map<String, String>> _flushPending(

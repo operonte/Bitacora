@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../colors.dart';
 import '../models/career_model.dart';
 import '../services/supabase_db_service.dart';
+import 'student_profile_screen.dart';
 
 /// Cada cuánto se refresca solo mientras la pantalla está abierta. No es
 /// Realtime de verdad (task_progress y attendance no dejan al docente
@@ -33,7 +34,10 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
   void initState() {
     super.initState();
     _load();
-    _autoRefresh = Timer.periodic(_autoRefreshInterval, (_) => _load(silent: true));
+    _autoRefresh = Timer.periodic(
+      _autoRefreshInterval,
+      (_) => _load(silent: true),
+    );
   }
 
   @override
@@ -81,7 +85,11 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
       appBar: AppBar(
         title: Text('Panel de riesgo — ${widget.career.name}'),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _load, tooltip: 'Actualizar'),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _load,
+            tooltip: 'Actualizar',
+          ),
         ],
       ),
       body: _buildBody(),
@@ -93,7 +101,11 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
-          child: Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.error)),
+          child: Text(
+            _error!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.error),
+          ),
         ),
       );
     }
@@ -121,7 +133,11 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
                   ),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.insights_outlined, size: 40, color: AppColors.warning),
+                child: const Icon(
+                  Icons.insights_outlined,
+                  size: 40,
+                  color: AppColors.warning,
+                ),
               ),
               const SizedBox(height: 14),
               const Text(
@@ -153,65 +169,118 @@ class _TeacherPanelScreenState extends State<TeacherPanelScreen> {
           final severity = (missed >= 2 || (rate != null && rate < 70))
               ? AppColors.error
               : (missed == 1 || (rate != null && rate < 85))
-                  ? Colors.orange
-                  : AppColors.success;
+              ? Colors.orange
+              : AppColors.success;
+
+          final userId = row['user_id']?.toString();
 
           return Card(
             clipBehavior: Clip.antiAlias,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(width: 5, color: severity),
-                  Expanded(
-                    child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Icon(Icons.assignment_late_outlined, size: 15, color: _missedColor(missed)),
-                      const SizedBox(width: 6),
-                      Text(
-                        missed == 0 ? 'Sin tareas oficiales atrasadas' : '$missed tarea${missed == 1 ? '' : 's'} oficial${missed == 1 ? '' : 'es'} atrasada${missed == 1 ? '' : 's'}',
-                        style: TextStyle(fontSize: 12.5, color: _missedColor(missed), fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (marked == 0)
-                    const Text('Sin asistencia registrada todavía', style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary))
-                  else ...[
-                    Row(
-                      children: [
-                        Icon(Icons.checklist_rtl, size: 15, color: _attendanceColor(rate)),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Asistencia: ${rate?.toStringAsFixed(0) ?? '—'}% ($marked clases)',
-                          style: TextStyle(fontSize: 12.5, color: _attendanceColor(rate), fontWeight: FontWeight.w600),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: InkWell(
+              onTap: userId == null
+                  ? null
+                  : () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => StudentProfileScreen(
+                          career: widget.career,
+                          studentId: userId,
+                          studentName: name,
                         ),
-                      ],
+                      ),
                     ),
-                    const SizedBox(height: 4),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: LinearProgressIndicator(
-                        value: ((rate ?? 0) / 100).clamp(0, 1).toDouble(),
-                        minHeight: 6,
-                        backgroundColor: AppColors.textSecondary.withValues(alpha: 0.15),
-                        valueColor: AlwaysStoppedAnimation(_attendanceColor(rate)),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(width: 5, color: severity),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.assignment_late_outlined,
+                                  size: 15,
+                                  color: _missedColor(missed),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  missed == 0
+                                      ? 'Sin tareas oficiales atrasadas'
+                                      : '$missed tarea${missed == 1 ? '' : 's'} oficial${missed == 1 ? '' : 'es'} atrasada${missed == 1 ? '' : 's'}',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: _missedColor(missed),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            if (marked == 0)
+                              const Text(
+                                'Sin asistencia registrada todavía',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: AppColors.textSecondary,
+                                ),
+                              )
+                            else ...[
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.checklist_rtl,
+                                    size: 15,
+                                    color: _attendanceColor(rate),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Asistencia: ${rate?.toStringAsFixed(0) ?? '—'}% ($marked clases)',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      color: _attendanceColor(rate),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: LinearProgressIndicator(
+                                  value: ((rate ?? 0) / 100)
+                                      .clamp(0, 1)
+                                      .toDouble(),
+                                  minHeight: 6,
+                                  backgroundColor: AppColors.textSecondary
+                                      .withValues(alpha: 0.15),
+                                  valueColor: AlwaysStoppedAnimation(
+                                    _attendanceColor(rate),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                   ],
-                ],
-              ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           );

@@ -685,6 +685,19 @@ class SupabaseDbService {
     return List<Map<String, dynamic>>.from(rows as List);
   }
 
+  /// Todas las tareas compartidas de la carrera con el progreso de un
+  /// alumno puntual — para la Ficha del alumno del docente.
+  Future<List<Map<String, dynamic>>> getStudentTasks(
+    String careerId,
+    String studentId,
+  ) async {
+    final rows = await _client.rpc(
+      'get_student_tasks',
+      params: {'p_career_id': careerId, 'p_student_id': studentId},
+    );
+    return List<Map<String, dynamic>>.from(rows as List);
+  }
+
   // ── SUBJECTS ─────────────────────────────────────────────────
 
   /// Crea la materia directamente en Supabase, sin fallback local. Lanza si falla.
