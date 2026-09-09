@@ -217,7 +217,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                         context,
                         task: t,
                         appState: appState,
-                        isDeliveredView: t.isCompleted && t.isSubmitted,
+                        isDeliveredView: t.isFullyDelivered,
                       ),
                     ),
                 ],

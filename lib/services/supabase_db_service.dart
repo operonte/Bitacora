@@ -460,7 +460,32 @@ class SupabaseDbService {
         }
       }
 
-      return applyCurrentUserProgress(tasks);
+      final withProgress = applyCurrentUserProgress(tasks);
+
+      // Si nadie de la carrera debe una tarea que YO asigné como docente, la
+      // pestaña (pendiente/vencida/entregada) la decide eso y no mi propio
+      // task_progress — ver Task.allDelivered. Nunca lanza: sin esto, la
+      // tarea sigue clasificándose como hasta ahora.
+      try {
+        final delivery = await getMyCreatedSharedTasksDeliveryStatus();
+        if (delivery.isNotEmpty) {
+          return withProgress
+              .map(
+                (t) => t.id != null && delivery.containsKey(t.id)
+                    ? t.copyWith(allDelivered: delivery[t.id])
+                    : t,
+              )
+              .toList();
+        }
+      } catch (e) {
+        Logger.warning(
+          'Error consultando entrega de tareas de docente',
+          error: e,
+          tag: 'SupabaseDbService',
+        );
+      }
+
+      return withProgress;
     } catch (e) {
       Logger.warning(
         'Error cargando desde Supabase, usando caché local',
@@ -849,6 +874,45 @@ class SupabaseDbService {
     final rows = await _client.rpc(
       'get_student_tasks',
       params: {'p_career_id': careerId, 'p_student_id': studentId},
+    );
+    return List<Map<String, dynamic>>.from(rows as List);
+  }
+
+  /// Por cada tarea compartida que YO creé como docente: si ya nadie de la
+  /// carrera se la debe. Ver [Task.allDelivered] y get_my_created_shared_
+  /// tasks_status — decide en qué pestaña (pendiente/vencida/entregada) cae
+  /// una tarea que el docente asignó, ya que su propio task_progress nunca
+  /// se completa (no es él quien la hace).
+  Future<Map<String, bool>> getMyCreatedSharedTasksDeliveryStatus() async {
+    final rows = await _client.rpc('get_my_created_shared_tasks_status');
+    final map = <String, bool>{};
+    for (final row in (rows as List)) {
+      final id = row['task_id']?.toString();
+      if (id != null) map[id] = row['all_delivered'] as bool? ?? false;
+    }
+    return map;
+  }
+
+  /// Una fila por nota puesta en la carrera (de cualquier asignatura, no
+  /// solo la que el docente imparte) — para que los docentes se den
+  /// feedback entre asignaturas.
+  Future<List<Map<String, dynamic>>> getCareerGrades(String careerId) async {
+    final rows = await _client.rpc(
+      'get_career_grades',
+      params: {'p_career_id': careerId},
+    );
+    return List<Map<String, dynamic>>.from(rows as List);
+  }
+
+  /// Una fila por (alumno, asignatura) con su % de asistencia en esa
+  /// materia — a diferencia de [getStudentRisk], que da un único % por
+  /// alumno mezclando toda la carrera.
+  Future<List<Map<String, dynamic>>> getCareerAttendanceSummary(
+    String careerId,
+  ) async {
+    final rows = await _client.rpc(
+      'get_career_attendance_summary',
+      params: {'p_career_id': careerId},
     );
     return List<Map<String, dynamic>>.from(rows as List);
   }

@@ -55,6 +55,13 @@ class Task {
   String? teacherComment;
   String? grade;
 
+  /// Para una tarea compartida que YO (docente) asigné: si ya nadie de la
+  /// carrera se la debe. `null` = todavía no se consultó. Lo pone
+  /// [SupabaseDbService.getTasks] desde get_my_created_shared_tasks_status,
+  /// de solo lectura acá igual que [teacherComment]/[grade] — por eso
+  /// tampoco va en [toMap].
+  bool? allDelivered;
+
   /// Minutos de anticipación del aviso previo a la entrega. `null` = usar el
   /// default de la app ([NotificationService.taskLeadTime], hoy 2 horas) —
   /// así una tarea ya creada no cambia de comportamiento por esto.
@@ -82,6 +89,7 @@ class Task {
     this.updatedAt,
     this.teacherComment,
     this.grade,
+    this.allDelivered,
     this.reminderMinutes,
   }) {
     _validate();
@@ -273,6 +281,7 @@ class Task {
     DateTime? updatedAt,
     String? teacherComment,
     String? grade,
+    bool? allDelivered,
     int? reminderMinutes,
   }) {
     return Task(
@@ -297,16 +306,24 @@ class Task {
       updatedAt: updatedAt ?? this.updatedAt,
       teacherComment: teacherComment ?? this.teacherComment,
       grade: grade ?? this.grade,
+      allDelivered: allDelivered ?? this.allDelivered,
       reminderMinutes: reminderMinutes ?? this.reminderMinutes,
     );
   }
+
+  /// Si esta tarea cuenta como "entregada" para pintarla como completada o
+  /// clasificarla en una pestaña. Para casi todas las tareas es simplemente
+  /// [isCompleted] && [isSubmitted]; para una que YO asigné como docente,
+  /// esos dos campos son míos, no de mis alumnos, y se quedan en false para
+  /// siempre — ahí manda [allDelivered], que sí mira a quienes la deben.
+  bool get isFullyDelivered => allDelivered ?? (isCompleted && isSubmitted);
 
   TaskUrgency getUrgency() {
     final now = DateTime.now();
     final difference = dueDate.difference(now);
 
     // Si está completada y enviada, siempre es "completed" (gris)
-    if (isCompleted && isSubmitted) {
+    if (isFullyDelivered) {
       return TaskUrgency.completed;
     }
 

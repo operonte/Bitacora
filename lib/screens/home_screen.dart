@@ -6,11 +6,14 @@ import '../colors.dart';
 import '../models/meeting_model.dart';
 import '../models/task_model.dart';
 import '../providers/app_state.dart';
+import '../providers/theme_provider.dart';
 import '../services/announcement_service.dart';
 import '../services/career_service.dart';
 import '../services/meeting_service.dart';
+import '../services/supabase_db_service.dart';
 import '../services/sync_service.dart';
 import '../widgets/completion_rate_banner.dart';
+import '../widgets/mascot_widget.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_details_dialog.dart';
 import 'add_meeting_screen.dart';
@@ -19,6 +22,7 @@ import 'announcements_screen.dart';
 import 'attendance_screen.dart';
 import 'config_screen.dart';
 import 'global_search_screen.dart';
+import 'my_profile_screen.dart';
 import 'teacher_panel_screen.dart';
 
 /// Lo urgente de hoy, de un vistazo, al abrir la app.
@@ -37,6 +41,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  /// Alumnos en riesgo en la carrera docente activa, o null mientras no se
+  /// sabe todavía (no se muestra nada hasta tener el número real). Misma
+  /// regla que usa TeacherPanelScreen para no repetir un criterio distinto.
+  int? _riskCount;
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +54,24 @@ class _HomeScreenState extends State<HomeScreen> {
       // Solo para que la lista de anuncios tenga algo que mostrar acá — la
       // suscripción en sí ya la sostiene AppState desde el login.
       AnnouncementService().loadFor(career.id);
+      if (CareerService().isDocente(career.id)) {
+        _loadRiskCount(career.id);
+      }
+    }
+  }
+
+  Future<void> _loadRiskCount(String careerId) async {
+    try {
+      final rows = await SupabaseDbService().getStudentRisk(careerId);
+      final count = rows.where((r) {
+        final missed = (r['missed_tasks'] as num?)?.toInt() ?? 0;
+        final rate = r['attendance_rate'] as num?;
+        return missed >= 2 || (rate != null && rate < 70);
+      }).length;
+      if (mounted) setState(() => _riskCount = count);
+    } catch (_) {
+      // Sin bloquear Home si falla: la franja de docente se ve igual que
+      // hoy, solo sin el aviso.
     }
   }
 
@@ -98,6 +125,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           SyncIndicator(syncService: SyncService()),
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'Mi perfil',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyProfileScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             tooltip: 'Configuración',
@@ -231,6 +266,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// llegaba a esto por Configuración → Mi progreso → un submenú — ahí es
   /// donde de verdad se siente que la app "no sirve para dar clases".
   Widget _buildDocenteStrip(BuildContext context, String careerId) {
+    final mascot = context.watch<ThemeProvider>().mascot;
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(14),
@@ -297,6 +333,50 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
+          if (_riskCount != null && _riskCount! > 0) ...[
+            const SizedBox(height: 10),
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                final c = CareerService().getSelectedCareer();
+                if (c == null) return;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TeacherPanelScreen(career: c),
+                  ),
+                );
+              },
+              child: Row(
+                children: [
+                  if (MascotWidget.isEnabled(mascot))
+                    MascotWidget(
+                      option: mascot,
+                      state: MascotState.sad,
+                      size: 36,
+                    )
+                  else
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: AppColors.warning,
+                    ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '$_riskCount alumno${_riskCount == 1 ? '' : 's'} en '
+                      'riesgo — tocá para ver el panel',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.warning,
+                      ),
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, size: 18),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

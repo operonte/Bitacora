@@ -363,6 +363,10 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
             : _linkController.text.trim(),
         careerId: _selectedCareerId,
         userId: user.id,
+        userName:
+            user.userMetadata?['full_name'] as String? ??
+            user.userMetadata?['name'] as String? ??
+            'Usuario',
         // Sin carrera no hay grupo destinatario: la restricción
         // meetings_shared_needs_career_chk lo rechazaría en la base.
         isPrivate: _selectedCareerId == null ? true : _isPrivate,

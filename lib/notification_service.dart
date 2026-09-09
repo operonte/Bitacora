@@ -246,7 +246,7 @@ class NotificationService {
       final now = DateTime.now();
       for (final task in tasks) {
         if (task.id == null) continue;
-        final entregada = task.isCompleted && task.isSubmitted;
+        final entregada = task.isFullyDelivered;
         final anticipacion = Duration(
           minutes: task.reminderMinutes ?? taskLeadTime.inMinutes,
         );
@@ -389,7 +389,7 @@ class NotificationService {
   }
 
   int _tasksDueOn(DateTime dia) => _tasks.where((t) {
-    if (t.isCompleted && t.isSubmitted) return false;
+    if (t.isFullyDelivered) return false;
     return _sameDay(t.dueDate, dia);
   }).length;
 

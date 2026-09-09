@@ -16,6 +16,7 @@ import '../widgets/study_file_card.dart';
 import 'meetings_screen.dart';
 import 'add_meeting_screen.dart';
 import 'config_screen.dart';
+import 'my_profile_screen.dart';
 import '../colors.dart';
 
 class AreaPersonalScreen extends StatefulWidget {
@@ -511,6 +512,14 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
             onPressed: _isSyncing
                 ? null
                 : () => _syncAndCleanFiles(manual: true),
+          ),
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyProfileScreen()),
+            ),
+            tooltip: 'Mi perfil',
           ),
           IconButton(
             icon: const Icon(Icons.settings),

@@ -12,6 +12,7 @@ import '../services/career_service.dart';
 import '../services/sync_service.dart';
 import '../colors.dart';
 import 'config_screen.dart';
+import 'my_profile_screen.dart';
 
 class DeliveredTasksScreen extends StatefulWidget {
   const DeliveredTasksScreen({super.key});
@@ -100,6 +101,14 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
             tooltip: 'Buscar',
           ),
           SyncIndicator(syncService: SyncService()),
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyProfileScreen()),
+            ),
+            tooltip: 'Mi perfil',
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.push(

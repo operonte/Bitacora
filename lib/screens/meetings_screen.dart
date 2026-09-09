@@ -14,6 +14,7 @@ import '../widgets/month_calendar_grid.dart';
 import 'add_meeting_screen.dart';
 import '../colors.dart';
 import 'config_screen.dart';
+import 'my_profile_screen.dart';
 import '../services/career_service.dart';
 
 class MeetingsScreen extends StatefulWidget {
@@ -298,6 +299,14 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
               ],
             ),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.person_outline),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MyProfileScreen()),
+                ),
+                tooltip: 'Mi perfil',
+              ),
               IconButton(
                 icon: const Icon(Icons.settings),
                 onPressed: () => Navigator.push(
@@ -790,6 +799,17 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                           color: AppColors.textSecondary,
                         ),
                       ),
+                      if (!isOwn) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Compartida por ${meeting.userName}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -840,9 +860,9 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     onPressed: () => _confirmDeleteMeeting(meeting),
                   ),
                 ] else
-                  const Tooltip(
-                    message: 'Compartida por otro miembro de la carrera',
-                    child: Padding(
+                  Tooltip(
+                    message: 'Compartida por ${meeting.userName}',
+                    child: const Padding(
                       padding: EdgeInsets.all(8),
                       child: Icon(
                         Icons.groups_outlined,

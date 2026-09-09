@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/task_model.dart';
 import '../models/study_file_model.dart';
 import '../providers/app_state.dart';
+import '../services/career_service.dart';
 import '../services/supabase_db_service.dart';
 import '../services/study_file_service.dart';
 import '../services/google_drive_service.dart';
@@ -66,6 +67,17 @@ class TaskDetailsDialog {
   }) {
     var localCompleted = task.isCompleted;
     var localSubmitted = task.isSubmitted;
+
+    // Un docente no "debe" una tarea compartida con la carrera — a menos que
+    // en esta carrera puntual también sea alumno (puede pasar: es docente de
+    // una asignatura y alumno de otra, el rol es por carrera, no global). Una
+    // tarea personal (no compartida) sigue siendo suya para marcar, incluso
+    // si es docente: nadie más la debe, es su propio pendiente.
+    final esTareaDeDocente =
+        task.isShared && CareerService().isDocente(task.careerId);
+    final puedeVerProgreso =
+        task.isShared &&
+        task.userId == Supabase.instance.client.auth.currentUser?.id;
 
     Future<void> updateStatus(
       bool completed,
@@ -139,57 +151,82 @@ class TaskDetailsDialog {
                       style: const TextStyle(fontStyle: FontStyle.italic),
                     ),
                 ],
-                if (task.id != null) _AttachedFilesSection(task: task),
+                if (task.id != null && !esTareaDeDocente)
+                  _AttachedFilesSection(task: task),
                 const SizedBox(height: 16),
-                const Text(
-                  'Estado:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                CheckboxListTile(
-                  title: const Text('Realizada'),
-                  value: localCompleted,
-                  onChanged: (value) async {
-                    if (value != null) {
-                      await updateStatus(value, localSubmitted, setDialogState);
-                    }
-                  },
-                  activeColor: Colors.green,
-                ),
-                CheckboxListTile(
-                  title: const Text('Enviada'),
-                  value: localSubmitted,
-                  onChanged: (value) async {
-                    if (value != null) {
-                      await updateStatus(localCompleted, value, setDialogState);
-                    }
-                  },
-                  activeColor: Colors.green,
-                ),
-                if (isDeliveredView)
-                  if (localCompleted && localSubmitted)
-                    _banner(
-                      Icons.check_circle,
-                      Colors.green,
-                      'Tarea completamente entregada',
-                    )
-                  else
-                    const SizedBox.shrink()
-                else if (localCompleted && !localSubmitted)
-                  _banner(
-                    Icons.warning,
-                    Colors.orange,
-                    'Realizada pero no enviada',
+                if (esTareaDeDocente) ...[
+                  const Text(
+                    'Quién la debe:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
                   ),
+                  const SizedBox(height: 8),
+                  if (puedeVerProgreso)
+                    _SubmissionStatusList(task: task)
+                  else
+                    const Text(
+                      'Solo quien creó la tarea puede ver quién la entregó.',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                ] else ...[
+                  const Text(
+                    'Estado:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    title: const Text('Realizada'),
+                    value: localCompleted,
+                    onChanged: (value) async {
+                      if (value != null) {
+                        await updateStatus(
+                          value,
+                          localSubmitted,
+                          setDialogState,
+                        );
+                      }
+                    },
+                    activeColor: Colors.green,
+                  ),
+                  CheckboxListTile(
+                    title: const Text('Enviada'),
+                    value: localSubmitted,
+                    onChanged: (value) async {
+                      if (value != null) {
+                        await updateStatus(
+                          localCompleted,
+                          value,
+                          setDialogState,
+                        );
+                      }
+                    },
+                    activeColor: Colors.green,
+                  ),
+                  if (isDeliveredView)
+                    if (localCompleted && localSubmitted)
+                      _banner(
+                        Icons.check_circle,
+                        Colors.green,
+                        'Tarea completamente entregada',
+                      )
+                    else
+                      const SizedBox.shrink()
+                  else if (localCompleted && !localSubmitted)
+                    _banner(
+                      Icons.warning,
+                      Colors.orange,
+                      'Realizada pero no enviada',
+                    ),
+                ],
               ],
             );
           },
         ),
         actions: [
           // Solo quien creó la tarea la ve: el RPC del servidor exige lo
-          // mismo, esto solo evita mostrar un botón que va a fallar.
-          if (task.isShared &&
-              task.userId == Supabase.instance.client.auth.currentUser?.id)
+          // mismo, esto solo evita mostrar un botón que va a fallar. Para el
+          // docente de esta carrera, este mismo progreso ya se muestra
+          // arriba en vez del checkbox, así que el botón sobraría acá.
+          if (!esTareaDeDocente && puedeVerProgreso)
             TextButton(
               onPressed: () => _showSubmissionStatus(context, task),
               child: const Text('Ver progreso del grupo'),
@@ -209,60 +246,18 @@ class TaskDetailsDialog {
   static void _showSubmissionStatus(BuildContext context, Task task) {
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          var future = SupabaseDbService().getTaskSubmissionStatus(task.id!);
-          void refresh() => setDialogState(() {
-            future = SupabaseDbService().getTaskSubmissionStatus(task.id!);
-          });
-
-          return AlertDialog(
-            title: Text('Progreso — ${task.title}'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: FutureBuilder<List<Map<String, dynamic>>>(
-                future: future,
-                builder: (ctx, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    return Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Text(
-                        'No se pudo cargar el progreso: ${snapshot.error}',
-                      ),
-                    );
-                  }
-                  final rows = snapshot.data ?? [];
-                  if (rows.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Text(
-                        'Todavía nadie más pertenece a esta carrera.',
-                      ),
-                    );
-                  }
-                  return ListView(
-                    shrinkWrap: true,
-                    children: rows
-                        .map((r) => _submissionTile(context, task, r, refresh))
-                        .toList(),
-                  );
-                },
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cerrar'),
-              ),
-            ],
-          );
-        },
+      builder: (ctx) => AlertDialog(
+        title: Text('Progreso — ${task.title}'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: _SubmissionStatusList(task: task),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar'),
+          ),
+        ],
       ),
     );
   }
@@ -653,6 +648,72 @@ class TaskDetailsDialog {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Lista de quién debe [task] — completó/entregó o no. Se usa tanto inline
+/// en el detalle de una tarea (docente viendo su propia tarea) como en el
+/// diálogo "Ver progreso del grupo" (tarea compartida entre alumnos).
+class _SubmissionStatusList extends StatefulWidget {
+  final Task task;
+  const _SubmissionStatusList({required this.task});
+
+  @override
+  State<_SubmissionStatusList> createState() => _SubmissionStatusListState();
+}
+
+class _SubmissionStatusListState extends State<_SubmissionStatusList> {
+  late Future<List<Map<String, dynamic>>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = SupabaseDbService().getTaskSubmissionStatus(widget.task.id!);
+  }
+
+  void _refresh() => setState(() {
+    _future = SupabaseDbService().getTaskSubmissionStatus(widget.task.id!);
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text('No se pudo cargar el progreso: ${snapshot.error}'),
+          );
+        }
+        final rows = snapshot.data ?? [];
+        if (rows.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(8),
+            child: Text('Todavía nadie más pertenece a esta carrera.'),
+          );
+        }
+        return ListView(
+          shrinkWrap: true,
+          children: rows
+              .map(
+                (r) => TaskDetailsDialog._submissionTile(
+                  context,
+                  widget.task,
+                  r,
+                  _refresh,
+                ),
+              )
+              .toList(),
+        );
+      },
     );
   }
 }

@@ -492,33 +492,48 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                 onChanged: (v) => setState(() => _reminderMinutes = v),
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: CheckboxListTile(
-                      title: const Text('Realizada'),
-                      value: _isCompleted,
-                      onChanged: (value) {
-                        setState(() {
-                          _isCompleted = value!;
-                        });
-                      },
-                    ),
+              // Si sos docente de esta carrera y la tarea es compartida, no
+              // es tuya para marcar — la deben tus alumnos. Ese progreso se
+              // ve desde el detalle de la tarea ("Quién la debe"), no acá.
+              // Mismo criterio que ya usa task_details_dialog.dart.
+              if (_isShared && _careerService.isDocente(_selectedCareer?.id))
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Vas a poder ver quién la entregó desde el detalle de '
+                    'la tarea, una vez creada.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
                   ),
-                  Expanded(
-                    child: CheckboxListTile(
-                      title: const Text('Entregada'),
-                      value: _isSubmitted,
-                      onChanged: (value) {
-                        setState(() {
-                          _isSubmitted = value!;
-                        });
-                      },
+                )
+              else ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: CheckboxListTile(
+                        title: const Text('Realizada'),
+                        value: _isCompleted,
+                        onChanged: (value) {
+                          setState(() {
+                            _isCompleted = value!;
+                          });
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
+                    Expanded(
+                      child: CheckboxListTile(
+                        title: const Text('Entregada'),
+                        value: _isSubmitted,
+                        onChanged: (value) {
+                          setState(() {
+                            _isSubmitted = value!;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
               // Antes toda tarea con carrera se publicaba al grupo, y la
               // carrera se heredaba de la que estuviera activa: se podía
               // compartir sin haberlo decidido. Ahora es explícito y privado

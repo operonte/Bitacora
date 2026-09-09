@@ -12,6 +12,11 @@ class Meeting {
   final String? meetingLink;
   final String? careerId;
   final String userId;
+
+  /// Quién la cargó — para que una reunión compartida por otro miembro de
+  /// la carrera diga de quién es, igual que ya hacen los anuncios. Lo
+  /// estampa el cliente al crearla, no un join en vivo.
+  final String userName;
   final bool isCompleted;
 
   /// Privada (solo la ve quien la creó) o compartida con los miembros de
@@ -38,6 +43,7 @@ class Meeting {
     this.meetingLink,
     this.careerId,
     required this.userId,
+    this.userName = 'Usuario',
     this.isCompleted = false,
     this.isPrivate = true,
     DateTime? createdAt,
@@ -127,6 +133,7 @@ class Meeting {
       'type': effectiveType,
       'is_recurrent': isRecurrent,
       'user_id': userId,
+      'user_name': userName,
       'is_completed': isCompleted,
       'is_private': isPrivate,
       'created_at': createdAt.toUtc().toIso8601String(),
@@ -163,6 +170,12 @@ class Meeting {
           : map['meeting_link'],
       careerId: map['career_id']?.toString(),
       userId: map['user_id'] ?? '',
+      // Ausente en filas viejas (previas a la migración que agregó la
+      // columna, ya rellenadas con un best-effort) o si el perfil no tenía
+      // nombre ni email — no se deja vacío, se ve rota la tarjeta si no.
+      userName: (map['user_name'] as String?)?.trim().isNotEmpty ?? false
+          ? map['user_name'] as String
+          : 'Usuario',
       isCompleted: map['is_completed'] ?? false,
       // Ausente en filas viejas (previas a la migración): se asume privada,
       // que es como se comportaban antes de existir esta opción.
@@ -186,6 +199,7 @@ class Meeting {
     String? meetingLink,
     String? careerId,
     String? userId,
+    String? userName,
     bool? isCompleted,
     bool? isPrivate,
     DateTime? createdAt,
@@ -203,6 +217,7 @@ class Meeting {
       meetingLink: meetingLink ?? this.meetingLink,
       careerId: careerId ?? this.careerId,
       userId: userId ?? this.userId,
+      userName: userName ?? this.userName,
       isCompleted: isCompleted ?? this.isCompleted,
       isPrivate: isPrivate ?? this.isPrivate,
       createdAt: createdAt ?? this.createdAt,

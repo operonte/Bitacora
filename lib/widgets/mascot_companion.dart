@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/task_model.dart';
 import '../providers/app_state.dart';
 import '../providers/theme_provider.dart';
 import 'mascot_widget.dart';
 
 /// Compañero flotante en la pantalla principal.
-/// - `angry` si hay tareas vencidas ahora mismo.
+/// - `sad` si hay tareas vencidas ahora mismo (se puede tocar para ver un
+///   consejo puntual, calculado con los datos reales, no genérico).
 /// - `content` unos segundos cada vez que entregas una tarea más.
 /// - `bored` en cualquier otro momento (estado por defecto).
 class MascotCompanion extends StatefulWidget {
@@ -38,6 +40,50 @@ class _MascotCompanionState extends State<MascotCompanion> {
     _lastDeliveredCount = count;
   }
 
+  /// Consejo de una línea, con datos reales — no genérico ni de IA, misma
+  /// filosofía que el panel de riesgo del docente ("regla simple").
+  String _tipFor(List<Task> overdue) {
+    if (overdue.length == 1) {
+      return 'Tenés 1 tarea atrasada: "${overdue.first.title}". '
+          'Organizá un rato hoy para ponerte al día.';
+    }
+    final oldest = overdue.reduce(
+      (a, b) => a.dueDate.isBefore(b.dueDate) ? a : b,
+    );
+    return 'Tenés ${overdue.length} tareas atrasadas. Empezá por '
+        '"${oldest.title}", es la más antigua.';
+  }
+
+  void _showTip(BuildContext context, List<Task> overdue) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.lightbulb_outline, color: Colors.amber),
+                SizedBox(width: 8),
+                Text(
+                  'Un consejo',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(_tipFor(overdue), style: const TextStyle(fontSize: 14)),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final mascot = context.watch<ThemeProvider>().mascot;
@@ -45,17 +91,23 @@ class _MascotCompanionState extends State<MascotCompanion> {
 
     final appState = context.watch<AppState>();
     final deliveredCount = appState.deliveredTasks.length;
-    final hasOverdue = appState.overdueTasks.isNotEmpty;
+    final overdue = appState.overdueTasks;
+    final hasOverdue = overdue.isNotEmpty;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _onDeliveredCountChanged(deliveredCount);
     });
 
     final state = _celebrating
         ? MascotState.content
-        : (hasOverdue ? MascotState.angry : MascotState.bored);
+        : (hasOverdue ? MascotState.sad : MascotState.bored);
 
-    return IgnorePointer(
-      child: MascotWidget(option: mascot, state: state, size: 64),
+    final mascotWidget = MascotWidget(option: mascot, state: state, size: 64);
+
+    if (!hasOverdue) return IgnorePointer(child: mascotWidget);
+
+    return GestureDetector(
+      onTap: () => _showTip(context, overdue),
+      child: mascotWidget,
     );
   }
 }

@@ -4,7 +4,15 @@ import '../colors.dart';
 
 enum AppThemeMode { light, dark, system }
 
-enum MascotOption { none, robot, cat }
+enum MascotOption {
+  none,
+  robot,
+  cat,
+  hamsterYellow,
+  catBlue,
+  bunny,
+  hamsterBrown,
+}
 
 /// Cómo se muestran las reuniones: lista cronológica u horario semanal
 /// tipo grilla (día x hora), pensado para las recurrentes.
@@ -24,20 +32,25 @@ class ThemeProvider extends ChangeNotifier {
   static const _paletteKey = 'app_theme_palette';
   static const _meetingsViewKey = 'meetings_view_mode';
   static const _tasksViewKey = 'tasks_view_mode';
+  static const _mascotKey = 'app_mascot_option';
 
   AppThemeMode _mode = AppThemeMode.system;
   AppColorPalette _palette = AppColorPalette.teal;
   MeetingsViewMode _meetingsViewMode = MeetingsViewMode.list;
   TasksViewMode _tasksViewMode = TasksViewMode.list;
+  MascotOption _mascot = MascotOption.none;
 
   AppThemeMode get mode => _mode;
   AppColorPalette get palette => _palette;
   MeetingsViewMode get meetingsViewMode => _meetingsViewMode;
   TasksViewMode get tasksViewMode => _tasksViewMode;
+  MascotOption get mascot => _mascot;
 
-  /// La mascota no se elige por separado: viene con la paleta.
-  /// Verde -> robot hackercore. Rosa -> gato. El resto, sin mascota.
-  MascotOption get mascot {
+  /// Antes de tener su propia preferencia, la mascota venía atada a la
+  /// paleta (verde -> robot, rosa -> gato). Se usa solo una vez, en
+  /// [initialize], para migrar a quien ya tenía una paleta elegida sin que
+  /// se le desaparezca la mascota de golpe.
+  MascotOption _mascotFromPaletteLegacy() {
     switch (_palette) {
       case AppColorPalette.emerald:
         return MascotOption.robot;
@@ -81,7 +94,29 @@ class ThemeProvider extends ChangeNotifier {
     final storedTasksView = prefs.getInt(_tasksViewKey) ?? 0; // default: lista
     _tasksViewMode = TasksViewMode.values[storedTasksView.clamp(0, 2)];
 
+    final storedMascot = prefs.getInt(_mascotKey);
+    if (storedMascot == null) {
+      // Nunca se guardó una preferencia propia: quien ya tenía una paleta
+      // elegida conserva la mascota que esa paleta implicaba, y desde ahora
+      // queda guardada aparte — a partir de acá, paleta y mascota se eligen
+      // por separado.
+      _mascot = _mascotFromPaletteLegacy();
+      await prefs.setInt(_mascotKey, _mascot.index);
+    } else {
+      _mascot = MascotOption.values[storedMascot.clamp(
+        0,
+        MascotOption.values.length - 1,
+      )];
+    }
+
     notifyListeners();
+  }
+
+  Future<void> setMascot(MascotOption mascot) async {
+    _mascot = mascot;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_mascotKey, mascot.index);
   }
 
   Future<void> setMode(AppThemeMode mode) async {

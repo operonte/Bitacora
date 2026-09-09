@@ -111,8 +111,7 @@ class TaskCard extends StatelessWidget {
                                       letterSpacing: 0.1,
                                       height: 1.25,
                                       color: titleColor,
-                                      decoration:
-                                          (task.isCompleted && task.isSubmitted)
+                                      decoration: task.isFullyDelivered
                                           ? TextDecoration.lineThrough
                                           : null,
                                     ),

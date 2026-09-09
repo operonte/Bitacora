@@ -1,12 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../auth_service.dart';
 import '../colors.dart';
+import '../models/career_model.dart';
+import '../services/career_service.dart';
 import '../services/profile_service.dart';
 import '../utils/custom_file_picker.dart';
 import '../utils/file_security_validator.dart';
 import '../utils/input_sanitizer.dart';
+import 'announcements_screen.dart';
+import 'attendance_screen.dart';
+import 'career_attendance_screen.dart';
+import 'career_grades_screen.dart';
+import 'career_members_directory_screen.dart';
+import 'my_attendance_screen.dart';
+import 'my_grades_screen.dart';
 import 'public_profile_screen.dart';
+import 'teacher_panel_screen.dart';
+import 'teacher_subjects_screen.dart';
 
 /// Mi perfil: lo que antes era un diálogo con nombre y una URL de foto
 /// pegada a mano, ahora una pantalla propia con foto subida de verdad, bio
@@ -21,6 +33,8 @@ class MyProfileScreen extends StatefulWidget {
 
 class _MyProfileScreenState extends State<MyProfileScreen> {
   final _service = ProfileService();
+  final _careerService = CareerService();
+  final _authService = AuthService();
   final _nameController = TextEditingController();
   final _bioController = TextEditingController();
   final _ageController = TextEditingController();
@@ -35,10 +49,30 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   double _uploadProgress = 0;
   String? _error;
 
+  // Información académica: carrera activa, todas las carreras a las que
+  // pertenece y sus herramientas — vive acá y no en Configuración porque es
+  // "quién sos", no "cómo se ve la app".
+  Career? _selectedCareer;
+  List<Career> _careers = [];
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadCareerData();
+  }
+
+  Future<void> _loadCareerData() async {
+    // Sincronizar automáticamente materias y profesores desde Supabase —
+    // vivía en Configuración, se mueve acá con el resto de lo académico.
+    try {
+      await _careerService.reloadCareerWithUpdatedSubjects();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _selectedCareer = _careerService.getSelectedCareer();
+      _careers = _careerService.getCareers();
+    });
   }
 
   @override
@@ -332,12 +366,546 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 24),
+                      ..._academicSections(),
                     ],
                   ),
                 ),
               ],
             ),
     );
+  }
+
+  /// Todo lo académico: carrera activa, avisos, progreso, herramientas de
+  /// docente y la cuenta en sí. Antes vivía repartido en Configuración —
+  /// junto al perfil es donde tiene sentido, es "quién sos", no "cómo se ve
+  /// la app".
+  List<Widget> _academicSections() {
+    final career = _selectedCareer;
+    return [
+      if (career != null) ...[
+        _sectionHeader('Comunicación', Icons.campaign_outlined),
+        const SizedBox(height: 8),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.campaign_outlined,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Anuncios'),
+                subtitle: Text('Avisos de ${career.name}'),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AnnouncementsScreen(career: career),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.groups_outlined,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Miembros'),
+                subtitle: Text('Directorio de ${career.name}'),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        CareerMembersDirectoryScreen(career: career),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        _sectionHeader('Mi progreso', Icons.school_outlined),
+        const SizedBox(height: 8),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.grade_outlined,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Mis notas'),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MyGradesScreen(career: career),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.checklist_rtl,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Mi asistencia'),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MyAttendanceScreen(career: career),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
+
+      if (career != null && _careerService.isDocente(career.id)) ...[
+        _sectionHeader('Herramientas de docente', Icons.school),
+        const SizedBox(height: 8),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.checklist_rtl,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Asistencia'),
+                subtitle: Text('Marcar asistencia de ${career.name}'),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AttendanceScreen(career: career),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.table_chart_outlined,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Resumen de asistencia'),
+                subtitle: const Text(
+                  'Todos los alumnos y su % en cada asignatura',
+                ),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CareerAttendanceScreen(career: career),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.grading_outlined,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Notas de la carrera'),
+                subtitle: const Text(
+                  'Todos los alumnos y sus notas en cada asignatura',
+                ),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CareerGradesScreen(career: career),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.warning_amber_rounded,
+                  color: AppColors.warning,
+                ),
+                title: const Text('Panel de riesgo'),
+                subtitle: const Text('Quién se está quedando atrás'),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TeacherPanelScreen(career: career),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.menu_book_outlined,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Mis asignaturas'),
+                subtitle: const Text(
+                  'Qué materias impartís, para cruzar con el semestre del alumno',
+                ),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TeacherSubjectsScreen(career: career),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
+
+      if (career != null) ...[
+        _sectionHeader('Mi semestre', Icons.calendar_view_month_outlined),
+        const SizedBox(height: 8),
+        _buildSemesterPicker(career),
+        const SizedBox(height: 24),
+      ],
+
+      _sectionHeader('Estudias dos o más carreras', Icons.school_outlined),
+      const SizedBox(height: 8),
+      Card(
+        child: Column(
+          children: [
+            ..._careers.map(_careerTile),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(
+                Icons.add_circle_outline,
+                color: AppColors.primary,
+              ),
+              title: const Text('Unirse a otra carrera'),
+              subtitle: const Text('Ingresar una clave de acceso'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: _joinCareerDialog,
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 24),
+
+      _sectionHeader('Cuenta', Icons.manage_accounts_outlined),
+      const SizedBox(height: 8),
+      Card(
+        child: Column(
+          children: [
+            ListTile(
+              leading: const Icon(
+                Icons.school_outlined,
+                color: AppColors.warning,
+              ),
+              title: const Text('Salir de todas las carreras'),
+              subtitle: const Text('Volver a la selección de carrera'),
+              onTap: _logout,
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.exit_to_app, color: AppColors.error),
+              title: const Text('Cerrar sesión de la cuenta'),
+              subtitle: const Text('Cerrar Sesión'),
+              onTap: _signOutAccount,
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  Widget _sectionHeader(String label, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: AppColors.textSecondary),
+        const SizedBox(width: 8),
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.2,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Semestres cargados en el catálogo de [career] — los mismos valores que
+  /// ya etiquetan cada materia, para no inventar una lista aparte.
+  List<String> _semestresDe(Career career) =>
+      career.predefinedSubjects
+          .map((s) => s.semester?.trim() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+
+  Widget _buildSemesterPicker(Career career) {
+    final opciones = _semestresDe(career);
+    if (opciones.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            '${career.name} todavía no tiene sus materias organizadas por semestre.',
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+      );
+    }
+    final actual = _careerService.semesterFor(career.id);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: DropdownButtonFormField<String?>(
+          initialValue: opciones.contains(actual) ? actual : null,
+          decoration: const InputDecoration(
+            labelText: '¿En qué semestre estás?',
+            border: InputBorder.none,
+          ),
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('Sin elegir'),
+            ),
+            ...opciones.map(
+              (s) => DropdownMenuItem<String?>(value: s, child: Text(s)),
+            ),
+          ],
+          onChanged: (value) async {
+            if (value == null) return;
+            try {
+              await _careerService.setMySemester(career.id, value);
+              if (mounted) {
+                setState(() {});
+                _showSnack('Semestre guardado', Colors.green);
+              }
+            } catch (e) {
+              _showSnack('No se pudo guardar: $e', AppColors.error);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _careerTile(Career career) {
+    final isActive = _selectedCareer?.id == career.id;
+    return ListTile(
+      leading: Icon(
+        isActive ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: isActive ? AppColors.primary : AppColors.textSecondary,
+      ),
+      title: Text(
+        career.name,
+        style: TextStyle(
+          fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(isActive ? 'Carrera activa' : 'Tocar para activar'),
+      trailing: _careers.length > 1
+          ? IconButton(
+              icon: const Icon(Icons.logout, color: AppColors.error, size: 20),
+              tooltip: 'Salir de esta carrera',
+              onPressed: () => _leaveCareer(career),
+            )
+          : null,
+      onTap: isActive ? null : () => _setActiveCareer(career),
+    );
+  }
+
+  Future<void> _setActiveCareer(Career career) async {
+    await _careerService.setActiveCareer(career.id);
+    _loadCareerData();
+  }
+
+  Future<void> _joinCareerDialog() async {
+    // Refrescar las carreras creadas en el admin para poder validar su clave.
+    await _careerService.loadRemoteCareers();
+
+    final controller = TextEditingController();
+    String? errorText;
+
+    if (!mounted) return;
+    final added = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Unirse a otra carrera'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Ingresa la clave de acceso de la carrera o grupo al que quieres unirte.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Clave de acceso',
+                  border: const OutlineInputBorder(),
+                  errorText: errorText,
+                ),
+                onSubmitted: (_) {},
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final key = controller.text.trim();
+                Career? career;
+                try {
+                  // Consulta al servidor: la clave ya no viaja en la app.
+                  career = await _careerService.validateAccessKey(key);
+                } catch (e) {
+                  // join_career() bloquea 15 min tras 5 intentos fallidos y
+                  // avisa con esta excepción puntual; el resto de errores del
+                  // servidor se tratan como falta de conexión.
+                  final message = e is PostgrestException ? e.message : '';
+                  setLocal(
+                    () => errorText = message.contains('Demasiados intentos')
+                        ? message
+                        : 'Sin conexión para validar la clave',
+                  );
+                  return;
+                }
+                if (career == null) {
+                  setLocal(() => errorText = 'Clave de acceso inválida');
+                  return;
+                }
+                if (_careerService.isMember(career.id)) {
+                  setLocal(() => errorText = 'Ya perteneces a esta carrera');
+                  return;
+                }
+                await _careerService.addCareer(career);
+                if (ctx.mounted) Navigator.pop(ctx, true);
+              },
+              child: const Text('Unirse'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (added == true) {
+      _loadCareerData();
+      _showSnack('✅ Te uniste a la carrera', Colors.green);
+    }
+  }
+
+  Future<void> _leaveCareer(Career career) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Salir de la carrera'),
+        content: Text(
+          '¿Seguro que quieres salir de "${career.name}"? Dejarás de ver sus tareas. '
+          'Podrás volver a unirte con la clave de acceso.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Salir', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    await _careerService.removeCareer(career.id);
+
+    // Si era la última carrera, volver para que el routing muestre el acceso.
+    if (_careerService.getCareers().isEmpty && mounted) {
+      Navigator.of(context).pop();
+      return;
+    }
+    _loadCareerData();
+    _showSnack('Saliste de ${career.name}', Colors.orange);
+  }
+
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Salir de la carrera'),
+        content: const Text(
+          '¿Seguro que quieres salir? Tendrás que ingresar la clave de acceso nuevamente.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Salir', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await _careerService.clearSelectedCareer();
+    if (mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
+  }
+
+  Future<void> _signOutAccount() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cerrar sesión'),
+        content: const Text(
+          '¿Seguro que quieres cerrar sesión de tu cuenta? Se borrará la caché local y deberás iniciar sesión nuevamente.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Cerrar sesión',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await _authService.signOut();
+    await _careerService.clearSelectedCareer();
+    if (mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
+  }
+
+  void _showSnack(String msg, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: color));
   }
 
   Widget _banner() {

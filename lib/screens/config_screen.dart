@@ -1,26 +1,15 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import '../app_info.dart';
 import '../colors.dart';
-import '../models/career_model.dart';
-import '../auth_service.dart';
-import '../services/career_service.dart';
 import '../notification_service.dart';
 import '../providers/app_state.dart';
 import '../providers/theme_provider.dart';
+import '../widgets/mascot_widget.dart';
 import 'onboarding_screen.dart';
-import 'attendance_screen.dart';
-import 'announcements_screen.dart';
-import 'teacher_panel_screen.dart';
-import 'teacher_subjects_screen.dart';
-import 'my_grades_screen.dart';
-import 'my_attendance_screen.dart';
-import 'my_profile_screen.dart';
-import 'career_members_directory_screen.dart';
 
 class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
@@ -31,11 +20,7 @@ class ConfigScreen extends StatefulWidget {
 
 class _ConfigScreenState extends State<ConfigScreen>
     with WidgetsBindingObserver {
-  final CareerService _careerService = CareerService();
   final NotificationService _notifService = NotificationService();
-  final AuthService _authService = AuthService();
-  Career? _selectedCareer;
-  List<Career> _careers = [];
   bool _notifEnabled = true;
 
   // Estado real a nivel de sistema operativo — los switches de arriba solo
@@ -87,18 +72,9 @@ class _ConfigScreenState extends State<ConfigScreen>
 
   Future<void> _loadData() async {
     await _loadPermissionStatuses();
-    // Sincronizar automáticamente materias y profesores desde Supabase
-    try {
-      await _careerService.reloadCareerWithUpdatedSubjects();
-    } catch (_) {}
-
-    final career = _careerService.getSelectedCareer();
-    final careers = _careerService.getCareers();
     final notifEnabled = await _notifService.isEnabled;
     if (mounted) {
       setState(() {
-        _selectedCareer = career;
-        _careers = careers;
         _notifEnabled = notifEnabled;
       });
     }
@@ -109,13 +85,7 @@ class _ConfigScreenState extends State<ConfigScreen>
     final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _selectedCareer != null
-              ? 'Configuración — ${_selectedCareer!.name}'
-              : 'Configuración',
-        ),
-      ),
+      appBar: AppBar(title: const Text('Configuración')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -219,6 +189,22 @@ class _ConfigScreenState extends State<ConfigScreen>
                   ),
                 ],
               ),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // ── Mascota ──────────────────────────────────────────
+          // Independiente de la paleta: cada quien elige la suya. Cambia de
+          // cara sola según tus tareas (ver MascotCompanion).
+          _sectionHeader(context, 'Mascota', Icons.pets),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                for (final option in MascotOption.values)
+                  _mascotTile(themeProvider, option),
+              ],
             ),
           ),
 
@@ -333,212 +319,6 @@ class _ConfigScreenState extends State<ConfigScreen>
 
           const SizedBox(height: 24),
 
-          // ── Anuncios ────────────────────────────────────────
-          // Para todos: cualquier miembro los lee. Publicar es lo único que
-          // se reserva a docentes, dentro de la propia pantalla.
-          if (_selectedCareer != null) ...[
-            _sectionHeader(context, 'Comunicación', Icons.campaign_outlined),
-            const SizedBox(height: 8),
-            Card(
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(
-                      Icons.campaign_outlined,
-                      color: AppColors.primary,
-                    ),
-                    title: const Text('Anuncios'),
-                    subtitle: Text('Avisos de ${_selectedCareer!.name}'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            AnnouncementsScreen(career: _selectedCareer!),
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.groups_outlined,
-                      color: AppColors.primary,
-                    ),
-                    title: const Text('Miembros'),
-                    subtitle: Text('Directorio de ${_selectedCareer!.name}'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CareerMembersDirectoryScreen(
-                          career: _selectedCareer!,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // ── Mi progreso ─────────────────────────────────────
-            // Espejo de solo lectura de lo que el docente fue dejando: la
-            // nota ya se veía suelta tarea por tarea, y la asistencia no se
-            // podía consultar de ninguna forma.
-            _sectionHeader(context, 'Mi progreso', Icons.school_outlined),
-            const SizedBox(height: 8),
-            Card(
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(
-                      Icons.grade_outlined,
-                      color: AppColors.primary,
-                    ),
-                    title: const Text('Mis notas'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            MyGradesScreen(career: _selectedCareer!),
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.checklist_rtl,
-                      color: AppColors.primary,
-                    ),
-                    title: const Text('Mi asistencia'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            MyAttendanceScreen(career: _selectedCareer!),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
-
-          // ── Herramientas de docente ────────────────────────────
-          // Solo si sos docente en la carrera activa. El servidor exige lo
-          // mismo en cada RPC — esto solo evita mostrar algo que va a fallar.
-          if (_selectedCareer != null &&
-              _careerService.isDocente(_selectedCareer!.id)) ...[
-            _sectionHeader(context, 'Herramientas de docente', Icons.school),
-            const SizedBox(height: 8),
-            Card(
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(
-                      Icons.checklist_rtl,
-                      color: AppColors.primary,
-                    ),
-                    title: const Text('Asistencia'),
-                    subtitle: Text(
-                      'Marcar asistencia de ${_selectedCareer!.name}',
-                    ),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            AttendanceScreen(career: _selectedCareer!),
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.warning_amber_rounded,
-                      color: AppColors.warning,
-                    ),
-                    title: const Text('Panel de riesgo'),
-                    subtitle: const Text('Quién se está quedando atrás'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            TeacherPanelScreen(career: _selectedCareer!),
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.menu_book_outlined,
-                      color: AppColors.primary,
-                    ),
-                    title: const Text('Mis asignaturas'),
-                    subtitle: const Text(
-                      'Qué materias impartís, para cruzar con el semestre del alumno',
-                    ),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            TeacherSubjectsScreen(career: _selectedCareer!),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
-
-          // ── Mi semestre ──────────────────────────────────────
-          // Para cualquier miembro: es lo que decide qué material y qué
-          // asistencia de su carrera le corresponde ver.
-          if (_selectedCareer != null) ...[
-            _sectionHeader(
-              context,
-              'Mi semestre',
-              Icons.calendar_view_month_outlined,
-            ),
-            const SizedBox(height: 8),
-            _buildSemesterPicker(_selectedCareer!),
-            const SizedBox(height: 24),
-          ],
-
-          // ── Estudias dos o más carreras ───────────────────────
-          _sectionHeader(
-            context,
-            'Estudias dos o más carreras',
-            Icons.school_outlined,
-          ),
-          const SizedBox(height: 8),
-          Card(
-            child: Column(
-              children: [
-                ..._careers.map(_careerTile),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(
-                    Icons.add_circle_outline,
-                    color: AppColors.primary,
-                  ),
-                  title: const Text('Unirse a otra carrera'),
-                  subtitle: const Text('Ingresar una clave de acceso'),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                  onTap: _joinCareerDialog,
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
           // ── Notificaciones ──────────────────────────────────
           // Solo fuera de web: el navegador no tiene notificaciones locales
           // programadas, y mostrar un interruptor que no hace nada es peor
@@ -625,39 +405,6 @@ class _ConfigScreenState extends State<ConfigScreen>
 
           const SizedBox(height: 24),
 
-          // ── Cuenta ──────────────────────────────────────────
-          _sectionHeader(context, 'Cuenta', Icons.manage_accounts_outlined),
-          const SizedBox(height: 8),
-          Card(
-            child: Column(
-              children: [
-                _accountTile(),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(
-                    Icons.school_outlined,
-                    color: AppColors.warning,
-                  ),
-                  title: const Text('Salir de todas las carreras'),
-                  subtitle: const Text('Volver a la selección de carrera'),
-                  onTap: _logout,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(
-                    Icons.exit_to_app,
-                    color: AppColors.error,
-                  ),
-                  title: const Text('Cerrar sesión de la cuenta'),
-                  subtitle: const Text('Cerrar Sesión'),
-                  onTap: _signOutAccount,
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
           // ── Legal / Acerca de ────────────────────────────────
           _sectionHeader(context, 'Información', Icons.info_outline),
           const SizedBox(height: 8),
@@ -707,260 +454,6 @@ class _ConfigScreenState extends State<ConfigScreen>
         ],
       ),
     );
-  }
-
-  Widget _accountTile() {
-    final User? user = _authService.currentUser;
-
-    if (user == null) {
-      return const ListTile(
-        leading: CircleAvatar(child: Icon(Icons.person_outline)),
-        title: Text('Sin sesión iniciada'),
-        subtitle: Text('No hay una cuenta conectada'),
-      );
-    }
-
-    final name = (_authService.userDisplayName?.trim().isNotEmpty ?? false)
-        ? _authService.userDisplayName!.trim()
-        : 'Sin nombre';
-    final email = user.email ?? 'Sin correo';
-    final photoUrl = _authService.userPhotoURL;
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: Theme.of(context).primaryColor,
-        foregroundImage: (photoUrl != null && photoUrl.isNotEmpty)
-            ? NetworkImage(photoUrl)
-            : null,
-        child: Text(
-          initial,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text('$email • Toca para ver tu perfil'),
-      trailing: const Icon(Icons.edit_outlined, size: 20),
-      onTap: () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const MyProfileScreen()),
-        );
-        if (mounted) setState(() {});
-      },
-    );
-  }
-
-  /// Semestres cargados en el catálogo de [career] — los mismos valores que
-  /// ya etiquetan cada materia, para no inventar una lista aparte.
-  List<String> _semestresDe(Career career) =>
-      career.predefinedSubjects
-          .map((s) => s.semester?.trim() ?? '')
-          .where((s) => s.isNotEmpty)
-          .toSet()
-          .toList()
-        ..sort();
-
-  Widget _buildSemesterPicker(Career career) {
-    final opciones = _semestresDe(career);
-    if (opciones.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            '${career.name} todavía no tiene sus materias organizadas por semestre.',
-            style: const TextStyle(
-              fontSize: 12.5,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ),
-      );
-    }
-    final actual = _careerService.semesterFor(career.id);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: DropdownButtonFormField<String?>(
-          initialValue: opciones.contains(actual) ? actual : null,
-          decoration: const InputDecoration(
-            labelText: '¿En qué semestre estás?',
-            border: InputBorder.none,
-          ),
-          items: [
-            const DropdownMenuItem<String?>(
-              value: null,
-              child: Text('Sin elegir'),
-            ),
-            ...opciones.map(
-              (s) => DropdownMenuItem<String?>(value: s, child: Text(s)),
-            ),
-          ],
-          onChanged: (value) async {
-            if (value == null) return;
-            try {
-              await _careerService.setMySemester(career.id, value);
-              if (mounted) {
-                setState(() {});
-                _showSnack('Semestre guardado', Colors.green);
-              }
-            } catch (e) {
-              _showSnack('No se pudo guardar: $e', AppColors.error);
-            }
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _careerTile(Career career) {
-    final isActive = _selectedCareer?.id == career.id;
-    return ListTile(
-      leading: Icon(
-        isActive ? Icons.radio_button_checked : Icons.radio_button_off,
-        color: isActive ? AppColors.primary : AppColors.textSecondary,
-      ),
-      title: Text(
-        career.name,
-        style: TextStyle(
-          fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-        ),
-      ),
-      subtitle: Text(isActive ? 'Carrera activa' : 'Tocar para activar'),
-      trailing: _careers.length > 1
-          ? IconButton(
-              icon: const Icon(Icons.logout, color: AppColors.error, size: 20),
-              tooltip: 'Salir de esta carrera',
-              onPressed: () => _leaveCareer(career),
-            )
-          : null,
-      onTap: isActive ? null : () => _setActiveCareer(career),
-    );
-  }
-
-  Future<void> _setActiveCareer(Career career) async {
-    await _careerService.setActiveCareer(career.id);
-    await _loadData();
-  }
-
-  Future<void> _joinCareerDialog() async {
-    // Refrescar las carreras creadas en el admin para poder validar su clave.
-    await _careerService.loadRemoteCareers();
-
-    final controller = TextEditingController();
-    String? errorText;
-
-    if (!mounted) return;
-    final added = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Unirse a otra carrera'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Ingresa la clave de acceso de la carrera o grupo al que quieres unirte.',
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: 'Clave de acceso',
-                  border: const OutlineInputBorder(),
-                  errorText: errorText,
-                ),
-                onSubmitted: (_) {},
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: () async {
-                final key = controller.text.trim();
-                Career? career;
-                try {
-                  // Consulta al servidor: la clave ya no viaja en la app.
-                  career = await _careerService.validateAccessKey(key);
-                } catch (e) {
-                  // join_career() bloquea 15 min tras 5 intentos fallidos y
-                  // avisa con esta excepción puntual; el resto de errores del
-                  // servidor se tratan como falta de conexión.
-                  final message = e is PostgrestException ? e.message : '';
-                  setLocal(
-                    () => errorText = message.contains('Demasiados intentos')
-                        ? message
-                        : 'Sin conexión para validar la clave',
-                  );
-                  return;
-                }
-                if (career == null) {
-                  setLocal(() => errorText = 'Clave de acceso inválida');
-                  return;
-                }
-                if (_careerService.isMember(career.id)) {
-                  setLocal(() => errorText = 'Ya perteneces a esta carrera');
-                  return;
-                }
-                await _careerService.addCareer(career);
-                if (ctx.mounted) Navigator.pop(ctx, true);
-              },
-              child: const Text('Unirse'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (added == true) {
-      await _loadData();
-      _showSnack('✅ Te uniste a la carrera', Colors.green);
-    }
-  }
-
-  Future<void> _leaveCareer(Career career) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Salir de la carrera'),
-        content: Text(
-          '¿Seguro que quieres salir de "${career.name}"? Dejarás de ver sus tareas. '
-          'Podrás volver a unirte con la clave de acceso.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Salir',
-              style: TextStyle(color: AppColors.error),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-
-    await _careerService.removeCareer(career.id);
-
-    // Si era la última carrera, volver para que el routing muestre el acceso.
-    if (_careerService.getCareers().isEmpty && mounted) {
-      Navigator.of(context).pop();
-      return;
-    }
-    await _loadData();
-    _showSnack('Saliste de ${career.name}', Colors.orange);
   }
 
   Future<void> _fixPermission(Permission permission) async {
@@ -1097,6 +590,50 @@ class _ConfigScreenState extends State<ConfigScreen>
     );
   }
 
+  String _mascotLabel(MascotOption option) {
+    switch (option) {
+      case MascotOption.none:
+        return 'Ninguna';
+      case MascotOption.robot:
+        return 'Robot';
+      case MascotOption.cat:
+        return 'Gato';
+      case MascotOption.hamsterYellow:
+        return 'Hámster amarillo';
+      case MascotOption.catBlue:
+        return 'Gato azul';
+      case MascotOption.bunny:
+        return 'Perrito';
+      case MascotOption.hamsterBrown:
+        return 'Hámster marrón';
+    }
+  }
+
+  Widget _mascotTile(ThemeProvider themeProvider, MascotOption option) {
+    final selected = themeProvider.mascot == option;
+    return ListTile(
+      leading: option == MascotOption.none
+          ? const CircleAvatar(
+              radius: 16,
+              child: Icon(Icons.block, size: 16),
+            )
+          : SizedBox(
+              width: 32,
+              height: 32,
+              child: MascotWidget(
+                option: option,
+                state: MascotState.content,
+                size: 32,
+              ),
+            ),
+      title: Text(_mascotLabel(option)),
+      trailing: selected
+          ? Icon(Icons.check_circle, color: themeProvider.primaryColor)
+          : null,
+      onTap: () => themeProvider.setMascot(option),
+    );
+  }
+
   Widget _sectionHeader(BuildContext context, String label, IconData icon) {
     return Row(
       children: [
@@ -1113,67 +650,6 @@ class _ConfigScreenState extends State<ConfigScreen>
         ),
       ],
     );
-  }
-
-  Future<void> _logout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Salir de la carrera'),
-        content: const Text(
-          '¿Seguro que quieres salir? Tendrás que ingresar la clave de acceso nuevamente.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Salir',
-              style: TextStyle(color: AppColors.error),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    await _careerService.clearSelectedCareer();
-    if (mounted) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
-    }
-  }
-
-  Future<void> _signOutAccount() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Cerrar sesión'),
-        content: const Text(
-          '¿Seguro que quieres cerrar sesión de tu cuenta? Se borrará la caché local y deberás iniciar sesión nuevamente.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Cerrar sesión',
-              style: TextStyle(color: AppColors.error),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    await _authService.signOut();
-    await _careerService.clearSelectedCareer();
-    if (mounted) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
-    }
   }
 
   Future<void> _launchUrl(String url, String title) async {

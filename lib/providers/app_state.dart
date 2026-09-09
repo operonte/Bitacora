@@ -91,24 +91,27 @@ class AppState extends ChangeNotifier {
   String get error => _error;
 
   // Getters filtrados
+  //
+  // "Entregada" es task.isFullyDelivered, no isCompleted && isSubmitted a
+  // secas: para una tarea compartida que el propio docente asignó, esos dos
+  // campos son suyos, no de sus alumnos, y se quedan en false para siempre
+  // (el docente no "hace" la tarea que asignó) — Task.allDelivered pisa eso
+  // cuando corresponde. Ver el doc-comment del getter.
   List<Task> get pendingTasks => _tasks.where((task) {
-    final isDelivered = task.isCompleted && task.isSubmitted;
     final isFuture = task.dueDate.isAfter(DateTime.now());
     final matchesCareer = CareerService().matchesAnyCareer(task.careerId);
-    return !isDelivered && isFuture && matchesCareer;
+    return !task.isFullyDelivered && isFuture && matchesCareer;
   }).toList()..sort((a, b) => a.dueDate.compareTo(b.dueDate));
 
   List<Task> get overdueTasks => _tasks.where((task) {
-    final isDelivered = task.isCompleted && task.isSubmitted;
     final isPast = task.dueDate.isBefore(DateTime.now());
     final matchesCareer = CareerService().matchesAnyCareer(task.careerId);
-    return !isDelivered && isPast && matchesCareer;
+    return !task.isFullyDelivered && isPast && matchesCareer;
   }).toList()..sort((a, b) => b.dueDate.compareTo(a.dueDate));
 
   List<Task> get deliveredTasks => _tasks.where((task) {
-    final isDelivered = task.isCompleted && task.isSubmitted;
     final matchesCareer = CareerService().matchesAnyCareer(task.careerId);
-    return isDelivered && matchesCareer;
+    return task.isFullyDelivered && matchesCareer;
   }).toList()..sort((a, b) => b.dueDate.compareTo(a.dueDate));
 
   // ==================== TASKS ====================

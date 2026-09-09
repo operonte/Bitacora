@@ -18,6 +18,7 @@ import '../colors.dart';
 import '../services/career_service.dart';
 import '../services/sync_service.dart';
 import 'config_screen.dart';
+import 'my_profile_screen.dart';
 
 class PendingTasksScreen extends StatefulWidget {
   const PendingTasksScreen({super.key});
@@ -92,6 +93,14 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
             tooltip: 'Buscar en pendientes',
           ),
           SyncIndicator(syncService: SyncService()),
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyProfileScreen()),
+            ),
+            tooltip: 'Mi perfil',
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.push(
