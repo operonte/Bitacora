@@ -43,7 +43,8 @@ hace falta compilar nada.
 
 | Versión | Commit | Fecha | Qué cambió |
 |---|---|---|---|
-| **2.16.0** | `821c545` | 2026-09-08 | Adjuntar archivos a tareas, vista mensual de reuniones, avisos de anuncios/tareas oficiales/notas arreglados. **Sin probar en la app corriendo** — solo compilación y tests. |
+| **2.17.0** | `a1827f8` | 2026-09-08 | Recordatorio configurable por tarea, búsqueda global (tareas+reuniones+archivos). **Sin probar en la app corriendo** — solo compilación y tests. |
+| 2.16.0 | `821c545` | 2026-09-08 | Adjuntar archivos a tareas, vista mensual de reuniones, avisos de anuncios/tareas oficiales/notas arreglados. **Sin probar en la app corriendo** — solo compilación y tests. |
 | 2.15.0 | `4697ee8` | 2026-09-08 | Agregar reuniones al calendario nativo del teléfono (add_2_calendar, solo Android/iOS). **Sin probar en la app corriendo** — solo compilación (incl. `flutter build web`) y tests. |
 | 2.14.0 | `ad7593b` | 2026-09-08 | Mis notas y Mi asistencia para el alumno (Configuración → Mi progreso). **Sin probar en la app corriendo** — solo compilación y tests. |
 | 2.13.0 | `8614474` | 2026-09-08 | Corrige huso horario de reuniones recurrentes, filtra materias por semestre, color por materia, chips en Vencidas/Entregadas, cuenta regresiva, recordatorio configurable por reunión, % de cumplimiento. **Sin probar en la app corriendo** — solo compilación y tests. |
