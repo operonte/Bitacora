@@ -9,6 +9,7 @@ import '../widgets/task_search_dialog.dart';
 import '../widgets/task_details_dialog.dart';
 import '../widgets/subject_filter_chips.dart';
 import 'add_task_screen.dart';
+import 'assign_task_screen.dart';
 import '../colors.dart';
 import '../utils/error_handler.dart';
 import '../services/career_service.dart';
@@ -299,10 +300,13 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
   }
 
   void _editTask(Task task) {
-    // AddTaskScreen has appState and saves automatically
+    // AddTaskScreen/AssignTaskScreen have appState and save automatically
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => AddTaskScreen(task: task)),
+      MaterialPageRoute(
+        builder: (context) =>
+            AssignTaskScreen.editorFor(task) ?? AddTaskScreen(task: task),
+      ),
     );
   }
 

@@ -10,6 +10,7 @@ import '../utils/custom_file_picker.dart';
 import '../utils/file_security_validator.dart';
 import '../utils/input_sanitizer.dart';
 import 'announcements_screen.dart';
+import 'assign_task_screen.dart';
 import 'attendance_screen.dart';
 import 'career_attendance_screen.dart';
 import 'career_grades_screen.dart';
@@ -17,6 +18,7 @@ import 'career_members_directory_screen.dart';
 import 'my_attendance_screen.dart';
 import 'my_grades_screen.dart';
 import 'public_profile_screen.dart';
+import 'student_uploads_screen.dart';
 import 'teacher_panel_screen.dart';
 import 'teacher_subjects_screen.dart';
 
@@ -425,7 +427,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           ),
         ),
         const SizedBox(height: 24),
+      ],
 
+      // "Mi progreso" es del alumno: notas y asistencia propias. Un docente
+      // no tiene nada que entregar en esta carrera, así que no le aparece —
+      // lo suyo vive en "Herramientas de docente" más abajo.
+      if (career != null && !_careerService.isDocente(career.id)) ...[
         _sectionHeader('Mi progreso', Icons.school_outlined),
         const SizedBox(height: 8),
         Card(
@@ -472,6 +479,40 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         Card(
           child: Column(
             children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.add_task,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Asignar tarea'),
+                subtitle: const Text('Crea una tarea oficial para tus alumnos'),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AssignTaskScreen(career: career),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.upload_file_outlined,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Archivos de alumnos'),
+                subtitle: const Text(
+                  'Lo que suban tus alumnos en tus asignaturas',
+                ),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StudentUploadsScreen(career: career),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
               ListTile(
                 leading: const Icon(
                   Icons.checklist_rtl,
@@ -563,7 +604,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         const SizedBox(height: 24),
       ],
 
-      if (career != null) ...[
+      // El semestre acota qué materias y avisos ve un alumno; un docente no
+      // tiene uno propio en esta carrera.
+      if (career != null && !_careerService.isDocente(career.id)) ...[
         _sectionHeader('Mi semestre', Icons.calendar_view_month_outlined),
         const SizedBox(height: 8),
         _buildSemesterPicker(career),

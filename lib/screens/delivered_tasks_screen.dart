@@ -8,6 +8,7 @@ import '../widgets/task_search_dialog.dart';
 import '../widgets/task_details_dialog.dart';
 import '../widgets/subject_filter_chips.dart';
 import 'add_task_screen.dart';
+import 'assign_task_screen.dart';
 import '../services/career_service.dart';
 import '../services/sync_service.dart';
 import '../colors.dart';
@@ -199,7 +200,10 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
   void _editTask(Task task) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => AddTaskScreen(task: task)),
+      MaterialPageRoute(
+        builder: (context) =>
+            AssignTaskScreen.editorFor(task) ?? AddTaskScreen(task: task),
+      ),
     );
   }
 }

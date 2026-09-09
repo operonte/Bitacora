@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/task_model.dart';
 import '../providers/app_state.dart';
 import '../providers/theme_provider.dart';
+import '../services/career_service.dart';
 import 'mascot_widget.dart';
 
 /// Compañero flotante en la pantalla principal.
@@ -88,6 +89,13 @@ class _MascotCompanionState extends State<MascotCompanion> {
   Widget build(BuildContext context) {
     final mascot = context.watch<ThemeProvider>().mascot;
     if (!MascotWidget.isEnabled(mascot)) return const SizedBox.shrink();
+
+    // Reacciona a "tus tareas atrasadas" — un docente en su carrera activa
+    // no tiene ninguna que le corresponda, así que directamente no aparece.
+    final career = CareerService().getSelectedCareer();
+    if (career != null && CareerService().isDocente(career.id)) {
+      return const SizedBox.shrink();
+    }
 
     final appState = context.watch<AppState>();
     final deliveredCount = appState.deliveredTasks.length;

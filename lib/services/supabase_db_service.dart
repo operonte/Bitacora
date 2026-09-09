@@ -917,6 +917,21 @@ class SupabaseDbService {
     return List<Map<String, dynamic>>.from(rows as List);
   }
 
+  /// Archivos que los alumnos subieron a su área personal (no adjuntos a
+  /// ninguna tarea oficial) en las asignaturas que el docente imparte — para
+  /// entregas informales que no pasaron por el flujo normal de tareas (p.
+  /// ej. trabajo extra ya conversado con el alumno). El RPC exige ser
+  /// docente de esa carrera y filtra server-side por [teacher_subjects].
+  Future<List<Map<String, dynamic>>> getStudentUploadsForTeachingSubjects(
+    String careerId,
+  ) async {
+    final rows = await _client.rpc(
+      'get_student_uploads_for_teaching_subjects',
+      params: {'p_career_id': careerId},
+    );
+    return List<Map<String, dynamic>>.from(rows as List);
+  }
+
   // ── SUBJECTS ─────────────────────────────────────────────────
 
   /// Crea la materia directamente en Supabase, sin fallback local. Lanza si falla.

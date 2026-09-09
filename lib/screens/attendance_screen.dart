@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../colors.dart';
 import '../models/career_model.dart';
 import '../services/attendance_service.dart';
+import '../services/teacher_subject_service.dart';
+import 'teacher_subjects_screen.dart';
 
 /// Asistencia por clase, para el docente: elegir asignatura y fecha, y
 /// marcar a cada alumno con un toque. Guarda apenas se toca — no hay botón
@@ -22,15 +24,38 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   String? _error;
   bool _bulkMarking = false;
 
-  List<String> get _subjects =>
-      widget.career.predefinedSubjects.map((s) => s.name).toSet().toList()
-        ..sort();
+  /// Solo lo que este docente declaró impartir (Mi Perfil → Mis
+  /// asignaturas), no el catálogo entero de la carrera — así el
+  /// desplegable no lo obliga a buscar entre materias ajenas para pasar
+  /// asistencia. `null` mientras no se supo todavía.
+  List<String>? _subjects;
 
   @override
   void initState() {
     super.initState();
-    if (_subjects.isNotEmpty) _subject = _subjects.first;
-    _load();
+    _loadSubjects();
+  }
+
+  Future<void> _loadSubjects() async {
+    try {
+      final subjects = await TeacherSubjectService.myTeachingSubjects(
+        widget.career.id,
+      );
+      subjects.sort();
+      if (!mounted) return;
+      setState(() {
+        _subjects = subjects;
+        _subject = subjects.isNotEmpty ? subjects.first : null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _subjects = const [];
+        _error = e.toString().replaceAll('Exception: ', '');
+      });
+      return;
+    }
+    await _load();
   }
 
   Future<void> _load() async {
@@ -225,7 +250,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       labelText: 'Asignatura',
                       border: OutlineInputBorder(),
                     ),
-                    items: _subjects
+                    items: (_subjects ?? const [])
                         .map(
                           (s) => DropdownMenuItem(
                             value: s,
@@ -258,14 +283,40 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Widget _buildBody() {
-    if (_subjects.isEmpty) {
-      return const Center(
+    final subjects = _subjects;
+    if (subjects == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (subjects.isEmpty) {
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Text(
-            'Esta carrera todavía no tiene asignaturas cargadas.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary),
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Todavía no marcaste qué asignaturas impartís en '
+                '${widget.career.name} — sin eso no hay a quién pasarle '
+                'asistencia.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          TeacherSubjectsScreen(career: widget.career),
+                    ),
+                  );
+                  if (mounted) _loadSubjects();
+                },
+                icon: const Icon(Icons.menu_book_outlined, size: 18),
+                label: const Text('Elegir mis asignaturas'),
+              ),
+            ],
           ),
         ),
       );

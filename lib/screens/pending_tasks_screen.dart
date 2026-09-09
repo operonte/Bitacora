@@ -14,6 +14,7 @@ import '../widgets/month_calendar_grid.dart';
 import 'global_search_screen.dart';
 import '../providers/theme_provider.dart';
 import 'add_task_screen.dart';
+import 'assign_task_screen.dart';
 import '../colors.dart';
 import '../services/career_service.dart';
 import '../services/sync_service.dart';
@@ -375,6 +376,16 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
   }
 
   void _addTask() {
+    final career = CareerService().getSelectedCareer();
+    if (career != null && CareerService().isDocente(career.id)) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AssignTaskScreen(career: career),
+        ),
+      );
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const AddTaskScreen()),
@@ -384,7 +395,10 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
   void _editTask(Task task) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => AddTaskScreen(task: task)),
+      MaterialPageRoute(
+        builder: (context) =>
+            AssignTaskScreen.editorFor(task) ?? AddTaskScreen(task: task),
+      ),
     );
   }
 }

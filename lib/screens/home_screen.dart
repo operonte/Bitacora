@@ -19,6 +19,7 @@ import '../widgets/task_details_dialog.dart';
 import 'add_meeting_screen.dart';
 import 'add_task_screen.dart';
 import 'announcements_screen.dart';
+import 'assign_task_screen.dart';
 import 'attendance_screen.dart';
 import 'config_screen.dart';
 import 'global_search_screen.dart';
@@ -88,12 +89,18 @@ class _HomeScreenState extends State<HomeScreen> {
     final isDocente = CareerService().isDocente(career?.id);
     final appState = context.watch<AppState>();
 
-    final urgentTasks = [
-      ...appState.overdueTasks,
-      ...appState.pendingTasks.where(
-        (t) => t.getUrgency() == TaskUrgency.urgent,
-      ),
-    ];
+    // "Urgente" es tu propia tarea atrasándose — un docente en su carrera
+    // activa no tiene ninguna que le corresponda entregar, así que la
+    // sección directamente no aplica (sus herramientas van en la franja de
+    // arriba, no acá mezcladas con tareas de alumno).
+    final urgentTasks = isDocente
+        ? const <Task>[]
+        : [
+            ...appState.overdueTasks,
+            ...appState.pendingTasks.where(
+              (t) => t.getUrgency() == TaskUrgency.urgent,
+            ),
+          ];
 
     final now = DateTime.now();
     final meetingsToday =
@@ -215,7 +222,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   onEdit: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => AddTaskScreen(task: t)),
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          AssignTaskScreen.editorFor(t) ??
+                          AddTaskScreen(task: t),
+                    ),
                   ),
                   onDelete: () => TaskDetailsDialog.confirmDelete(
                     context,
@@ -244,10 +255,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-            CompletionRateBanner(
-              delivered: appState.deliveredTasks.length,
-              overdue: appState.overdueTasks.length,
-            ),
+            if (!isDocente)
+              CompletionRateBanner(
+                delivered: appState.deliveredTasks.length,
+                overdue: appState.overdueTasks.length,
+              ),
           ],
         ),
       ),
