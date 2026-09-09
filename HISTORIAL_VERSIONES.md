@@ -43,7 +43,8 @@ hace falta compilar nada.
 
 | Versión | Commit | Fecha | Qué cambió |
 |---|---|---|---|
-| **2.12.0** | `e6da1b5` | 2026-09-08 | Ecosistema docente: rol docente, tareas oficiales, asistencia, anuncios, panel de riesgo. **Sin probar en la app corriendo** — solo compilación y migraciones verificadas. |
+| **2.13.0** | `8614474` | 2026-09-08 | Corrige huso horario de reuniones recurrentes, filtra materias por semestre, color por materia, chips en Vencidas/Entregadas, cuenta regresiva, recordatorio configurable por reunión, % de cumplimiento. **Sin probar en la app corriendo** — solo compilación y tests. |
+| 2.12.0 | `e6da1b5` | 2026-09-08 | Ecosistema docente: rol docente, tareas oficiales, asistencia, anuncios, panel de riesgo. **Sin probar en la app corriendo** — solo compilación y migraciones verificadas. |
 | 2.11.0 | `f3e6374` | 2026-08-17 | Archivos grandes sin cerrar la app, límite 250 MB, progreso de subida |
 | 2.10.1 | `fc58188` | 2026-08-10 | Corrige hora de reuniones (huso horario) |
 | 2.10.0 | `7011a55` | 2026-08-10 | Materias por semestre, filtros y carga de mallas curriculares |
