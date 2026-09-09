@@ -133,6 +133,8 @@ class _CareerMembersDirectoryScreenState
               : PublicProfileScreen(
                   userId: m['user_id'].toString(),
                   fallbackName: name,
+                  career: widget.career,
+                  role: m['role'] as String?,
                 ),
         ),
       ),

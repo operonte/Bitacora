@@ -43,6 +43,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   final _genderController = TextEditingController();
   final _relationshipController = TextEditingController();
   final _religionController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _socialMediaController = TextEditingController();
+  final _interestsController = TextEditingController();
+  final _previousCareerController = TextEditingController();
+  final _occupationController = TextEditingController();
 
   Map<String, dynamic>? _profile;
   bool _loading = true;
@@ -85,6 +90,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     _genderController.dispose();
     _relationshipController.dispose();
     _religionController.dispose();
+    _phoneController.dispose();
+    _socialMediaController.dispose();
+    _interestsController.dispose();
+    _previousCareerController.dispose();
+    _occupationController.dispose();
     super.dispose();
   }
 
@@ -105,6 +115,14 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         _relationshipController.text =
             (profile?['relationship_status'] as String?) ?? '';
         _religionController.text = (profile?['religion'] as String?) ?? '';
+        _phoneController.text = (profile?['phone'] as String?) ?? '';
+        _socialMediaController.text =
+            (profile?['social_media'] as String?) ?? '';
+        _interestsController.text = (profile?['interests'] as String?) ?? '';
+        _previousCareerController.text =
+            (profile?['previous_career'] as String?) ?? '';
+        _occupationController.text =
+            (profile?['occupation'] as String?) ?? '';
         _loading = false;
       });
     } catch (e) {
@@ -134,6 +152,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           _relationshipController.text,
         ),
         religion: InputSanitizer.sanitizeText(_religionController.text),
+        phone: InputSanitizer.sanitizeText(_phoneController.text),
+        socialMedia: InputSanitizer.sanitizeText(_socialMediaController.text),
+        interests: InputSanitizer.sanitizeText(_interestsController.text),
+        previousCareer: InputSanitizer.sanitizeText(
+          _previousCareerController.text,
+        ),
+        occupation: InputSanitizer.sanitizeText(_occupationController.text),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -366,6 +391,48 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                               border: OutlineInputBorder(),
                             ),
                           ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _phoneController,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'Teléfono / contacto (opcional)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _socialMediaController,
+                            decoration: const InputDecoration(
+                              labelText: 'Redes sociales (opcional)',
+                              hintText: 'Ej: @usuario en Instagram',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _interestsController,
+                            decoration: const InputDecoration(
+                              labelText: 'Intereses / hobbies (opcional)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _previousCareerController,
+                            decoration: const InputDecoration(
+                              labelText: 'Carrera anterior u ocupación (opcional)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _occupationController,
+                            decoration: const InputDecoration(
+                              labelText: 'Trabajo o profesión (opcional)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 24),
@@ -384,6 +451,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   /// la app".
   List<Widget> _academicSections() {
     final career = _selectedCareer;
+    final isDocenteActiva = career != null && _careerService.isDocente(career.id);
     return [
       if (career != null) ...[
         _sectionHeader('Comunicación', Icons.campaign_outlined),
@@ -613,23 +681,33 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         const SizedBox(height: 24),
       ],
 
-      _sectionHeader('Estudias dos o más carreras', Icons.school_outlined),
+      // El título y "Unirse a otra carrera" son de alumno (autoinscribirse
+      // te suma como estudiante, ver _joinCareerDialog/admin_add_member) —
+      // un docente no se une solo, lo agrega el súper usuario. La lista en
+      // sí queda igual: sigue siendo el único lugar para cambiar de carrera
+      // activa, y un docente puede dar clases en más de una.
+      _sectionHeader(
+        isDocenteActiva ? 'Tus carreras' : 'Estudias dos o más carreras',
+        Icons.school_outlined,
+      ),
       const SizedBox(height: 8),
       Card(
         child: Column(
           children: [
             ..._careers.map(_careerTile),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(
-                Icons.add_circle_outline,
-                color: AppColors.primary,
+            if (!isDocenteActiva) ...[
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(
+                  Icons.add_circle_outline,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Unirse a otra carrera'),
+                subtitle: const Text('Ingresar una clave de acceso'),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: _joinCareerDialog,
               ),
-              title: const Text('Unirse a otra carrera'),
-              subtitle: const Text('Ingresar una clave de acceso'),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: _joinCareerDialog,
-            ),
+            ],
           ],
         ),
       ),
@@ -640,16 +718,21 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       Card(
         child: Column(
           children: [
-            ListTile(
-              leading: const Icon(
-                Icons.school_outlined,
-                color: AppColors.warning,
+            // "Salir de la carrera" es para quien se autoinscribió como
+            // alumno; a un docente lo agregó el súper usuario, así que acá
+            // solo le corresponde cerrar sesión.
+            if (!isDocenteActiva) ...[
+              ListTile(
+                leading: const Icon(
+                  Icons.school_outlined,
+                  color: AppColors.warning,
+                ),
+                title: const Text('Salir de todas las carreras'),
+                subtitle: const Text('Volver a la selección de carrera'),
+                onTap: _logout,
               ),
-              title: const Text('Salir de todas las carreras'),
-              subtitle: const Text('Volver a la selección de carrera'),
-              onTap: _logout,
-            ),
-            const Divider(height: 1),
+              const Divider(height: 1),
+            ],
             ListTile(
               leading: const Icon(Icons.exit_to_app, color: AppColors.error),
               title: const Text('Cerrar sesión de la cuenta'),
@@ -756,7 +839,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         ),
       ),
       subtitle: Text(isActive ? 'Carrera activa' : 'Tocar para activar'),
-      trailing: _careers.length > 1
+      // A un docente lo agregó el súper usuario, no se autoinscribió —
+      // salir por su cuenta no le corresponde.
+      trailing: (_careers.length > 1 && !_careerService.isDocente(career.id))
           ? IconButton(
               icon: const Icon(Icons.logout, color: AppColors.error, size: 20),
               tooltip: 'Salir de esta carrera',

@@ -110,6 +110,16 @@ class _CareerAttendanceScreenState extends State<CareerAttendanceScreen> {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
+            headingRowHeight: 36,
+            dataRowMinHeight: 34,
+            dataRowMaxHeight: 34,
+            columnSpacing: 20,
+            horizontalMargin: 12,
+            headingTextStyle: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.bold,
+            ),
+            dataTextStyle: const TextStyle(fontSize: 12.5),
             columns: const [
               DataColumn(label: Text('Alumno')),
               DataColumn(label: Text('Asignatura')),

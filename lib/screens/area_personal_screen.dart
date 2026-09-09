@@ -7,6 +7,7 @@ import '../providers/app_state.dart';
 import '../services/study_file_service.dart';
 import '../services/google_drive_service.dart';
 import '../services/career_service.dart';
+import '../services/supabase_db_service.dart';
 import '../utils/file_security_validator.dart';
 import '../utils/input_sanitizer.dart';
 import '../utils/custom_file_picker.dart';
@@ -19,6 +20,11 @@ import 'config_screen.dart';
 import 'my_profile_screen.dart';
 import '../colors.dart';
 
+/// Qué pestañas ofrece [AreaPersonalScreen]. "Mis archivos" es del alumno
+/// (sus propios apuntes/trabajos); un docente en su carrera activa no tiene
+/// nada personal que subir ahí, así que directamente no aparece.
+enum _AreaTab { files, meetings, teaching }
+
 class AreaPersonalScreen extends StatefulWidget {
   const AreaPersonalScreen({super.key});
 
@@ -27,8 +33,33 @@ class AreaPersonalScreen extends StatefulWidget {
 }
 
 class _AreaPersonalScreenState extends State<AreaPersonalScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabController;
+  bool _tabsForDocente = false;
+  List<_AreaTab> _tabKinds = const [
+    _AreaTab.files,
+    _AreaTab.meetings,
+    _AreaTab.teaching,
+  ];
+
+  List<_AreaTab> _kindsFor(bool docente) => docente
+      ? const [_AreaTab.meetings, _AreaTab.teaching]
+      : const [_AreaTab.files, _AreaTab.meetings, _AreaTab.teaching];
+
+  Tab _tabFor(_AreaTab kind) => switch (kind) {
+    _AreaTab.files => const Tab(
+      icon: Icon(Icons.folder_shared_rounded),
+      text: 'Mis archivos',
+    ),
+    _AreaTab.meetings => const Tab(
+      icon: Icon(Icons.video_camera_front_rounded),
+      text: 'Mis reuniones',
+    ),
+    _AreaTab.teaching => const Tab(
+      icon: Icon(Icons.menu_book_rounded),
+      text: 'Material docente',
+    ),
+  };
   final StudyFileService _studyFileService = StudyFileService();
   bool _isUploading = false;
 
@@ -52,7 +83,10 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    final career = CareerService().getSelectedCareer();
+    _tabsForDocente = career != null && CareerService().isDocente(career.id);
+    _tabKinds = _kindsFor(_tabsForDocente);
+    _tabController = TabController(length: _tabKinds.length, vsync: this);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Un solo sync: trabajos y material docente viven en la misma tabla.
@@ -235,6 +269,25 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
 
       await _studyFileService.saveFile(studyFile);
 
+      // Si la asignatura tiene un docente en esta carrera, ese archivo puede
+      // llegar a aparecerle en "Archivos de alumnos" — sin esto, la fila se
+      // ve pero Drive le niega el acceso al abrirla (sigue siendo privada
+      // del alumno hasta que su propia sesión la comparte).
+      if (customCareerId.isNotEmpty) {
+        try {
+          final hasTeacher = await SupabaseDbService().subjectHasTeacher(
+            customCareerId,
+            customSubject,
+          );
+          if (hasTeacher) {
+            await GoogleDriveService().setLinkViewable(uploadRes.fileId);
+          }
+        } catch (_) {
+          // No bloquea el guardado: en el peor caso el docente no puede
+          // abrirlo todavía y hay que reintentar (p. ej. sin conexión).
+        }
+      }
+
       if (mounted) {
         messenger.showSnackBar(
           SnackBar(
@@ -361,6 +414,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                     const SizedBox(height: 16),
                     CareerSubjectPicker(
                       ownSubjects: propias,
+                      restrictToTeaching: isTeachingMaterial,
                       onChanged: (c, s) {
                         careerId = c;
                         subject = s;
@@ -482,6 +536,14 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     final career = CareerService().getSelectedCareer();
     final careerName = career?.name ?? '';
 
+    final isDocente = career != null && CareerService().isDocente(career.id);
+    if (isDocente != _tabsForDocente) {
+      _tabsForDocente = isDocente;
+      _tabKinds = _kindsFor(isDocente);
+      _tabController.dispose();
+      _tabController = TabController(length: _tabKinds.length, vsync: this);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -534,50 +596,48 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
           controller: _tabController,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
-          tabs: const [
-            // "Mis archivos", no "Mis tareas": esta pestaña son archivos, y
-            // las tareas de verdad viven en Pendientes/Vencidas/Entregadas.
-            // Con el nombre anterior había dos cosas distintas llamadas igual
-            // a un toque de distancia.
-            Tab(icon: Icon(Icons.folder_shared_rounded), text: 'Mis archivos'),
-            Tab(
-              icon: Icon(Icons.video_camera_front_rounded),
-              text: 'Mis reuniones',
-            ),
-            Tab(icon: Icon(Icons.menu_book_rounded), text: 'Material docente'),
-          ],
+          // "Mis archivos", no "Mis tareas": esta pestaña son archivos, y
+          // las tareas de verdad viven en Pendientes/Vencidas/Entregadas.
+          // Con el nombre anterior había dos cosas distintas llamadas igual
+          // a un toque de distancia. No aparece para un docente en su
+          // carrera activa: no tiene archivos propios que subir ahí.
+          tabs: [for (final k in _tabKinds) _tabFor(k)],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildFilesTab(career),
-          const MeetingsScreen(isEmbedded: true),
-          _buildTeachingMaterialsTab(career),
+          for (final k in _tabKinds)
+            switch (k) {
+              _AreaTab.files => _buildFilesTab(career),
+              _AreaTab.meetings => const MeetingsScreen(isEmbedded: true),
+              _AreaTab.teaching => _buildTeachingMaterialsTab(career),
+            },
         ],
       ),
       floatingActionButton: AnimatedBuilder(
         animation: _tabController,
         builder: (context, child) {
-          final tabIndex = _tabController.index;
+          final kind = _tabKinds[_tabController.index];
 
           String tooltip;
           VoidCallback? onPressed;
-          if (tabIndex == 0) {
-            tooltip = 'Subir archivo';
-            onPressed = _isUploading ? null : () => _pickAndUploadFile();
-          } else if (tabIndex == 1) {
-            tooltip = 'Nueva reunión';
-            onPressed = () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const AddMeetingScreen()),
-            );
-          } else {
-            tooltip = 'Agregar material docente';
-            onPressed = _isUploading ? null : () => _showAddMaterialDialog();
+          switch (kind) {
+            case _AreaTab.files:
+              tooltip = 'Subir archivo';
+              onPressed = _isUploading ? null : () => _pickAndUploadFile();
+            case _AreaTab.meetings:
+              tooltip = 'Nueva reunión';
+              onPressed = () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AddMeetingScreen()),
+              );
+            case _AreaTab.teaching:
+              tooltip = 'Agregar material docente';
+              onPressed = _isUploading ? null : () => _showAddMaterialDialog();
           }
 
-          final showSpinner = _isUploading && tabIndex != 1;
+          final showSpinner = _isUploading && kind != _AreaTab.meetings;
 
           return Padding(
             padding: const EdgeInsets.only(bottom: 75),
@@ -860,6 +920,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                       initialCareerId: selectedCareerId,
                       initialSubject: selectedSubject,
                       ownSubjects: propias,
+                      restrictToTeaching: file.isGuia,
                       onChanged: (c, sub) {
                         selectedCareerId = c;
                         selectedSubject = sub;
@@ -933,6 +994,24 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                       await GoogleDriveService().revokeLinkViewable(
                         file.driveFileId!,
                       );
+                    } else if (!file.isGuia &&
+                        selectedCareerId != null &&
+                        selectedCareerId!.isNotEmpty &&
+                        file.driveFileId != null) {
+                      // Archivo personal: puede haber pasado a una
+                      // asignatura con docente (o ya la tenía y todavía no
+                      // se había compartido en Drive) — sin esto, "Guardar"
+                      // no alcanza para que el docente pueda abrirlo.
+                      final hasTeacher = await SupabaseDbService()
+                          .subjectHasTeacher(
+                            selectedCareerId!,
+                            selectedSubject,
+                          );
+                      if (hasTeacher) {
+                        await GoogleDriveService().setLinkViewable(
+                          file.driveFileId!,
+                        );
+                      }
                     }
                     if (ctx.mounted) Navigator.pop(ctx, true);
                   } catch (e) {
@@ -1443,6 +1522,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                     const SizedBox(height: 16),
                     CareerSubjectPicker(
                       ownSubjects: propias,
+                      restrictToTeaching: true,
                       onChanged: (c, sub) {
                         selectedCareerId = c;
                         selectedSubject = sub;

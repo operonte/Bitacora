@@ -932,6 +932,20 @@ class SupabaseDbService {
     return List<Map<String, dynamic>>.from(rows as List);
   }
 
+  /// Si [subject] tiene un docente asignado en [careerId] — sin decir quién,
+  /// solo si existe. Se usa antes de subir un archivo personal para decidir
+  /// si conviene abrirlo en Drive ([GoogleDriveService.setLinkViewable]): sin
+  /// eso, un docente que ya puede ver la fila en study_files igual se
+  /// encuentra con "solicitar acceso al propietario" al intentar abrirlo,
+  /// porque drive.file no comparte nada por sí solo.
+  Future<bool> subjectHasTeacher(String careerId, String subject) async {
+    final result = await _client.rpc(
+      'subject_has_teacher',
+      params: {'p_career_id': careerId, 'p_subject': subject},
+    );
+    return result as bool? ?? false;
+  }
+
   // ── SUBJECTS ─────────────────────────────────────────────────
 
   /// Crea la materia directamente en Supabase, sin fallback local. Lanza si falla.

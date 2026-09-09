@@ -3,7 +3,10 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../colors.dart';
+import '../models/career_model.dart';
+import '../services/career_service.dart';
 import '../services/profile_service.dart';
+import 'student_profile_screen.dart';
 
 /// Perfil público de otra persona de tu carrera: solo lectura, más los
 /// comentarios que le dejen — la alternativa visible-para-todos al chat
@@ -14,10 +17,19 @@ class PublicProfileScreen extends StatefulWidget {
   final String userId;
   final String fallbackName;
 
+  /// Carrera y rol de la persona vista, ambos opcionales: solo quien ya los
+  /// tiene a mano al navegar (el directorio de la carrera) los pasa. Sin
+  /// ellos no se puede saber si mostrar el acceso a su ficha, así que
+  /// directamente no aparece — mejor que adivinar.
+  final Career? career;
+  final String? role;
+
   const PublicProfileScreen({
     super.key,
     required this.userId,
     required this.fallbackName,
+    this.career,
+    this.role,
   });
 
   @override
@@ -34,6 +46,15 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
 
   String? get _myId => Supabase.instance.client.auth.currentUser?.id;
   bool get _esMiPropioPerfil => widget.userId == _myId;
+
+  /// Si corresponde ofrecer "Ver notas y asistencia": hace falta saber la
+  /// carrera y que la persona vista sea alumna de ella — un docente viendo
+  /// a otro docente no tiene ficha que mostrar.
+  bool get _puedeVerFicha =>
+      !_esMiPropioPerfil &&
+      widget.career != null &&
+      widget.role == 'estudiante' &&
+      CareerService().isDocente(widget.career!.id);
 
   @override
   void initState() {
@@ -127,6 +148,27 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
         'Creencias',
         _profile?['religion'] as String?,
       ),
+      (Icons.phone_outlined, 'Teléfono', _profile?['phone'] as String?),
+      (
+        Icons.alternate_email_rounded,
+        'Redes sociales',
+        _profile?['social_media'] as String?,
+      ),
+      (
+        Icons.interests_outlined,
+        'Intereses',
+        _profile?['interests'] as String?,
+      ),
+      (
+        Icons.history_edu_outlined,
+        'Carrera anterior / ocupación',
+        _profile?['previous_career'] as String?,
+      ),
+      (
+        Icons.work_outline_rounded,
+        'Trabajo o profesión',
+        _profile?['occupation'] as String?,
+      ),
     ].where((d) => (d.$3?.trim().isNotEmpty ?? false)).toList();
 
     return Scaffold(
@@ -199,6 +241,26 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: _infoCard(details),
+                  ),
+                ],
+                if (_puedeVerFicha) ...[
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => StudentProfileScreen(
+                            career: widget.career!,
+                            studentId: widget.userId,
+                            studentName: name,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.grading_outlined, size: 18),
+                      label: const Text('Ver notas y asistencia'),
+                    ),
                   ),
                 ],
                 if (bio == null && extraPhotos.isEmpty && details.isEmpty) ...[

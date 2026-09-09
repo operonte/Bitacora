@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -482,9 +483,15 @@ class TaskDetailsDialog {
                 TextField(
                   controller: gradeController,
                   maxLength: 10,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                  ],
                   decoration: const InputDecoration(
                     labelText: 'Nota (opcional)',
-                    hintText: 'Ej: 6.5, Aprobado, 18/20',
+                    hintText: 'Ej: 6.5, 18',
                     border: OutlineInputBorder(),
                   ),
                 ),

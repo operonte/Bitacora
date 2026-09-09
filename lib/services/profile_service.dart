@@ -36,6 +36,11 @@ class ProfileService {
     String? gender,
     String? relationshipStatus,
     String? religion,
+    String? phone,
+    String? socialMedia,
+    String? interests,
+    String? previousCareer,
+    String? occupation,
   }) async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) throw Exception('Usuario no autenticado');
@@ -47,6 +52,11 @@ class ProfileService {
           'gender': gender,
           'relationship_status': relationshipStatus,
           'religion': religion,
+          'phone': phone,
+          'social_media': socialMedia,
+          'interests': interests,
+          'previous_career': previousCareer,
+          'occupation': occupation,
         })
         .eq('id', uid);
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/career_model.dart';
 import '../services/career_service.dart';
+import '../services/teacher_subject_service.dart';
 
 /// Par de desplegables carrera → asignatura, en cascada.
 ///
@@ -21,8 +22,16 @@ class CareerSubjectPicker extends StatefulWidget {
   final String initialSubject;
 
   /// Materias creadas por el usuario. Se ofrecen en todas las carreras porque
-  /// el modelo Subject no guarda carrera.
+  /// el modelo Subject no guarda carrera. Se ignoran si [restrictToTeaching]
+  /// está activo.
   final List<String> ownSubjects;
+
+  /// Para material docente: en vez del catálogo entero de la carrera, ofrece
+  /// solo lo que el propio usuario declaró impartir (Mi Perfil → Mis
+  /// asignaturas) — mismo criterio que ya usan Asistencia y Asignar tarea.
+  /// Sin esto, subir una guía mostraba las ~20 materias de toda la carrera
+  /// en vez de las 4 o 5 que de verdad da el docente.
+  final bool restrictToTeaching;
 
   /// Se llama con la carrera y la asignatura vigentes, incluida la primera vez
   /// al construirse: así el formulario que lo contiene arranca con los valores
@@ -36,6 +45,7 @@ class CareerSubjectPicker extends StatefulWidget {
     this.initialCareerId,
     this.initialSubject = '',
     this.ownSubjects = const [],
+    this.restrictToTeaching = false,
   });
 
   /// Ya no existe una asignatura genérica.
@@ -66,6 +76,7 @@ class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
   String? _careerId;
   late String _subject;
   List<String> _subjects = const [];
+  bool _loadingTeaching = false;
 
   @override
   void initState() {
@@ -75,6 +86,11 @@ class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
         ? widget.initialCareerId
         : (CareerService().getSelectedCareer()?.id ??
             (_careers.isNotEmpty ? _careers.first.id : null));
+
+    if (widget.restrictToTeaching) {
+      _loadTeachingSubjects();
+      return;
+    }
 
     _subjects = _subjectsFor(_careerId);
 
@@ -116,9 +132,52 @@ class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
     return subjects;
   }
 
-  void _onCareerChanged(String? careerId) {
+  Future<void> _loadTeachingSubjects() async {
+    final careerId = _careerId;
+    if (careerId == null) {
+      setState(() {
+        _subjects = const [];
+        _subject = '';
+      });
+      _notifyChange();
+      return;
+    }
+    setState(() => _loadingTeaching = true);
+    List<String> subjects;
+    try {
+      subjects = await TeacherSubjectService.myTeachingSubjects(careerId);
+      subjects.sort();
+    } catch (_) {
+      subjects = const [];
+    }
+    if (widget.initialSubject.isNotEmpty &&
+        !subjects.contains(widget.initialSubject)) {
+      subjects = [widget.initialSubject, ...subjects];
+    }
+    if (!mounted) return;
     setState(() {
-      _careerId = careerId;
+      _subjects = subjects;
+      _subject = subjects.contains(widget.initialSubject)
+          ? widget.initialSubject
+          : (subjects.isEmpty ? '' : subjects.first);
+      _loadingTeaching = false;
+    });
+    _notifyChange();
+  }
+
+  void _notifyChange() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onChanged(_careerId, _subject);
+    });
+  }
+
+  void _onCareerChanged(String? careerId) {
+    setState(() => _careerId = careerId);
+    if (widget.restrictToTeaching) {
+      _loadTeachingSubjects();
+      return;
+    }
+    setState(() {
       _subjects = _subjectsFor(careerId);
       // La asignatura elegida puede no existir en la carrera nueva.
       if (!_subjects.contains(_subject)) {
@@ -159,32 +218,47 @@ class _CareerSubjectPickerState extends State<CareerSubjectPicker> {
           ),
           const SizedBox(height: 16),
         ],
-        DropdownButtonFormField<String>(
-          initialValue: _subjects.contains(_subject) ? _subject : null,
-          decoration: InputDecoration(
-            labelText: 'Asignatura / Materia',
-            helperText: _subjects.isEmpty
-                ? CareerSubjectPicker.sinMateriasHint
-                : null,
-            prefixIcon: const Icon(Icons.school_outlined),
-            border: borde,
+        if (_loadingTeaching)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
+        else
+          DropdownButtonFormField<String>(
+            initialValue: _subjects.contains(_subject) ? _subject : null,
+            decoration: InputDecoration(
+              labelText: 'Asignatura / Materia',
+              helperText: _subjects.isEmpty
+                  ? (widget.restrictToTeaching
+                        ? 'Todavía no marcaste qué asignaturas impartís acá '
+                              '(Mi Perfil → Mis asignaturas).'
+                        : CareerSubjectPicker.sinMateriasHint)
+                  : null,
+              prefixIcon: const Icon(Icons.school_outlined),
+              border: borde,
+            ),
+            items: _subjects
+                .map((sub) => DropdownMenuItem<String>(
+                      value: sub,
+                      child: Text(sub, overflow: TextOverflow.ellipsis),
+                    ))
+                .toList(),
+            // Obligatoria: guardar algo dentro de una carrera sin decir de qué
+            // materia es no sirve para agrupar, filtrar ni encontrarlo después.
+            validator: (val) =>
+                (val == null || val.isEmpty) ? 'Elige una asignatura' : null,
+            onChanged: (val) {
+              if (val == null) return;
+              setState(() => _subject = val);
+              widget.onChanged(_careerId, _subject);
+            },
           ),
-          items: _subjects
-              .map((sub) => DropdownMenuItem<String>(
-                    value: sub,
-                    child: Text(sub, overflow: TextOverflow.ellipsis),
-                  ))
-              .toList(),
-          // Obligatoria: guardar algo dentro de una carrera sin decir de qué
-          // materia es no sirve para agrupar, filtrar ni encontrarlo después.
-          validator: (val) =>
-              (val == null || val.isEmpty) ? 'Elige una asignatura' : null,
-          onChanged: (val) {
-            if (val == null) return;
-            setState(() => _subject = val);
-            widget.onChanged(_careerId, _subject);
-          },
-        ),
       ],
     );
   }
