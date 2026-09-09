@@ -1,7 +1,10 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:add_2_calendar/add_2_calendar.dart';
 import '../models/meeting_model.dart';
 import '../providers/theme_provider.dart';
 import '../utils/input_sanitizer.dart';
@@ -49,7 +52,8 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
       return id;
     }
 
-    final options = used.toList()..sort((a, b) => labelFor(a).compareTo(labelFor(b)));
+    final options = used.toList()
+      ..sort((a, b) => labelFor(a).compareTo(labelFor(b)));
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -83,7 +87,9 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
     if (!InputSanitizer.isSafeExternalUrl(normalized)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('El enlace de la reunión no es válido.')),
+          const SnackBar(
+            content: Text('El enlace de la reunión no es válido.'),
+          ),
         );
       }
       return;
@@ -94,7 +100,9 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
       if (!await canLaunchUrl(uri)) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No se puede abrir el enlace de la reunión.')),
+            const SnackBar(
+              content: Text('No se puede abrir el enlace de la reunión.'),
+            ),
           );
         }
         return;
@@ -103,9 +111,52 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error al abrir el enlace de la reunión.')),
+          const SnackBar(
+            content: Text('Error al abrir el enlace de la reunión.'),
+          ),
         );
       }
+    }
+  }
+
+  /// Solo Android/iOS: el paquete no cubre Linux ni Web, y Bitácora corre en
+  /// las cuatro.
+  bool get _canAddToDeviceCalendar =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  /// Abre el calendario nativo con el evento precargado — el usuario todavía
+  /// tiene que tocar "Guardar" ahí, así que no hace falta pedir permiso de
+  /// calendario (el modo por defecto del plugin no lo necesita).
+  Future<void> _addToDeviceCalendar(Meeting meeting) async {
+    final start = meeting.effectiveDate;
+    // El modelo no guarda cuánto dura una reunión, solo la hora de inicio;
+    // una hora es un duración de clase típica y evitamos pedirle ese dato al
+    // usuario solo para esto.
+    final end = start.add(const Duration(hours: 1));
+
+    final event = Event(
+      title: meeting.title,
+      description: meeting.description,
+      location: meeting.meetingLink ?? '',
+      startDate: start,
+      endDate: end,
+      recurrence: meeting.isRecurrent
+          ? Recurrence(
+              frequency: Frequency.weekly,
+              // Un año cubre de sobra un semestre; evita dejar un evento
+              // "para siempre" en el calendario si la reunión se da de baja.
+              endDate: start.add(const Duration(days: 365)),
+            )
+          : null,
+    );
+
+    final ok = await Add2Calendar.addEvent2Cal(event);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo abrir el calendario del teléfono.'),
+        ),
+      );
     }
   }
 
@@ -113,13 +164,14 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final marcada = !meeting.isCompleted;
     try {
-      await _meetingService
-          .saveMeeting(meeting.copyWith(isCompleted: marcada));
+      await _meetingService.saveMeeting(meeting.copyWith(isCompleted: marcada));
       messenger.showSnackBar(
         SnackBar(
-          content: Text(marcada
-              ? 'Reunión marcada como realizada'
-              : 'Reunión marcada como pendiente'),
+          content: Text(
+            marcada
+                ? 'Reunión marcada como realizada'
+                : 'Reunión marcada como pendiente',
+          ),
         ),
       );
     } catch (e) {
@@ -131,7 +183,20 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
 
   String _formatMeetingDate(DateTime date) {
     const days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-    const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const months = [
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic',
+    ];
     final dayName = days[(date.weekday - 1) % 7];
     final monthName = months[(date.month - 1) % 12];
     final hour = date.hour.toString().padLeft(2, '0');
@@ -166,12 +231,14 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                       : SubjectGroupList<Meeting>(
                           items: meetings,
                           subjectOf: (m) => m.subject,
-                          countLabelOf: (count) => '$count ${count == 1 ? 'reunión' : 'reuniones'}',
+                          countLabelOf: (count) =>
+                              '$count ${count == 1 ? 'reunión' : 'reuniones'}',
                           itemBuilder: _buildMeetingCard,
                           dateOf: (m) => m.effectiveDate,
                           header: _buildCareerFilter(),
                           searchHint: 'Buscar reunión o materia',
-                          searchTextOf: (m) => '${m.title} ${m.subject} ${m.professor}',
+                          searchTextOf: (m) =>
+                              '${m.title} ${m.subject} ${m.professor}',
                         ),
                 ),
         );
@@ -191,7 +258,10 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     if (meetings.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.primary.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
@@ -289,10 +359,7 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
               const SizedBox(height: 16),
               const Text(
                 'No tienes reuniones programadas',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
@@ -329,7 +396,15 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
     }
   }
 
-  static const _weekdayShort = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  static const _weekdayShort = [
+    'Lun',
+    'Mar',
+    'Mié',
+    'Jue',
+    'Vie',
+    'Sáb',
+    'Dom',
+  ];
 
   /// Vista de horario semanal, tipo horario de clases: columnas por día,
   /// filas por hora. Solo tiene sentido para lo que se repite cada semana a
@@ -339,15 +414,19 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
   /// una lista aparte, para no perderlas de vista.
   Widget _buildScheduleView(List<Meeting> meetings) {
     final now = DateTime.now();
-    final startOfWeek = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: now.weekday - 1));
+    final startOfWeek = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: now.weekday - 1));
     final endOfWeek = startOfWeek.add(const Duration(days: 7));
 
     final inGrid = <Meeting>[];
     final outsideGrid = <Meeting>[];
     for (final m in meetings) {
       final date = m.effectiveDate;
-      final isThisWeek = !date.isBefore(startOfWeek) && date.isBefore(endOfWeek);
+      final isThisWeek =
+          !date.isBefore(startOfWeek) && date.isBefore(endOfWeek);
       if (m.isRecurrent || isThisWeek) {
         inGrid.add(m);
       } else {
@@ -359,8 +438,12 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
     var minHour = 8;
     var maxHour = 20;
     if (inGrid.isNotEmpty) {
-      minHour = inGrid.map((m) => m.effectiveDate.hour).reduce((a, b) => a < b ? a : b);
-      maxHour = inGrid.map((m) => m.effectiveDate.hour).reduce((a, b) => a > b ? a : b);
+      minHour = inGrid
+          .map((m) => m.effectiveDate.hour)
+          .reduce((a, b) => a < b ? a : b);
+      maxHour = inGrid
+          .map((m) => m.effectiveDate.hour)
+          .reduce((a, b) => a > b ? a : b);
     }
     final hours = [for (var h = minHour; h <= maxHour; h++) h];
 
@@ -397,34 +480,40 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
     );
   }
 
-  Widget _buildWeeklyGrid(List<int> hours, Map<int, Map<int, List<Meeting>>> cells) {
+  Widget _buildWeeklyGrid(
+    List<int> hours,
+    Map<int, Map<int, List<Meeting>>> cells,
+  ) {
     const hourColWidth = 46.0;
     const dayColWidth = 88.0;
     const rowHeight = 52.0;
 
     Widget hourCell(int? hour) => SizedBox(
-          width: hourColWidth,
-          height: rowHeight,
-          child: Center(
-            child: hour == null
-                ? null
-                : Text(
-                    '${hour.toString().padLeft(2, '0')}:00',
-                    style: const TextStyle(fontSize: 10.5, color: AppColors.textSecondary),
-                  ),
-          ),
-        );
+      width: hourColWidth,
+      height: rowHeight,
+      child: Center(
+        child: hour == null
+            ? null
+            : Text(
+                '${hour.toString().padLeft(2, '0')}:00',
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+      ),
+    );
 
     Widget dayHeaderCell(int weekday) => SizedBox(
-          width: dayColWidth,
-          height: rowHeight,
-          child: Center(
-            child: Text(
-              _weekdayShort[weekday - 1],
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-            ),
-          ),
-        );
+      width: dayColWidth,
+      height: rowHeight,
+      child: Center(
+        child: Text(
+          _weekdayShort[weekday - 1],
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        ),
+      ),
+    );
 
     Widget dayCell(int weekday, int hour) {
       final meetingsHere = cells[weekday]?[hour] ?? const <Meeting>[];
@@ -461,7 +550,11 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: color),
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
                   ),
                   if (meetingsHere.length > 1)
                     Text(
@@ -484,19 +577,24 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Column(
-              children: [
-                hourCell(null),
-                for (final h in hours) hourCell(h),
-              ],
+              children: [hourCell(null), for (final h in hours) hourCell(h)],
             ),
             Expanded(
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Column(
                   children: [
-                    Row(children: [for (var wd = 1; wd <= 7; wd++) dayHeaderCell(wd)]),
+                    Row(
+                      children: [
+                        for (var wd = 1; wd <= 7; wd++) dayHeaderCell(wd),
+                      ],
+                    ),
                     for (final h in hours)
-                      Row(children: [for (var wd = 1; wd <= 7; wd++) dayCell(wd, h)]),
+                      Row(
+                        children: [
+                          for (var wd = 1; wd <= 7; wd++) dayCell(wd, h),
+                        ],
+                      ),
                   ],
                 ),
               ),
@@ -547,13 +645,15 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
   Widget _buildMeetingCard(Meeting meeting) {
     final effectiveType = meeting.effectiveType;
     final typeColor = _getTypeColor(effectiveType);
-    final hasLink = meeting.meetingLink != null && meeting.meetingLink!.isNotEmpty;
+    final hasLink =
+        meeting.meetingLink != null && meeting.meetingLink!.isNotEmpty;
 
     // Una reunión compartida por otro miembro se ve pero no se toca: la RLS
     // rechaza el update/delete igual, así que ofrecer los botones solo
     // llevaría a un error confuso.
     final uid = Supabase.instance.client.auth.currentUser?.id;
-    final isOwn = uid == null || meeting.userId.isEmpty || meeting.userId == uid;
+    final isOwn =
+        uid == null || meeting.userId.isEmpty || meeting.userId == uid;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -572,11 +672,7 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     color: typeColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
-                    meeting.typeIcon,
-                    color: typeColor,
-                    size: 24,
-                  ),
+                  child: Icon(meeting.typeIcon, color: typeColor, size: 24),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -607,6 +703,12 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     ],
                   ),
                 ),
+                if (_canAddToDeviceCalendar)
+                  IconButton(
+                    icon: const Icon(Icons.event_available_outlined, size: 18),
+                    tooltip: 'Agregar a mi calendario',
+                    onPressed: () => _addToDeviceCalendar(meeting),
+                  ),
                 if (isOwn) ...[
                   // is_completed existía en el modelo y en la tabla desde el
                   // principio, pero no había forma de marcarlo. Solo tiene
@@ -639,7 +741,11 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.error),
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      size: 18,
+                      color: AppColors.error,
+                    ),
                     tooltip: 'Eliminar',
                     onPressed: () => _confirmDeleteMeeting(meeting),
                   ),
@@ -648,8 +754,11 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     message: 'Compartida por otro miembro de la carrera',
                     child: Padding(
                       padding: EdgeInsets.all(8),
-                      child: Icon(Icons.groups_outlined,
-                          size: 18, color: AppColors.textSecondary),
+                      child: Icon(
+                        Icons.groups_outlined,
+                        size: 18,
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ),
               ],
@@ -658,7 +767,10 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
               const SizedBox(height: 8),
               Text(
                 meeting.description,
-                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
               ),
             ],
             const SizedBox(height: 12),
@@ -671,7 +783,11 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.access_time_rounded, size: 15, color: AppColors.textSecondary),
+                    const Icon(
+                      Icons.access_time_rounded,
+                      size: 15,
+                      color: AppColors.textSecondary,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       _formatMeetingDate(meeting.effectiveDate),
@@ -683,7 +799,10 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     if (meeting.isRecurrent) ...[
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.purple.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(6),
@@ -708,10 +827,15 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
                     style: FilledButton.styleFrom(
                       backgroundColor: typeColor,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
               ],
@@ -745,9 +869,9 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
     if (confirmed == true) {
       await _meetingService.deleteMeeting(meeting.id!);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Reuni\u00f3n eliminada')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Reuni\u00f3n eliminada')));
       }
     }
   }
