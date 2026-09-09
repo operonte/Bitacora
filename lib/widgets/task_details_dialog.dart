@@ -249,9 +249,7 @@ class TaskDetailsDialog {
                   return ListView(
                     shrinkWrap: true,
                     children: rows
-                        .map(
-                          (r) => _submissionTile(context, task.id!, r, refresh),
-                        )
+                        .map((r) => _submissionTile(context, task, r, refresh))
                         .toList(),
                   );
                 },
@@ -271,10 +269,11 @@ class TaskDetailsDialog {
 
   static Widget _submissionTile(
     BuildContext context,
-    String taskId,
+    Task task,
     Map<String, dynamic> row,
     VoidCallback onCommentSaved,
   ) {
+    final taskId = task.id!;
     final completed = row['is_completed'] as bool? ?? false;
     final submitted = row['is_submitted'] as bool? ?? false;
     final displayName = (row['display_name'] as String?)?.trim();
@@ -286,6 +285,8 @@ class TaskDetailsDialog {
     final grade = (row['grade'] as String?)?.trim();
     final hasFeedback =
         (comment?.isNotEmpty ?? false) || (grade?.isNotEmpty ?? false);
+    final attachedName = (row['attached_file_name'] as String?)?.trim();
+    final hasFile = attachedName != null && attachedName.isNotEmpty;
 
     late final IconData icon;
     late final Color color;
@@ -314,29 +315,137 @@ class TaskDetailsDialog {
       dense: true,
       leading: Icon(icon, color: color),
       title: Text(name),
-      subtitle: Text(
-        subtitleParts.join(' · '),
-        style: hasFeedback
-            ? const TextStyle(fontStyle: FontStyle.italic)
-            : null,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            subtitleParts.join(' · '),
+            style: hasFeedback
+                ? const TextStyle(fontStyle: FontStyle.italic)
+                : null,
+          ),
+          if (hasFile)
+            InkWell(
+              onTap: () => _openSubmissionFile(context, row),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.attach_file_rounded,
+                    size: 14,
+                    color: Colors.blueGrey,
+                  ),
+                  const SizedBox(width: 2),
+                  Flexible(
+                    child: Text(
+                      attachedName,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        decoration: TextDecoration.underline,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
-      trailing: IconButton(
-        icon: Icon(
-          hasFeedback ? Icons.comment : Icons.comment_outlined,
-          size: 18,
-        ),
-        tooltip: 'Nota y comentario',
-        onPressed: () => _editCommentDialog(
-          context,
-          taskId: taskId,
-          studentUserId: studentUserId,
-          studentName: name,
-          initialComment: comment ?? '',
-          initialGrade: grade ?? '',
-          onSaved: onCommentSaved,
-        ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasFile)
+            IconButton(
+              icon: const Icon(Icons.download_outlined, size: 18),
+              tooltip: 'Guardar copia en mis archivos',
+              onPressed: () => _saveSubmissionCopy(context, task, row),
+            ),
+          IconButton(
+            icon: Icon(
+              hasFeedback ? Icons.comment : Icons.comment_outlined,
+              size: 18,
+            ),
+            tooltip: 'Nota y comentario',
+            onPressed: () => _editCommentDialog(
+              context,
+              taskId: taskId,
+              studentUserId: studentUserId,
+              studentName: name,
+              initialComment: comment ?? '',
+              initialGrade: grade ?? '',
+              onSaved: onCommentSaved,
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  static Future<void> _openSubmissionFile(
+    BuildContext context,
+    Map<String, dynamic> row,
+  ) async {
+    final link = (row['attached_file_link'] as String?) ?? '';
+    if (link.isEmpty || !InputSanitizer.isSafeExternalUrl(link)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este archivo no tiene un enlace válido.'),
+        ),
+      );
+      return;
+    }
+    try {
+      await launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo abrir el archivo: $e')),
+        );
+      }
+    }
+  }
+
+  static Future<void> _saveSubmissionCopy(
+    BuildContext context,
+    Task task,
+    Map<String, dynamic> row,
+  ) async {
+    final name = (row['attached_file_name'] as String?) ?? 'archivo';
+    final driveId = row['attached_file_drive_id'] as String?;
+    final link = (row['attached_file_link'] as String?) ?? '';
+    final mime = row['attached_file_mime'] as String?;
+    if (driveId == null || driveId.isEmpty) return;
+
+    try {
+      final ok = await StudyFileService().saveCopyToMyFiles(
+        StudyFile(
+          name: name,
+          subject: task.subject,
+          driveFileId: driveId,
+          driveLink: link,
+          mimeType: mime,
+          userId: '',
+          category: StudyFileCategory.trabajo,
+        ),
+        subject: task.subject,
+        careerId: task.careerId,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Copia guardada en tus archivos'
+                : 'No se pudo guardar la copia',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
   }
 
   static Future<void> _editCommentDialog(
