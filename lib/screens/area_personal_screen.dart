@@ -108,8 +108,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(cambios.resumen),
-          backgroundColor:
-              (cambios.fallo || cambios.ignorados > 0) ? AppColors.warning : null,
+          backgroundColor: (cambios.fallo || cambios.ignorados > 0)
+              ? AppColors.warning
+              : null,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 5),
         ),
@@ -154,7 +155,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Debes iniciar sesión para subir archivos.')),
+        const SnackBar(
+          content: Text('Debes iniciar sesión para subir archivos.'),
+        ),
       );
       return;
     }
@@ -166,7 +169,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       if (file.head.isEmpty) {
         if (mounted) {
           messenger.showSnackBar(
-            const SnackBar(content: Text('No se pudieron obtener los datos del archivo.')),
+            const SnackBar(
+              content: Text('No se pudieron obtener los datos del archivo.'),
+            ),
           );
         }
         return;
@@ -181,7 +186,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
 
       if (!validation.isValid) {
         if (mounted) {
-          _showSecurityAlertDialog(validation.errorMessage ?? 'Archivo no permitido por seguridad.');
+          _showSecurityAlertDialog(
+            validation.errorMessage ?? 'Archivo no permitido por seguridad.',
+          );
         }
         return;
       }
@@ -206,7 +213,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         sizeBytes: file.size,
         filePath: file.path,
         bytes: file.bytes,
-        mimeType: file.extension.isNotEmpty ? file.extension : 'application/octet-stream',
+        mimeType: file.extension.isNotEmpty
+            ? file.extension
+            : 'application/octet-stream',
         career: CareerService().careerNameFor(customCareerId),
         subject: customSubject,
         onProgress: _onUploadProgress,
@@ -275,13 +284,20 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     String originalName, {
     bool isTeachingMaterial = false,
   }) async {
-    final propias = context.read<AppState>().subjects.map((s) => s.name).toList();
+    final propias = context
+        .read<AppState>()
+        .subjects
+        .map((s) => s.name)
+        .toList();
 
     // Ofrecer el interruptor de compartir si sos docente en al menos una
     // carrera: si esa carrera puntual termina sin serlo, el servidor lo
     // rechaza igual (study_files_insert exige is_docente()).
-    final showShareOption = isTeachingMaterial &&
-        CareerService().getCareers().any((c) => CareerService().isDocente(c.id));
+    final showShareOption =
+        isTeachingMaterial &&
+        CareerService().getCareers().any(
+          (c) => CareerService().isDocente(c.id),
+        );
 
     String? careerId;
     String subject = '';
@@ -297,89 +313,99 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         final primaryColor = Theme.of(context).primaryColor;
         return StatefulBuilder(
           builder: (ctx, setLocal) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Icon(Icons.drive_folder_upload_rounded, color: primaryColor),
-              const SizedBox(width: 10),
-              const Text('Detalles del Archivo',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Asigna un nombre y la asignatura correspondiente a este archivo:',
-                    style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: nameController,
-                    decoration: InputDecoration(
-                      labelText: 'Nombre del archivo',
-                      prefixIcon: const Icon(Icons.description_outlined),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return 'Ingresa un nombre para el archivo';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  CareerSubjectPicker(
-                    ownSubjects: propias,
-                    onChanged: (c, s) {
-                      careerId = c;
-                      subject = s;
-                    },
-                  ),
-                  if (showShareOption) ...[
-                    const SizedBox(height: 8),
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      value: shareChecked,
-                      onChanged: (v) => setLocal(() => shareChecked = v ?? false),
-                      title: const Text('Compartir con la carrera'),
-                      subtitle: const Text(
-                        'Lo verán los alumnos de esa asignatura',
-                        style: TextStyle(fontSize: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: Row(
+              children: [
+                Icon(Icons.drive_folder_upload_rounded, color: primaryColor),
+                const SizedBox(width: 10),
+                const Text(
+                  'Detalles del Archivo',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Asigna un nombre y la asignatura correspondiente a este archivo:',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: nameController,
+                      decoration: InputDecoration(
+                        labelText: 'Nombre del archivo',
+                        prefixIcon: const Icon(Icons.description_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Ingresa un nombre para el archivo';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    CareerSubjectPicker(
+                      ownSubjects: propias,
+                      onChanged: (c, s) {
+                        careerId = c;
+                        subject = s;
+                      },
+                    ),
+                    if (showShareOption) ...[
+                      const SizedBox(height: 8),
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        value: shareChecked,
+                        onChanged: (v) =>
+                            setLocal(() => shareChecked = v ?? false),
+                        title: const Text('Compartir con la carrera'),
+                        subtitle: const Text(
+                          'Lo verán los alumnos de esa asignatura',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, null),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              onPressed: () {
-                if (formKey.currentState!.validate()) {
-                  Navigator.pop(ctx, {
-                    'name': InputSanitizer.sanitizeText(nameController.text),
-                    'subject': subject,
-                    // Cadena vacía = sin carrera; el mapa no admite nulos.
-                    'careerId': careerId ?? '',
-                    'isShared': shareChecked.toString(),
-                  });
-                }
-              },
-              style: FilledButton.styleFrom(backgroundColor: primaryColor),
-              icon: const Icon(Icons.cloud_upload_rounded, size: 18),
-              label: const Text('Subir Archivo'),
-            ),
-          ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, null),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                onPressed: () {
+                  if (formKey.currentState!.validate()) {
+                    Navigator.pop(ctx, {
+                      'name': InputSanitizer.sanitizeText(nameController.text),
+                      'subject': subject,
+                      // Cadena vacía = sin carrera; el mapa no admite nulos.
+                      'careerId': careerId ?? '',
+                      'isShared': shareChecked.toString(),
+                    });
+                  }
+                },
+                style: FilledButton.styleFrom(backgroundColor: primaryColor),
+                icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+                label: const Text('Subir Archivo'),
+              ),
+            ],
           ),
         );
       },
@@ -412,7 +438,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   Future<void> _openFileLink(String url, {String? fileName}) async {
     if (url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Este archivo no tiene enlace disponible.')),
+        const SnackBar(
+          content: Text('Este archivo no tiene enlace disponible.'),
+        ),
       );
       return;
     }
@@ -421,7 +449,11 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     // launchUrl sin comprobar el esquema: solo http/https.
     if (!InputSanitizer.isSafeExternalUrl(url)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El enlace no es válido (solo se admite http o https).')),
+        const SnackBar(
+          content: Text(
+            'El enlace no es válido (solo se admite http o https).',
+          ),
+        ),
       );
       return;
     }
@@ -443,7 +475,6 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -477,7 +508,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                   )
                 : const Icon(Icons.sync),
             tooltip: 'Sincronizar con Google Drive',
-            onPressed: _isSyncing ? null : () => _syncAndCleanFiles(manual: true),
+            onPressed: _isSyncing
+                ? null
+                : () => _syncAndCleanFiles(manual: true),
           ),
           IconButton(
             icon: const Icon(Icons.settings),
@@ -498,7 +531,10 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
             // Con el nombre anterior había dos cosas distintas llamadas igual
             // a un toque de distancia.
             Tab(icon: Icon(Icons.folder_shared_rounded), text: 'Mis archivos'),
-            Tab(icon: Icon(Icons.video_camera_front_rounded), text: 'Mis reuniones'),
+            Tab(
+              icon: Icon(Icons.video_camera_front_rounded),
+              text: 'Mis reuniones',
+            ),
             Tab(icon: Icon(Icons.menu_book_rounded), text: 'Material docente'),
           ],
         ),
@@ -524,9 +560,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
           } else if (tabIndex == 1) {
             tooltip = 'Nueva reunión';
             onPressed = () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AddMeetingScreen()),
-                );
+              context,
+              MaterialPageRoute(builder: (_) => const AddMeetingScreen()),
+            );
           } else {
             tooltip = 'Agregar material docente';
             onPressed = _isUploading ? null : () => _showAddMaterialDialog();
@@ -554,11 +590,7 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                         value: _uploadProgress > 0 ? _uploadProgress : null,
                       ),
                     )
-                  : const Icon(
-                      Icons.add,
-                      color: Colors.white,
-                      size: 26,
-                    ),
+                  : const Icon(Icons.add, color: Colors.white, size: 26),
             ),
           );
         },
@@ -640,7 +672,8 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
               onChanged: (v) => setState(() => _filesCareerFilter = v),
             ),
             subjectOf: (f) => f.subject,
-            countLabelOf: (count) => '$count ${count == 1 ? 'archivo' : 'archivos'}',
+            countLabelOf: (count) =>
+                '$count ${count == 1 ? 'archivo' : 'archivos'}',
             itemBuilder: _buildFileCard,
             dateOf: (f) => f.createdAt,
             dateDescending: true,
@@ -709,10 +742,17 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
                       ),
                     )
                   : const Icon(Icons.upload_file_rounded),
-              label: Text(_isUploading ? _uploadLabel : 'Subir Archivo de Estudio'),
+              label: Text(
+                _isUploading ? _uploadLabel : 'Subir Archivo de Estudio',
+              ),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],
@@ -722,11 +762,11 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   }
 
   Widget _buildFileCard(StudyFile file) => StudyFileCard(
-        file: file,
-        onOpen: () => _openFileLink(file.driveLink, fileName: file.name),
-        onEdit: () => _showEditFileDialog(file),
-        onDelete: () => _confirmDelete(file),
-      );
+    file: file,
+    onOpen: () => _openFileLink(file.driveLink, fileName: file.name),
+    onEdit: () => _showEditFileDialog(file),
+    onDelete: () => _confirmDelete(file),
+  );
 
   /// Edita los datos de un archivo ya subido: nombre, materia, carrera y
   /// —en el material docente— descripción. No toca el archivo en Drive, solo
@@ -734,7 +774,11 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   /// tener que volver a subirlo. Es además la única forma de ponerle carrera
   /// a los archivos subidos antes de que ese campo existiera.
   Future<void> _showEditFileDialog(StudyFile file) async {
-    final propias = context.read<AppState>().subjects.map((s) => s.name).toList();
+    final propias = context
+        .read<AppState>()
+        .subjects
+        .map((s) => s.name)
+        .toList();
 
     // Los archivos subidos antes de que existiera el campo no tienen carrera;
     // el picker les propone la activa. Editarlos es justamente la forma de
@@ -744,8 +788,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     var shareChecked = file.isShared;
 
     final nameController = TextEditingController(text: file.name);
-    final descriptionController =
-        TextEditingController(text: file.description ?? '');
+    final descriptionController = TextEditingController(
+      text: file.description ?? '',
+    );
     final formKey = GlobalKey<FormState>();
 
     final saved = await showDialog<bool>(
@@ -754,121 +799,150 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         final primaryColor = Theme.of(context).primaryColor;
         return StatefulBuilder(
           builder: (ctx, setLocal) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20)),
-              title: Row(
-                children: [
-                  Icon(Icons.edit_outlined, color: primaryColor),
-                  const SizedBox(width: 10),
-                  const Text('Editar',
-                      style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold)),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Form(
-                  key: formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextFormField(
-                        controller: nameController,
-                        decoration: InputDecoration(
-                          labelText: 'Nombre',
-                          prefixIcon: const Icon(Icons.description_outlined),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                        validator: (val) =>
-                            (val == null || val.trim().isEmpty)
-                                ? 'Ingresa un nombre'
-                                : null,
-                      ),
-                      if (file.isGuia) ...[
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: descriptionController,
-                          maxLines: 2,
-                          decoration: InputDecoration(
-                            labelText: 'Descripción (opcional)',
-                            prefixIcon: const Icon(Icons.notes_rounded),
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      CareerSubjectPicker(
-                        initialCareerId: selectedCareerId,
-                        initialSubject: selectedSubject,
-                        ownSubjects: propias,
-                        onChanged: (c, sub) {
-                          selectedCareerId = c;
-                          selectedSubject = sub;
-                        },
-                      ),
-                      if (file.isGuia &&
-                          CareerService().isDocente(selectedCareerId)) ...[
-                        const SizedBox(height: 8),
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          controlAffinity: ListTileControlAffinity.leading,
-                          value: shareChecked,
-                          onChanged: (v) => setLocal(() => shareChecked = v ?? false),
-                          title: const Text('Compartir con la carrera'),
-                          subtitle: const Text(
-                            'Lo verán los alumnos de esa asignatura',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Cancelar'),
-                ),
-                FilledButton.icon(
-                  onPressed: () async {
-                    if (!formKey.currentState!.validate()) return;
-                    final description =
-                        InputSanitizer.sanitizeText(descriptionController.text);
-                    try {
-                      await _studyFileService.saveFile(
-                        StudyFile.fromMap({
-                          ...file.toMap(),
-                          'name': InputSanitizer.sanitizeText(nameController.text),
-                          'subject': selectedSubject,
-                          'career_id': selectedCareerId,
-                          // Vacío borra la descripción; solo el material
-                          // docente muestra el campo, el resto la conserva.
-                          'description':
-                              file.isGuia ? description : file.description,
-                          'is_shared': file.isGuia ? shareChecked : file.isShared,
-                        }),
-                      );
-                      if (ctx.mounted) Navigator.pop(ctx, true);
-                    } catch (e) {
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(
-                            content: Text('Error al guardar: $e'),
-                            backgroundColor: AppColors.error,
-                          ),
-                        );
-                      }
-                    }
-                  },
-                  style: FilledButton.styleFrom(backgroundColor: primaryColor),
-                  icon: const Icon(Icons.check_rounded, size: 18),
-                  label: const Text('Guardar'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: Row(
+              children: [
+                Icon(Icons.edit_outlined, color: primaryColor),
+                const SizedBox(width: 10),
+                const Text(
+                  'Editar',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
+            content: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: nameController,
+                      decoration: InputDecoration(
+                        labelText: 'Nombre',
+                        prefixIcon: const Icon(Icons.description_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      validator: (val) => (val == null || val.trim().isEmpty)
+                          ? 'Ingresa un nombre'
+                          : null,
+                    ),
+                    if (file.isGuia) ...[
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: descriptionController,
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          labelText: 'Descripción (opcional)',
+                          prefixIcon: const Icon(Icons.notes_rounded),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    CareerSubjectPicker(
+                      initialCareerId: selectedCareerId,
+                      initialSubject: selectedSubject,
+                      ownSubjects: propias,
+                      onChanged: (c, sub) {
+                        selectedCareerId = c;
+                        selectedSubject = sub;
+                      },
+                    ),
+                    if (file.isGuia &&
+                        CareerService().isDocente(selectedCareerId)) ...[
+                      const SizedBox(height: 8),
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        value: shareChecked,
+                        onChanged: (v) =>
+                            setLocal(() => shareChecked = v ?? false),
+                        title: const Text('Compartir con la carrera'),
+                        subtitle: const Text(
+                          'Lo verán los alumnos de esa asignatura',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                onPressed: () async {
+                  if (!formKey.currentState!.validate()) return;
+                  final description = InputSanitizer.sanitizeText(
+                    descriptionController.text,
+                  );
+                  try {
+                    final ahoraCompartido = file.isGuia
+                        ? shareChecked
+                        : file.isShared;
+                    await _studyFileService.saveFile(
+                      StudyFile.fromMap({
+                        ...file.toMap(),
+                        'name': InputSanitizer.sanitizeText(
+                          nameController.text,
+                        ),
+                        'subject': selectedSubject,
+                        'career_id': selectedCareerId,
+                        // Vacío borra la descripción; solo el material
+                        // docente muestra el campo, el resto la conserva.
+                        'description': file.isGuia
+                            ? description
+                            : file.description,
+                        'is_shared': ahoraCompartido,
+                      }),
+                    );
+                    // Recién ahora se marca para compartir: sin esto, Drive
+                    // le seguiría pidiendo acceso a cualquiera que no sea
+                    // quien lo subió, aunque la app ya lo muestre.
+                    if (ahoraCompartido &&
+                        !file.isShared &&
+                        file.driveFileId != null) {
+                      await GoogleDriveService().setLinkViewable(
+                        file.driveFileId!,
+                      );
+                    } else if (!ahoraCompartido &&
+                        file.isShared &&
+                        file.driveFileId != null) {
+                      // Y la vuelta atrás: si se destilda, el permiso de
+                      // Drive también se revoca, no solo la fila.
+                      await GoogleDriveService().revokeLinkViewable(
+                        file.driveFileId!,
+                      );
+                    }
+                    if (ctx.mounted) Navigator.pop(ctx, true);
+                  } catch (e) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(
+                          content: Text('Error al guardar: $e'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
+                  }
+                },
+                style: FilledButton.styleFrom(backgroundColor: primaryColor),
+                icon: const Icon(Icons.check_rounded, size: 18),
+                label: const Text('Guardar'),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -889,7 +963,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('\u00bfEliminar archivo?'),
-        content: Text('"${file.name}" ser\u00e1 eliminado de tu Google Drive y de la app.'),
+        content: Text(
+          '"${file.name}" ser\u00e1 eliminado de tu Google Drive y de la app.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -914,9 +990,11 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
   void _avisarBorrado(bool driveOk) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(driveOk
-            ? 'Eliminado de la app y de Google Drive'
-            : 'Eliminado de la app, pero no se pudo borrar en Google Drive'),
+        content: Text(
+          driveOk
+              ? 'Eliminado de la app y de Google Drive'
+              : 'Eliminado de la app, pero no se pudo borrar en Google Drive',
+        ),
         backgroundColor: driveOk ? AppColors.success : AppColors.warning,
       ),
     );
@@ -953,12 +1031,14 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
               onChanged: (v) => setState(() => _materialsCareerFilter = v),
             ),
             subjectOf: (m) => m.subject,
-            countLabelOf: (count) => '$count ${count == 1 ? 'material' : 'materiales'}',
+            countLabelOf: (count) =>
+                '$count ${count == 1 ? 'material' : 'materiales'}',
             itemBuilder: _buildMaterialCard,
             dateOf: (m) => m.createdAt,
             dateDescending: true,
             searchHint: 'Buscar material o materia',
-            searchTextOf: (m) => '${m.name} ${m.subject} ${m.description ?? ''}',
+            searchTextOf: (m) =>
+                '${m.name} ${m.subject} ${m.description ?? ''}',
           ),
         );
       },
@@ -1014,8 +1094,13 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
               icon: const Icon(Icons.add_link_rounded),
               label: const Text('Agregar material'),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],
@@ -1028,15 +1113,48 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     // El material docente puede venir de otro miembro de la carrera: solo su
     // autor lo edita o lo borra.
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    final isMine =
+        material.userId.isNotEmpty && material.userId == currentUserId;
 
     return StudyFileCard(
       file: material,
-      canModify:
-          material.userId.isNotEmpty && material.userId == currentUserId,
+      canModify: isMine,
       onOpen: () => _openFileLink(material.openUrl, fileName: material.name),
       onEdit: () => _showEditFileDialog(material),
       onDelete: () => _confirmDeleteMaterial(material),
+      onSaveCopy: !isMine && !material.isLink
+          ? () => _saveMaterialCopy(material)
+          : null,
     );
+  }
+
+  Future<void> _saveMaterialCopy(StudyFile material) async {
+    try {
+      final ok = await _studyFileService.saveCopyToMyFiles(
+        material,
+        subject: material.subject,
+        careerId: material.careerId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Copia guardada en tus archivos'
+                : 'No se pudo guardar la copia',
+          ),
+          backgroundColor: ok ? AppColors.success : AppColors.error,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   Future<void> _confirmDeleteMaterial(StudyFile material) async {
@@ -1045,10 +1163,12 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('¿Eliminar material?'),
-        content: Text(material.isLink
-            ? '"${material.name}" se quitará de tu material docente.'
-            : '"${material.name}" se eliminará de tu material docente y de tu '
-                'Google Drive.'),
+        content: Text(
+          material.isLink
+              ? '"${material.name}" se quitará de tu material docente.'
+              : '"${material.name}" se eliminará de tu material docente y de tu '
+                    'Google Drive.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -1102,13 +1222,14 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     }
   }
 
-
   Future<void> _addMaterialFile() async {
     final messenger = ScaffoldMessenger.of(context);
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Debes iniciar sesión para guardar material.')),
+        const SnackBar(
+          content: Text('Debes iniciar sesión para guardar material.'),
+        ),
       );
       return;
     }
@@ -1120,7 +1241,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       if (file.head.isEmpty) {
         if (mounted) {
           messenger.showSnackBar(
-            const SnackBar(content: Text('No se pudieron obtener los datos del archivo.')),
+            const SnackBar(
+              content: Text('No se pudieron obtener los datos del archivo.'),
+            ),
           );
         }
         return;
@@ -1133,12 +1256,17 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
       );
       if (!validation.isValid) {
         if (mounted) {
-          _showSecurityAlertDialog(validation.errorMessage ?? 'Archivo no permitido por seguridad.');
+          _showSecurityAlertDialog(
+            validation.errorMessage ?? 'Archivo no permitido por seguridad.',
+          );
         }
         return;
       }
 
-      final details = await _showFileDetailsDialog(file.name, isTeachingMaterial: true);
+      final details = await _showFileDetailsDialog(
+        file.name,
+        isTeachingMaterial: true,
+      );
       if (details == null) return;
 
       setState(() {
@@ -1151,7 +1279,9 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         sizeBytes: file.size,
         filePath: file.path,
         bytes: file.bytes,
-        mimeType: file.extension.isNotEmpty ? file.extension : 'application/octet-stream',
+        mimeType: file.extension.isNotEmpty
+            ? file.extension
+            : 'application/octet-stream',
         career: CareerService().careerNameFor(details['careerId']),
         subject: details['subject']!,
         // Fuera de la carpeta de trabajos, para que el escaneo de Drive no
@@ -1174,6 +1304,13 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         careerId: materialCareerId.isEmpty ? null : materialCareerId,
       );
       await _studyFileService.saveFile(material);
+
+      // Sin esto, la carrera lo ve en la lista (eso lo resuelve RLS) pero
+      // nadie más que quien lo subió puede abrirlo — Drive le seguiría
+      // pidiendo acceso a cualquier otra cuenta.
+      if (material.isShared) {
+        await GoogleDriveService().setLinkViewable(uploadRes.fileId);
+      }
 
       if (mounted) {
         messenger.showSnackBar(
@@ -1209,15 +1346,22 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
     if (user == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Debes iniciar sesión para guardar material.')),
+          const SnackBar(
+            content: Text('Debes iniciar sesión para guardar material.'),
+          ),
         );
       }
       return;
     }
 
-    final propias = context.read<AppState>().subjects.map((s) => s.name).toList();
-    final showShareOption =
-        CareerService().getCareers().any((c) => CareerService().isDocente(c.id));
+    final propias = context
+        .read<AppState>()
+        .subjects
+        .map((s) => s.name)
+        .toList();
+    final showShareOption = CareerService().getCareers().any(
+      (c) => CareerService().isDocente(c.id),
+    );
     String? selectedCareerId;
     String selectedSubject = '';
     var shareChecked = false;
@@ -1233,111 +1377,124 @@ class _AreaPersonalScreenState extends State<AreaPersonalScreen>
         final primaryColor = Theme.of(context).primaryColor;
         return StatefulBuilder(
           builder: (ctx, setLocal) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: Row(
-                children: [
-                  Icon(Icons.link_rounded, color: primaryColor),
-                  const SizedBox(width: 10),
-                  const Text('Agregar enlace', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Form(
-                  key: formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextFormField(
-                        controller: titleController,
-                        decoration: InputDecoration(
-                          labelText: 'Título',
-                          prefixIcon: const Icon(Icons.title),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        validator: (val) =>
-                            (val == null || val.trim().isEmpty) ? 'Ingresa un título' : null,
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: urlController,
-                        decoration: InputDecoration(
-                          labelText: 'Enlace (URL)',
-                          hintText: 'https://...',
-                          prefixIcon: const Icon(Icons.link),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        validator: (val) {
-                          final uri = Uri.tryParse(val?.trim() ?? '');
-                          if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
-                            return 'Ingresa un enlace válido (https://...)';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      CareerSubjectPicker(
-                        ownSubjects: propias,
-                        onChanged: (c, sub) {
-                          selectedCareerId = c;
-                          selectedSubject = sub;
-                        },
-                      ),
-                      if (showShareOption) ...[
-                        const SizedBox(height: 8),
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          controlAffinity: ListTileControlAffinity.leading,
-                          value: shareChecked,
-                          onChanged: (v) => setLocal(() => shareChecked = v ?? false),
-                          title: const Text('Compartir con la carrera'),
-                          subtitle: const Text(
-                            'Lo verán los alumnos de esa asignatura',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Cancelar'),
-                ),
-                FilledButton.icon(
-                  onPressed: () async {
-                    if (!formKey.currentState!.validate()) return;
-                    try {
-                      final material = StudyFile(
-                        subject: selectedSubject,
-                        name: InputSanitizer.sanitizeText(titleController.text),
-                        externalUrl: urlController.text.trim(),
-                        userId: user.id,
-                        category: StudyFileCategory.guia,
-                        careerId: selectedCareerId,
-                        isShared: shareChecked,
-                      );
-                      await _studyFileService.saveFile(material);
-                      if (ctx.mounted) Navigator.pop(ctx, true);
-                    } catch (e) {
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(
-                            content: Text('Error al guardar: $e'),
-                            backgroundColor: AppColors.error,
-                          ),
-                        );
-                      }
-                    }
-                  },
-                  style: FilledButton.styleFrom(backgroundColor: primaryColor),
-                  icon: const Icon(Icons.check_rounded, size: 18),
-                  label: const Text('Guardar'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: Row(
+              children: [
+                Icon(Icons.link_rounded, color: primaryColor),
+                const SizedBox(width: 10),
+                const Text(
+                  'Agregar enlace',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
+            content: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: titleController,
+                      decoration: InputDecoration(
+                        labelText: 'Título',
+                        prefixIcon: const Icon(Icons.title),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      validator: (val) => (val == null || val.trim().isEmpty)
+                          ? 'Ingresa un título'
+                          : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: urlController,
+                      decoration: InputDecoration(
+                        labelText: 'Enlace (URL)',
+                        hintText: 'https://...',
+                        prefixIcon: const Icon(Icons.link),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      validator: (val) {
+                        final uri = Uri.tryParse(val?.trim() ?? '');
+                        if (uri == null ||
+                            !uri.hasScheme ||
+                            !uri.hasAuthority) {
+                          return 'Ingresa un enlace válido (https://...)';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    CareerSubjectPicker(
+                      ownSubjects: propias,
+                      onChanged: (c, sub) {
+                        selectedCareerId = c;
+                        selectedSubject = sub;
+                      },
+                    ),
+                    if (showShareOption) ...[
+                      const SizedBox(height: 8),
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        value: shareChecked,
+                        onChanged: (v) =>
+                            setLocal(() => shareChecked = v ?? false),
+                        title: const Text('Compartir con la carrera'),
+                        subtitle: const Text(
+                          'Lo verán los alumnos de esa asignatura',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                onPressed: () async {
+                  if (!formKey.currentState!.validate()) return;
+                  try {
+                    final material = StudyFile(
+                      subject: selectedSubject,
+                      name: InputSanitizer.sanitizeText(titleController.text),
+                      externalUrl: urlController.text.trim(),
+                      userId: user.id,
+                      category: StudyFileCategory.guia,
+                      careerId: selectedCareerId,
+                      isShared: shareChecked,
+                    );
+                    await _studyFileService.saveFile(material);
+                    if (ctx.mounted) Navigator.pop(ctx, true);
+                  } catch (e) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(
+                          content: Text('Error al guardar: $e'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
+                  }
+                },
+                style: FilledButton.styleFrom(backgroundColor: primaryColor),
+                icon: const Icon(Icons.check_rounded, size: 18),
+                label: const Text('Guardar'),
+              ),
+            ],
+          ),
         );
       },
     );

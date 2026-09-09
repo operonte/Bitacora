@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/study_file_model.dart';
 import '../utils/drive_path_classifier.dart';
@@ -32,7 +33,11 @@ class StudyFileService extends ChangeNotifier {
       await _migrateLegacyTeachingMaterials();
       Logger.info('StudyFileService inicializado', tag: 'StudyFileService');
     } catch (e) {
-      Logger.error('Error inicializando StudyFileService: $e', error: e, tag: 'StudyFileService');
+      Logger.error(
+        'Error inicializando StudyFileService: $e',
+        error: e,
+        tag: 'StudyFileService',
+      );
     }
   }
 
@@ -63,10 +68,16 @@ class StudyFileService extends ChangeNotifier {
 
       await legacyBox.deleteFromDisk();
       if (migrated > 0) {
-        Logger.info('Material docente migrado a archivos de estudio: $migrated', tag: 'StudyFileService');
+        Logger.info(
+          'Material docente migrado a archivos de estudio: $migrated',
+          tag: 'StudyFileService',
+        );
       }
     } catch (e) {
-      Logger.warning('No se pudo migrar la caché de material docente: $e', tag: 'StudyFileService');
+      Logger.warning(
+        'No se pudo migrar la caché de material docente: $e',
+        tag: 'StudyFileService',
+      );
     }
   }
 
@@ -96,11 +107,13 @@ class StudyFileService extends ChangeNotifier {
           .where((f) => f.category == category)
           // Un archivo compartido de otro docente pasa igual: el filtro de
           // dueño solo aplica a lo que no está marcado para compartir.
-          .where((f) =>
-              f.isShared ||
-              userId == null ||
-              f.userId.isEmpty ||
-              f.userId == userId)
+          .where(
+            (f) =>
+                f.isShared ||
+                userId == null ||
+                f.userId.isEmpty ||
+                f.userId == userId,
+          )
           .where((f) {
             if (careerId == null) return true;
             final id = f.careerId;
@@ -110,19 +123,23 @@ class StudyFileService extends ChangeNotifier {
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     } catch (e) {
-      Logger.error('Error parseando archivos de estudio: $e', tag: 'StudyFileService');
+      Logger.error(
+        'Error parseando archivos de estudio: $e',
+        tag: 'StudyFileService',
+      );
       return [];
     }
   }
 
   /// Carreras que aparecen entre los archivos de [category], para armar el
   /// filtro sin ofrecer opciones que no seleccionarían nada.
-  Set<String> usedCareerIds(String category) =>
-      getFiles(category: category)
-          .map((f) => (f.careerId == null || f.careerId!.isEmpty)
-              ? noCareerFilter
-              : f.careerId!)
-          .toSet();
+  Set<String> usedCareerIds(String category) => getFiles(category: category)
+      .map(
+        (f) => (f.careerId == null || f.careerId!.isEmpty)
+            ? noCareerFilter
+            : f.careerId!,
+      )
+      .toSet();
 
   /// Único punto de guardado de archivos (subida, edición y enlaces): a
   /// diferencia de tareas y reuniones, que sanitizan en la pantalla, acá se
@@ -163,7 +180,11 @@ class StudyFileService extends ChangeNotifier {
             .upsert(payload, onConflict: 'id');
       } catch (e) {
         pendiente = true;
-        Logger.error('Error guardando metadato de archivo en Supabase: $e', error: e, tag: 'StudyFileService');
+        Logger.error(
+          'Error guardando metadato de archivo en Supabase: $e',
+          error: e,
+          tag: 'StudyFileService',
+        );
       }
     }
 
@@ -185,6 +206,68 @@ class StudyFileService extends ChangeNotifier {
       if (pendiente) _pendingKey: true,
     });
     notifyListeners();
+  }
+
+  /// Descarga una copia de un archivo compartido con este usuario (material
+  /// docente, o una entrega) y la sube de nuevo como archivo propio.
+  ///
+  /// No es un enlace ni una referencia al original: es un archivo nuevo e
+  /// independiente en el Drive de quien lo guarda, para que sobreviva
+  /// aunque el original se borre o se deje de compartir después.
+  ///
+  /// Se descarga por el enlace público de solo lectura que deja
+  /// [GoogleDriveService.setLinkViewable] — no con el token de esta cuenta
+  /// contra la API de Drive — para no depender de si el scope drive.file
+  /// alcanza para leer un archivo que esta cuenta no creó. Solo funciona,
+  /// entonces, con archivos que ya pasaron por setLinkViewable.
+  Future<bool> saveCopyToMyFiles(
+    StudyFile original, {
+    required String subject,
+    String? careerId,
+  }) async {
+    final fileId = original.driveFileId;
+    final user = Supabase.instance.client.auth.currentUser;
+    if (fileId == null || fileId.isEmpty || user == null) return false;
+
+    final response = await http.get(
+      Uri.parse('https://drive.google.com/uc?export=download&id=$fileId'),
+    );
+    if (response.statusCode != 200) return false;
+
+    // Archivos grandes (u otros que Drive no puede escanear) devuelven una
+    // página de aviso en vez del archivo — sin este chequeo se guardaría esa
+    // página como si fuera el archivo.
+    final contentType = response.headers['content-type'] ?? '';
+    if (contentType.contains('text/html')) {
+      throw Exception(
+        'Este archivo es muy grande para guardar una copia desde acá — '
+        'abrilo y guardalo desde Google Drive directamente.',
+      );
+    }
+
+    final uploadRes = await GoogleDriveService().uploadStudyFile(
+      fileName: original.name,
+      sizeBytes: response.bodyBytes.length,
+      bytes: response.bodyBytes,
+      mimeType: original.mimeType ?? 'application/octet-stream',
+      career: careerId != null ? CareerService().careerNameFor(careerId) : null,
+      subject: subject,
+    );
+
+    await saveFile(
+      StudyFile(
+        name: original.name,
+        subject: subject,
+        driveFileId: uploadRes.fileId,
+        driveLink: uploadRes.webViewLink,
+        mimeType: original.mimeType,
+        sizeBytes: response.bodyBytes.length,
+        userId: user.id,
+        category: StudyFileCategory.trabajo,
+        careerId: careerId,
+      ),
+    );
+    return true;
   }
 
   /// Marca, dentro del mapa guardado en Hive, de que esta fila todavía no
@@ -275,7 +358,10 @@ class StudyFileService extends ChangeNotifier {
             .delete()
             .or('id.eq.$fileIdOrDriveId,drive_file_id.eq.$fileIdOrDriveId');
       } catch (e) {
-        Logger.warning('No se pudo borrar metadato de archivo remoto: $e', tag: 'StudyFileService');
+        Logger.warning(
+          'No se pudo borrar metadato de archivo remoto: $e',
+          tag: 'StudyFileService',
+        );
       }
     }
     notifyListeners();
@@ -301,7 +387,10 @@ class StudyFileService extends ChangeNotifier {
               .from('study_files')
               .upsert(payload, onConflict: 'id');
         } catch (err) {
-          Logger.warning('No se pudo respaldar metadato de archivo en Supabase: $err', tag: 'StudyFileService');
+          Logger.warning(
+            'No se pudo respaldar metadato de archivo en Supabase: $err',
+            tag: 'StudyFileService',
+          );
         }
       }
 
@@ -348,7 +437,10 @@ class StudyFileService extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      Logger.warning('Falló sincronización de archivos de estudio: $e', tag: 'StudyFileService');
+      Logger.warning(
+        'Falló sincronización de archivos de estudio: $e',
+        tag: 'StudyFileService',
+      );
     }
   }
 
@@ -419,7 +511,10 @@ class StudyFileService extends ChangeNotifier {
         );
       }
 
-      final pagina = await drive.listChanges(guardado, interactivo: interactivo);
+      final pagina = await drive.listChanges(
+        guardado,
+        interactivo: interactivo,
+      );
       if (pagina.changes.isEmpty) {
         await _filesBox?.put(_driveTokenKey, pagina.nextStartToken);
         return const DriveSyncResult.vacio();
@@ -434,7 +529,9 @@ class StudyFileService extends ChangeNotifier {
       // árbol no hace daño, porque sus archivos vienen en el mismo lote de
       // cambios como ausentes. Y como borrar archivos es lo más frecuente,
       // incluirlo acá haría el recorrido completo casi siempre.
-      final carpetasTocadas = pagina.changes.any((c) => c.file?.isFolder == true);
+      final carpetasTocadas = pagina.changes.any(
+        (c) => c.file?.isFolder == true,
+      );
       final arbol = await drive.bitacoraTree(
         refrescar: carpetasTocadas,
         interactivo: interactivo,
@@ -459,8 +556,10 @@ class StudyFileService extends ChangeNotifier {
       // automática se calle.
       return const DriveSyncResult.faltaPermiso();
     } catch (e) {
-      Logger.warning('Falló la sincronización con Drive: $e',
-          tag: 'StudyFileService');
+      Logger.warning(
+        'Falló la sincronización con Drive: $e',
+        tag: 'StudyFileService',
+      );
       return const DriveSyncResult.fallo();
     }
   }
@@ -605,8 +704,10 @@ class StudyFileService extends ChangeNotifier {
     List<String> ruta,
     String userId,
   ) async {
-    final ubicacion =
-        classifyDrivePath(ruta, CareerService().getCareers()).location;
+    final ubicacion = classifyDrivePath(
+      ruta,
+      CareerService().getCareers(),
+    ).location;
     if (ubicacion == null) {
       Logger.info(
         'Archivo "${entry.name}" ignorado: ${ruta.join('/')} no dice carrera y asignatura',
@@ -641,11 +742,14 @@ class StudyFileService extends ChangeNotifier {
     DriveEntry entry,
     List<String> ruta,
   ) async {
-    final ubicacion =
-        classifyDrivePath(ruta, CareerService().getCareers()).location;
+    final ubicacion = classifyDrivePath(
+      ruta,
+      CareerService().getCareers(),
+    ).location;
     if (ubicacion == null) return false;
 
-    final cambio = actual.name != entry.name ||
+    final cambio =
+        actual.name != entry.name ||
         actual.subject != ubicacion.subject ||
         actual.careerId != ubicacion.careerId ||
         actual.category != ubicacion.category;
@@ -714,42 +818,41 @@ class DriveSyncResult {
   });
 
   const DriveSyncResult.vacio()
-      : agregados = 0,
-        eliminados = 0,
-        actualizados = 0,
-        ignorados = 0;
+    : agregados = 0,
+      eliminados = 0,
+      actualizados = 0,
+      ignorados = 0;
 
   /// No se pudo consultar a Drive. Se distingue de [DriveSyncResult.vacio]
   /// para no anunciar "todo al día" cuando en realidad no se comprobó nada:
   /// esa confusión exacta es la que hacía que el botón anterior mintiera.
   const DriveSyncResult.fallo()
-      : agregados = -1,
-        eliminados = 0,
-        actualizados = 0,
-        ignorados = 0;
+    : agregados = -1,
+      eliminados = 0,
+      actualizados = 0,
+      ignorados = 0;
 
   /// Drive respondió, pero no hay carpeta "Bitácora" que mirar. Tampoco es
   /// "todo al día": o nunca se subió nada, o la carpeta se renombró o movió.
   const DriveSyncResult.sinCarpeta()
-      : agregados = -2,
-        eliminados = 0,
-        actualizados = 0,
-        ignorados = 0;
+    : agregados = -2,
+      eliminados = 0,
+      actualizados = 0,
+      ignorados = 0;
 
   /// Falta autorizar Drive y no era momento de pedirlo. La sincronización
   /// automática termina así en silencio: pedir permiso abre una ventana que
   /// el usuario no provocó.
   const DriveSyncResult.faltaPermiso()
-      : agregados = -3,
-        eliminados = 0,
-        actualizados = 0,
-        ignorados = 0;
+    : agregados = -3,
+      eliminados = 0,
+      actualizados = 0,
+      ignorados = 0;
 
   bool get fallo => agregados == -1;
   bool get sinCarpeta => agregados == -2;
   bool get faltaPermiso => agregados == -3;
-  bool get sinCambios =>
-      agregados == 0 && eliminados == 0 && actualizados == 0;
+  bool get sinCambios => agregados == 0 && eliminados == 0 && actualizados == 0;
 
   /// Frase para mostrarle al usuario.
   String get resumen {
@@ -760,16 +863,25 @@ class DriveSyncResult {
     }
 
     final partes = <String>[
-      if (agregados == 1) '1 archivo nuevo' else if (agregados > 1) '$agregados archivos nuevos',
-      if (eliminados == 1) '1 eliminado' else if (eliminados > 1) '$eliminados eliminados',
-      if (actualizados == 1) '1 actualizado' else if (actualizados > 1) '$actualizados actualizados',
+      if (agregados == 1)
+        '1 archivo nuevo'
+      else if (agregados > 1)
+        '$agregados archivos nuevos',
+      if (eliminados == 1)
+        '1 eliminado'
+      else if (eliminados > 1)
+        '$eliminados eliminados',
+      if (actualizados == 1)
+        '1 actualizado'
+      else if (actualizados > 1)
+        '$actualizados actualizados',
     ];
 
     final aviso = ignorados == 0
         ? ''
         : ignorados == 1
-            ? '. 1 archivo está en una carpeta sin carrera o asignatura'
-            : '. $ignorados archivos están en carpetas sin carrera o asignatura';
+        ? '. 1 archivo está en una carpeta sin carrera o asignatura'
+        : '. $ignorados archivos están en carpetas sin carrera o asignatura';
 
     if (partes.isEmpty) return 'Todo al día con Google Drive$aviso';
     return 'Drive: ${partes.join(', ')}$aviso';

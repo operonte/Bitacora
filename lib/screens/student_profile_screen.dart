@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../colors.dart';
 import '../models/career_model.dart';
+import '../models/study_file_model.dart';
 import '../services/attendance_service.dart';
+import '../services/study_file_service.dart';
 import '../services/supabase_db_service.dart';
+import '../utils/input_sanitizer.dart';
 
 enum _EstadoTarea { atrasada, pendiente, entregadaATiempo, entregadaTarde }
 
@@ -256,6 +260,63 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     return map;
   }
 
+  Future<void> _saveCopy(Map<String, dynamic> row) async {
+    final name = row['attached_file_name']?.toString();
+    final driveId = row['attached_file_drive_id']?.toString();
+    if (name == null || driveId == null || driveId.isEmpty) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(content: Text('Guardando copia...')));
+    try {
+      final ok = await StudyFileService().saveCopyToMyFiles(
+        StudyFile(
+          name: name,
+          subject: row['subject']?.toString() ?? '',
+          driveFileId: driveId,
+          mimeType: row['attached_file_mime']?.toString(),
+          userId: '',
+          createdAt: DateTime.now(),
+        ),
+        subject: row['subject']?.toString() ?? 'General',
+        careerId: widget.career.id,
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            ok ? 'Guardado en Mis archivos' : 'No se pudo guardar la copia',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        );
+      }
+    }
+  }
+
+  Future<void> _openAttachedFile(String? url) async {
+    if (url == null || url.isEmpty || !InputSanitizer.isSafeExternalUrl(url)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este archivo no tiene un enlace válido.'),
+        ),
+      );
+      return;
+    }
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo abrir el archivo: $e')),
+        );
+      }
+    }
+  }
+
   Widget _sectionLabel(BuildContext context, String text, IconData icon) => Row(
     children: [
       Icon(icon, size: 16, color: AppColors.textSecondary),
@@ -276,6 +337,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     final grade = row['grade']?.toString();
     final comment = row['teacher_comment']?.toString();
     final isOfficial = row['is_official'] == true;
+    final attachedName = row['attached_file_name']?.toString();
+    final attachedLink = row['attached_file_link']?.toString();
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -343,6 +406,41 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 style: const TextStyle(
                   fontStyle: FontStyle.italic,
                   fontSize: 12.5,
+                ),
+              ),
+            ],
+            if (attachedName != null && attachedName.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () => _openAttachedFile(attachedLink),
+                borderRadius: BorderRadius.circular(8),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.attach_file,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        attachedName,
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                          decoration: TextDecoration.underline,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.download_outlined, size: 18),
+                      tooltip: 'Guardar copia en mis archivos',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _saveCopy(row),
+                    ),
+                  ],
                 ),
               ),
             ],

@@ -10,6 +10,7 @@ import '../models/study_file_model.dart';
 import '../providers/app_state.dart';
 import '../services/supabase_db_service.dart';
 import '../services/study_file_service.dart';
+import '../services/google_drive_service.dart';
 import '../utils/error_handler.dart';
 import '../utils/input_sanitizer.dart';
 
@@ -594,11 +595,25 @@ class _AttachedFilesSectionState extends State<_AttachedFilesSection> {
     if (elegido == null) return;
 
     await _service.saveFile(elegido.copyWith(taskId: widget.task.id));
+
+    // Solo si es oficial: ahí es donde RLS deja verlo a quien creó la tarea
+    // (el docente). En una tarea compartida normal no hay a quién avisarle,
+    // así que no vale la pena el llamado a Drive.
+    if (widget.task.isOfficial && (elegido.driveFileId?.isNotEmpty ?? false)) {
+      await GoogleDriveService().setLinkViewable(elegido.driveFileId!);
+    }
+
     if (mounted) setState(() {});
   }
 
   Future<void> _detach(StudyFile file) async {
     await _service.saveFile(file.copyWith(clearTaskId: true));
+    // Vuelta atrás del permiso que se dio al adjuntarlo, si la tarea era
+    // oficial (ver _attach): sin esto, el docente seguiría pudiendo abrirlo
+    // aunque ya no esté adjunto a nada.
+    if (widget.task.isOfficial && (file.driveFileId?.isNotEmpty ?? false)) {
+      await GoogleDriveService().revokeLinkViewable(file.driveFileId!);
+    }
     if (mounted) setState(() {});
   }
 

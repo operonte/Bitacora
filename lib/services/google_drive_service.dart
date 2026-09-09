@@ -7,8 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/logger.dart';
 import '../utils/drive_token_stub.dart'
     if (dart.library.html) '../utils/drive_token_web.dart';
-import 'drive_upload_stub.dart'
-    if (dart.library.html) 'drive_upload_web.dart';
+import 'drive_upload_stub.dart' if (dart.library.html) 'drive_upload_web.dart';
 
 // Google OAuth Client ID (mismo que está en web/index.html)
 const _googleClientId =
@@ -87,12 +86,28 @@ const _extensionMimeTypes = <String, String>{
 /// la misma cosa, y sin esto la app crearía una carpeta duplicada al lado.
 String normalizeFolderName(String value) {
   const acentos = {
-    'á': 'a', 'à': 'a', 'ä': 'a', 'â': 'a',
-    'é': 'e', 'è': 'e', 'ë': 'e', 'ê': 'e',
-    'í': 'i', 'ì': 'i', 'ï': 'i', 'î': 'i',
-    'ó': 'o', 'ò': 'o', 'ö': 'o', 'ô': 'o',
-    'ú': 'u', 'ù': 'u', 'ü': 'u', 'û': 'u',
-    'ñ': 'n', 'ç': 'c',
+    'á': 'a',
+    'à': 'a',
+    'ä': 'a',
+    'â': 'a',
+    'é': 'e',
+    'è': 'e',
+    'ë': 'e',
+    'ê': 'e',
+    'í': 'i',
+    'ì': 'i',
+    'ï': 'i',
+    'î': 'i',
+    'ó': 'o',
+    'ò': 'o',
+    'ö': 'o',
+    'ô': 'o',
+    'ú': 'u',
+    'ù': 'u',
+    'ü': 'u',
+    'û': 'u',
+    'ñ': 'n',
+    'ç': 'c',
   };
   final lower = value.trim().toLowerCase();
   final buffer = StringBuffer();
@@ -148,17 +163,18 @@ class DriveEntry {
   String? get parentId => parents.isEmpty ? null : parents.first;
 
   factory DriveEntry.fromJson(Map<String, dynamic> json) => DriveEntry(
-        id: json['id']?.toString() ?? '',
-        name: json['name']?.toString() ?? '',
-        parents: (json['parents'] as List?)
-                ?.map((p) => p.toString())
-                .toList(growable: false) ??
-            const [],
-        mimeType: json['mimeType']?.toString(),
-        sizeBytes: int.tryParse(json['size']?.toString() ?? ''),
-        webViewLink: json['webViewLink']?.toString() ?? '',
-        trashed: json['trashed'] == true,
-      );
+    id: json['id']?.toString() ?? '',
+    name: json['name']?.toString() ?? '',
+    parents:
+        (json['parents'] as List?)
+            ?.map((p) => p.toString())
+            .toList(growable: false) ??
+        const [],
+    mimeType: json['mimeType']?.toString(),
+    sizeBytes: int.tryParse(json['size']?.toString() ?? ''),
+    webViewLink: json['webViewLink']?.toString() ?? '',
+    trashed: json['trashed'] == true,
+  );
 }
 
 /// Un cambio informado por la Changes API de Drive.
@@ -171,11 +187,7 @@ class DriveChange {
   /// Estado actual del archivo. Null cuando [removed] es true.
   final DriveEntry? file;
 
-  const DriveChange({
-    required this.fileId,
-    required this.removed,
-    this.file,
-  });
+  const DriveChange({required this.fileId, required this.removed, this.file});
 
   /// Si el archivo ya no debe aparecer en la app. La papelera cuenta: el
   /// usuario ya lo dio por borrado, aunque el enlace le siga funcionando por
@@ -203,10 +215,7 @@ class DriveChangesPage {
   /// cambios sin procesar que ya nadie volvería a mirar.
   final String nextStartToken;
 
-  const DriveChangesPage({
-    required this.changes,
-    required this.nextStartToken,
-  });
+  const DriveChangesPage({required this.changes, required this.nextStartToken});
 }
 
 /// El árbol de carpetas de Bitácora, con la ruta de cada una.
@@ -229,8 +238,7 @@ class BitacoraTree {
 
   /// Si [entry] vive dentro del árbol. Un archivo sin `parents` informados no
   /// cuenta: sin saber dónde está, no se puede afirmar que sea nuestro.
-  bool containsEntry(DriveEntry entry) =>
-      entry.parents.any(containsFolder);
+  bool containsEntry(DriveEntry entry) => entry.parents.any(containsFolder);
 
   /// Ruta de carpetas de [entry] relativa a la raíz, o null si está fuera.
   List<String>? pathOf(DriveEntry entry) {
@@ -284,7 +292,10 @@ class GoogleDriveService {
     }
 
     await _secureStorage.write(key: _tokenKey, value: token);
-    Logger.info('Token de Drive guardado de forma segura.', tag: 'GoogleDriveService');
+    Logger.info(
+      'Token de Drive guardado de forma segura.',
+      tag: 'GoogleDriveService',
+    );
   }
 
   /// Limpia el token al cerrar sesión.
@@ -412,8 +423,9 @@ class GoogleDriveService {
     Future<T> Function(String token) peticion, {
     bool interactivo = true,
   }) async {
-    final token =
-        interactivo ? await getOrRequestToken() : await tokenSilencioso();
+    final token = interactivo
+        ? await getOrRequestToken()
+        : await tokenSilencioso();
     if (token == null || token.isEmpty) {
       if (!interactivo) throw const DriveNeedsConsentException();
       throw Exception('No se pudo obtener acceso a Google Drive.');
@@ -530,8 +542,12 @@ class GoogleDriveService {
     String? subject,
     String? subfolder,
   }) async {
-    final folderId = await _getOrCreateSubjectFolder(token, subject,
-        career: career, subfolder: subfolder);
+    final folderId = await _getOrCreateSubjectFolder(
+      token,
+      subject,
+      career: career,
+      subfolder: subfolder,
+    );
     final effectiveMimeType = _resolveMimeType(mimeType);
 
     final metadata = {
@@ -649,8 +665,114 @@ class GoogleDriveService {
         tag: 'GoogleDriveService',
       );
     } catch (e) {
-      Logger.warning('Error renombrando $fileId en Drive: $e',
-          tag: 'GoogleDriveService');
+      Logger.warning(
+        'Error renombrando $fileId en Drive: $e',
+        tag: 'GoogleDriveService',
+      );
+    }
+    return false;
+  }
+
+  /// Da permiso de lectura "cualquiera con el enlace" a un archivo propio.
+  ///
+  /// Hace falta para que material docente compartido y archivos adjuntados a
+  /// una tarea oficial se puedan abrir de verdad: hasta que se agregó esto,
+  /// la app mostraba el archivo en la lista (eso lo resuelve RLS, que es de
+  /// Bitácora) pero nadie más que quien lo subió podía abrirlo en Drive,
+  /// porque nunca se le daba permiso — Drive seguía respondiendo "pedir
+  /// acceso" a cualquier otra cuenta.
+  ///
+  /// No hay que resolver el email de cada destinatario: "cualquiera con el
+  /// enlace" alcanza porque el enlace en sí no se adivina, y quién lo ve
+  /// dentro de la app lo sigue decidiendo RLS — esto solo hace que, una vez
+  /// que Bitácora ya decidió mostrárselo a alguien, esa persona pueda
+  /// realmente abrirlo.
+  Future<bool> setLinkViewable(String fileId) async {
+    if (fileId.isEmpty || fileId.contains('/')) return false;
+    if (!await belongsToBitacora(fileId)) {
+      Logger.warning(
+        'No se comparte $fileId: está fuera de la carpeta Bitácora',
+        tag: 'GoogleDriveService',
+      );
+      return false;
+    }
+    final token = await getOrRequestToken();
+    if (token == null || token.isEmpty) return false;
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+          'https://www.googleapis.com/drive/v3/files/$fileId/permissions',
+        ),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'role': 'reader', 'type': 'anyone'}),
+      );
+      if (response.statusCode == 200) return true;
+      Logger.warning(
+        'No se pudo compartir $fileId en Drive (${response.statusCode}): ${response.body}',
+        tag: 'GoogleDriveService',
+      );
+    } catch (e) {
+      Logger.warning(
+        'Error compartiendo $fileId en Drive: $e',
+        tag: 'GoogleDriveService',
+      );
+    }
+    return false;
+  }
+
+  /// Deshace [setLinkViewable]: la vuelta atrás que le faltaba a la versión
+  /// vieja de esta idea (ver el comentario en StudyFileCard — un botón de
+  /// compartir "sin vuelta atrás" se sacó por eso mismo). Se llama cuando
+  /// alguien destilda "Compartir" o desadjunta el archivo de la tarea
+  /// oficial: sin esto, el enlace seguiría siendo público para siempre para
+  /// quien ya lo haya copiado, aunque la app ya no lo muestre.
+  Future<bool> revokeLinkViewable(String fileId) async {
+    if (fileId.isEmpty || fileId.contains('/')) return false;
+    final token = await getOrRequestToken();
+    if (token == null || token.isEmpty) return false;
+
+    try {
+      final listResponse = await http.get(
+        Uri.parse(
+          'https://www.googleapis.com/drive/v3/files/$fileId/permissions?fields=permissions(id,type)',
+        ),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (listResponse.statusCode != 200) {
+        Logger.warning(
+          'No se pudo listar permisos de $fileId (${listResponse.statusCode})',
+          tag: 'GoogleDriveService',
+        );
+        return false;
+      }
+      final permissions =
+          (jsonDecode(listResponse.body)['permissions'] as List?) ?? [];
+      final anyone = permissions.firstWhere(
+        (p) => p['type'] == 'anyone',
+        orElse: () => null,
+      );
+      if (anyone == null) return true; // Ya no estaba compartido.
+
+      final deleteResponse = await http.delete(
+        Uri.parse(
+          'https://www.googleapis.com/drive/v3/files/$fileId/permissions/${anyone['id']}',
+        ),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (deleteResponse.statusCode == 204) return true;
+      Logger.warning(
+        'No se pudo revocar el permiso de $fileId (${deleteResponse.statusCode})',
+        tag: 'GoogleDriveService',
+      );
+    } catch (e) {
+      Logger.warning(
+        'Error revocando permiso de $fileId: $e',
+        tag: 'GoogleDriveService',
+      );
     }
     return false;
   }
@@ -663,25 +785,24 @@ class GoogleDriveService {
   ///
   /// Se pide una sola vez por dispositivo; después el token lo va renovando
   /// cada llamada a [listChanges].
-  Future<String?> getStartPageToken({bool interactivo = true}) =>
-      _withToken(interactivo: interactivo, (token) async {
-        final response = await http.get(
-          Uri.parse(
-            'https://www.googleapis.com/drive/v3/changes/startPageToken',
-          ),
-          headers: {'Authorization': 'Bearer $token'},
-        );
-        _throwIfAuthProblem(response);
-        if (response.statusCode != 200) {
-          Logger.warning(
-            'No se pudo obtener el token de cambios de Drive (${response.statusCode})',
-            tag: 'GoogleDriveService',
-          );
-          return null;
-        }
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data['startPageToken']?.toString();
-      });
+  Future<String?> getStartPageToken({
+    bool interactivo = true,
+  }) => _withToken(interactivo: interactivo, (token) async {
+    final response = await http.get(
+      Uri.parse('https://www.googleapis.com/drive/v3/changes/startPageToken'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    _throwIfAuthProblem(response);
+    if (response.statusCode != 200) {
+      Logger.warning(
+        'No se pudo obtener el token de cambios de Drive (${response.statusCode})',
+        tag: 'GoogleDriveService',
+      );
+      return null;
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data['startPageToken']?.toString();
+  });
 
   /// Qué cambió en el Drive del usuario desde [pageToken].
   ///
@@ -689,56 +810,59 @@ class GoogleDriveService {
   /// borrados, renombrados y movimientos a la vez, y es lo que permite que la
   /// app se entere de lo que se hizo directamente en Drive. Es el mecanismo
   /// que Google ofrece justo para esto.
-  Future<DriveChangesPage> listChanges(String pageToken,
-          {bool interactivo = true}) =>
-      _withToken(interactivo: interactivo, (token) async {
-        final cambios = <DriveChange>[];
-        var actual = pageToken;
-        String? siguienteInicio;
+  Future<DriveChangesPage> listChanges(
+    String pageToken, {
+    bool interactivo = true,
+  }) => _withToken(interactivo: interactivo, (token) async {
+    final cambios = <DriveChange>[];
+    var actual = pageToken;
+    String? siguienteInicio;
 
-        // Drive pagina: se sigue mientras entregue nextPageToken, y la última
-        // página trae el token con el que empezar la próxima vez.
-        while (true) {
-          final uri = Uri.parse(
-            'https://www.googleapis.com/drive/v3/changes'
-            '?pageToken=$actual'
-            '&pageSize=200'
-            '&fields=${Uri.encodeComponent('nextPageToken,newStartPageToken,changes(fileId,removed,file($_entryFields))')}',
-          );
-          final response =
-              await http.get(uri, headers: {'Authorization': 'Bearer $token'});
-          _throwIfAuthProblem(response);
-          if (response.statusCode != 200) {
-            throw Exception(
-              'Drive respondió ${response.statusCode} al pedir los cambios.',
-            );
-          }
-
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          for (final raw in (data['changes'] as List?) ?? const []) {
-            if (raw is Map) {
-              cambios.add(DriveChange.fromJson(Map<String, dynamic>.from(raw)));
-            }
-          }
-
-          final siguientePagina = data['nextPageToken']?.toString();
-          if (siguientePagina != null && siguientePagina.isNotEmpty) {
-            actual = siguientePagina;
-            continue;
-          }
-          siguienteInicio = data['newStartPageToken']?.toString();
-          break;
-        }
-
-        return DriveChangesPage(
-          changes: cambios,
-          // Si Drive no devolvió uno nuevo, se conserva el que había: perder
-          // el token obligaría a rehacer el barrido completo.
-          nextStartToken: (siguienteInicio != null && siguienteInicio.isNotEmpty)
-              ? siguienteInicio
-              : pageToken,
+    // Drive pagina: se sigue mientras entregue nextPageToken, y la última
+    // página trae el token con el que empezar la próxima vez.
+    while (true) {
+      final uri = Uri.parse(
+        'https://www.googleapis.com/drive/v3/changes'
+        '?pageToken=$actual'
+        '&pageSize=200'
+        '&fields=${Uri.encodeComponent('nextPageToken,newStartPageToken,changes(fileId,removed,file($_entryFields))')}',
+      );
+      final response = await http.get(
+        uri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      _throwIfAuthProblem(response);
+      if (response.statusCode != 200) {
+        throw Exception(
+          'Drive respondió ${response.statusCode} al pedir los cambios.',
         );
-      });
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      for (final raw in (data['changes'] as List?) ?? const []) {
+        if (raw is Map) {
+          cambios.add(DriveChange.fromJson(Map<String, dynamic>.from(raw)));
+        }
+      }
+
+      final siguientePagina = data['nextPageToken']?.toString();
+      if (siguientePagina != null && siguientePagina.isNotEmpty) {
+        actual = siguientePagina;
+        continue;
+      }
+      siguienteInicio = data['newStartPageToken']?.toString();
+      break;
+    }
+
+    return DriveChangesPage(
+      changes: cambios,
+      // Si Drive no devolvió uno nuevo, se conserva el que había: perder
+      // el token obligaría a rehacer el barrido completo.
+      nextStartToken: (siguienteInicio != null && siguienteInicio.isNotEmpty)
+          ? siguienteInicio
+          : pageToken,
+    );
+  });
 
   /// Recorre las carpetas de Bitácora y devuelve el árbol con sus rutas.
   ///
@@ -757,8 +881,11 @@ class GoogleDriveService {
           final actual = pendientes.removeAt(0);
           final rutaActual = paths[actual]!;
 
-          for (final carpeta in await _listChildren(token, actual,
-              soloCarpetas: true)) {
+          for (final carpeta in await _listChildren(
+            token,
+            actual,
+            soloCarpetas: true,
+          )) {
             if (paths.containsKey(carpeta.id)) continue;
             paths[carpeta.id] = [...rutaActual, carpeta.name];
             pendientes.add(carpeta.id);
@@ -773,17 +900,18 @@ class GoogleDriveService {
   /// Es el barrido inicial: corre una sola vez, cuando el dispositivo empieza
   /// a seguir los cambios, para registrar lo que ya estaba en Drive antes.
   /// A partir de ahí manda [listChanges], que es mucho más barato.
-  Future<List<DriveEntry>> listFilesIn(BitacoraTree tree,
-          {bool interactivo = true}) =>
-      _withToken(interactivo: interactivo, (token) async {
-        final archivos = <DriveEntry>[];
-        for (final folderId in tree.paths.keys) {
-          archivos.addAll(
-            await _listChildren(token, folderId, soloCarpetas: false),
-          );
-        }
-        return archivos;
-      });
+  Future<List<DriveEntry>> listFilesIn(
+    BitacoraTree tree, {
+    bool interactivo = true,
+  }) => _withToken(interactivo: interactivo, (token) async {
+    final archivos = <DriveEntry>[];
+    for (final folderId in tree.paths.keys) {
+      archivos.addAll(
+        await _listChildren(token, folderId, soloCarpetas: false),
+      );
+    }
+    return archivos;
+  });
 
   /// Hijos directos de [parentId]: carpetas o archivos, nunca ambos.
   Future<List<DriveEntry>> _listChildren(
@@ -808,8 +936,10 @@ class GoogleDriveService {
         '${pageToken == null ? '' : '&pageToken=$pageToken'}',
       );
 
-      final response =
-          await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+      final response = await http.get(
+        uri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
       _throwIfAuthProblem(response);
       if (response.statusCode != 200) {
         // Falla en vez de devolver lo que alcanzó a juntar. El listado
@@ -836,8 +966,10 @@ class GoogleDriveService {
   BitacoraTree? _arbolCache;
 
   /// El árbol de Bitácora, recorriéndolo solo si no se conoce o si [refrescar].
-  Future<BitacoraTree?> bitacoraTree(
-      {bool refrescar = false, bool interactivo = true}) async {
+  Future<BitacoraTree?> bitacoraTree({
+    bool refrescar = false,
+    bool interactivo = true,
+  }) async {
     if (!refrescar && _arbolCache != null) return _arbolCache;
     _arbolCache = await loadBitacoraTree(interactivo: interactivo);
     return _arbolCache;
@@ -864,7 +996,8 @@ class GoogleDriveService {
         if (response.statusCode != 200) return false;
 
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final parents = (data['parents'] as List?)
+        final parents =
+            (data['parents'] as List?)
                 ?.map((p) => p.toString())
                 .toList(growable: false) ??
             const <String>[];
@@ -928,9 +1061,7 @@ class GoogleDriveService {
     if (token != null && token.isNotEmpty && !fileId.contains('/')) {
       try {
         final response = await http.delete(
-          Uri.parse(
-            'https://www.googleapis.com/drive/v3/files/$fileId',
-          ),
+          Uri.parse('https://www.googleapis.com/drive/v3/files/$fileId'),
           headers: {'Authorization': 'Bearer $token'},
         );
         return response.statusCode == 204 || response.statusCode == 200;
@@ -971,18 +1102,22 @@ class GoogleDriveService {
     if (career != null && career.trim().isNotEmpty) {
       parentId =
           await _getOrCreateChildFolder(token, career.trim(), parentId) ??
-              parentId;
+          parentId;
     }
 
     if (subject == null || subject.trim().isEmpty) return parentId;
 
     final subjectFolderId =
         await _getOrCreateChildFolder(token, subject.trim(), parentId) ??
-            parentId;
+        parentId;
 
     if (subfolder == null || subfolder.trim().isEmpty) return subjectFolderId;
 
-    return await _getOrCreateChildFolder(token, subfolder.trim(), subjectFolderId) ??
+    return await _getOrCreateChildFolder(
+          token,
+          subfolder.trim(),
+          subjectFolderId,
+        ) ??
         subjectFolderId;
   }
 
@@ -1037,7 +1172,9 @@ class GoogleDriveService {
 
       if (createResp.statusCode == 401) throw _DriveAuthExpiredException();
       if (createResp.statusCode == 200 || createResp.statusCode == 201) {
-        final id = (jsonDecode(createResp.body) as Map<String, dynamic>)['id'] as String?;
+        final id =
+            (jsonDecode(createResp.body) as Map<String, dynamic>)['id']
+                as String?;
         Logger.info(
           'Carpeta "$name" creada en Google Drive. ID: $id',
           tag: 'GoogleDriveService',
@@ -1069,8 +1206,7 @@ class GoogleDriveService {
 
       if (searchResp.statusCode == 401) throw _DriveAuthExpiredException();
       if (searchResp.statusCode == 200) {
-        final files =
-            (jsonDecode(searchResp.body)['files'] as List?) ?? [];
+        final files = (jsonDecode(searchResp.body)['files'] as List?) ?? [];
         if (files.isNotEmpty) return files.first['id'] as String?;
       }
 

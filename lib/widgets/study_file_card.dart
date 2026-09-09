@@ -19,6 +19,11 @@ class StudyFileCard extends StatelessWidget {
   /// depende de quién lo subió.
   final bool canModify;
 
+  /// Guardar una copia propia del archivo de otro. Solo tiene sentido cuando
+  /// `!canModify` (material de otra persona) y hay algo que copiar — null lo
+  /// oculta.
+  final VoidCallback? onSaveCopy;
+
   const StudyFileCard({
     super.key,
     required this.file,
@@ -26,6 +31,7 @@ class StudyFileCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     this.canModify = true,
+    this.onSaveCopy,
   });
 
   /// Etiqueta de color: la asignatura en los trabajos, el tipo en las guías —
@@ -69,11 +75,7 @@ class StudyFileCard extends StatelessWidget {
                   color: file.fileColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  file.fileIcon,
-                  color: file.fileColor,
-                  size: 26,
-                ),
+                child: Icon(file.fileIcon, color: file.fileColor, size: 26),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -83,7 +85,9 @@ class StudyFileCard extends StatelessWidget {
                     Text(
                       file.name,
                       style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 14),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -92,7 +96,9 @@ class StudyFileCard extends StatelessWidget {
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: primaryColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(6),
@@ -108,7 +114,11 @@ class StudyFileCard extends StatelessWidget {
                         ),
                         if (file.isGuia && file.isShared) ...[
                           const SizedBox(width: 6),
-                          const Icon(Icons.groups_outlined, size: 12, color: AppColors.accentTeal),
+                          const Icon(
+                            Icons.groups_outlined,
+                            size: 12,
+                            color: AppColors.accentTeal,
+                          ),
                           const SizedBox(width: 2),
                           const Text(
                             'Compartido',
@@ -148,12 +158,20 @@ class StudyFileCard extends StatelessWidget {
                   onPressed: onEdit,
                 ),
                 IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded,
-                      size: 20, color: AppColors.error),
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    size: 20,
+                    color: AppColors.error,
+                  ),
                   tooltip: 'Eliminar',
                   onPressed: onDelete,
                 ),
-              ],
+              ] else if (onSaveCopy != null)
+                IconButton(
+                  icon: const Icon(Icons.download_outlined, size: 20),
+                  tooltip: 'Guardar copia en mis archivos',
+                  onPressed: onSaveCopy,
+                ),
             ],
           ),
         ),
