@@ -52,11 +52,16 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('¿Eliminar anuncio?'),
-        content: Text(asAdmin
-            ? '"${a.title}" es de ${a.createdByName}. Se borrará para toda la carrera.'
-            : '"${a.title}" se borrará para toda la carrera.'),
+        content: Text(
+          asAdmin
+              ? '"${a.title}" es de ${a.createdByName}. Se borrará para toda la carrera.'
+              : '"${a.title}" se borrará para toda la carrera.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.pop(ctx, true),
@@ -66,11 +71,19 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
       ),
     );
     if (ok != true) return;
-    if (asAdmin) {
-      await AdminAuthService.deleteAnnouncement(a.id!);
-      await _service.loadFor(widget.career.id);
-    } else {
-      await _service.delete(a.id!);
+    try {
+      if (asAdmin) {
+        await AdminAuthService.deleteAnnouncement(a.id!);
+        await _service.loadFor(widget.career.id);
+      } else {
+        await _service.delete(a.id!);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('No se pudo eliminar: $e')));
+      }
     }
   }
 
@@ -79,7 +92,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     final bodyController = TextEditingController();
     String? subject;
     var urgent = false;
-    final subjects = widget.career.predefinedSubjects.map((s) => s.name).toSet().toList()..sort();
+    final subjects =
+        widget.career.predefinedSubjects.map((s) => s.name).toSet().toList()
+          ..sort();
 
     await showDialog(
       context: context,
@@ -94,21 +109,36 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                 TextField(
                   controller: titleController,
                   maxLength: 120,
-                  decoration: const InputDecoration(labelText: 'Título', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'Título',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 TextField(
                   controller: bodyController,
                   maxLines: 3,
                   maxLength: 800,
-                  decoration: const InputDecoration(labelText: 'Detalle (opcional)', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'Detalle (opcional)',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String?>(
                   initialValue: subject,
-                  decoration: const InputDecoration(labelText: 'Asignatura', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'Asignatura',
+                    border: OutlineInputBorder(),
+                  ),
                   items: [
-                    const DropdownMenuItem<String?>(value: null, child: Text('Toda la carrera')),
-                    ...subjects.map((s) => DropdownMenuItem<String?>(value: s, child: Text(s))),
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Toda la carrera'),
+                    ),
+                    ...subjects.map(
+                      (s) =>
+                          DropdownMenuItem<String?>(value: s, child: Text(s)),
+                    ),
                   ],
                   onChanged: (v) => setLocal(() => subject = v),
                 ),
@@ -126,26 +156,35 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
             FilledButton(
               onPressed: () async {
                 final title = titleController.text.trim();
                 if (title.isEmpty) return;
                 final user = Supabase.instance.client.auth.currentUser;
                 if (user == null) return;
-                final name = (user.userMetadata?['full_name'] as String?)?.trim().isNotEmpty == true
+                final name =
+                    (user.userMetadata?['full_name'] as String?)
+                            ?.trim()
+                            .isNotEmpty ==
+                        true
                     ? user.userMetadata!['full_name'] as String
                     : 'Docente';
                 try {
-                  await _service.create(Announcement(
-                    careerId: widget.career.id,
-                    subject: subject,
-                    title: title,
-                    body: bodyController.text.trim(),
-                    urgent: urgent,
-                    createdBy: user.id,
-                    createdByName: name,
-                  ));
+                  await _service.create(
+                    Announcement(
+                      careerId: widget.career.id,
+                      subject: subject,
+                      title: title,
+                      body: bodyController.text.trim(),
+                      urgent: urgent,
+                      createdBy: user.id,
+                      createdByName: name,
+                    ),
+                  );
                   if (ctx.mounted) Navigator.pop(ctx);
                 } catch (e) {
                   if (ctx.mounted) {
@@ -194,13 +233,20 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                         ),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.campaign_outlined, size: 40, color: AppColors.primary),
+                      child: const Icon(
+                        Icons.campaign_outlined,
+                        size: 40,
+                        color: AppColors.primary,
+                      ),
                     ),
                     const SizedBox(height: 14),
                     const Text(
                       'Todavía no hay anuncios en esta carrera',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
                     ),
                   ],
                 ),
@@ -216,7 +262,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               final accent = a.urgent ? AppColors.error : AppColors.accentTeal;
               return Card(
                 clipBehavior: Clip.antiAlias,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 child: IntrinsicHeight(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -224,62 +272,89 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                       Container(width: 5, color: accent),
                       Expanded(
                         child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              a.urgent ? Icons.priority_high_rounded : Icons.campaign_outlined,
-                              size: 16,
-                              color: accent,
-                            ),
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: accent.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      a.urgent
+                                          ? Icons.priority_high_rounded
+                                          : Icons.campaign_outlined,
+                                      size: 16,
+                                      color: accent,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      a.title,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                  if (a.createdBy == uid || _isAdmin)
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        size: 18,
+                                        color: AppColors.error,
+                                      ),
+                                      onPressed: () => _confirmDelete(
+                                        a,
+                                        asAdmin: a.createdBy != uid,
+                                      ),
+                                      tooltip: 'Eliminar',
+                                    ),
+                                ],
+                              ),
+                              if (a.body.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  a.body,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ],
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.08,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  a.subject ?? 'Toda la carrera',
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '${a.createdByName} · ${_relative(a.createdAt)}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              a.title,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                            ),
-                          ),
-                          if (a.createdBy == uid || _isAdmin)
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.error),
-                              onPressed: () => _confirmDelete(a, asAdmin: a.createdBy != uid),
-                              tooltip: 'Eliminar',
-                            ),
-                        ],
-                      ),
-                      if (a.body.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(a.body, style: const TextStyle(fontSize: 13)),
-                      ],
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          a.subject ?? 'Toda la carrera',
-                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: AppColors.primary),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${a.createdByName} · ${_relative(a.createdAt)}',
-                        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
                         ),
                       ),
                     ],

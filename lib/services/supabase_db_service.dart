@@ -1,13 +1,16 @@
 import 'dart:async';
 
+import 'package:hive/hive.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/task_model.dart';
 import '../models/subject_model.dart';
 import '../models/career_model.dart';
 import 'career_service.dart';
+import 'encryption_service.dart';
 import 'local_cache_service.dart';
 import 'task_progress_service.dart';
 import 'supabase_service.dart';
+import '../utils/hive_box_helper.dart';
 import '../utils/logger.dart';
 
 /// La escritura llegó al servidor y fue rechazada: la fila no existe o las
@@ -51,6 +54,22 @@ class SupabaseDbService {
 
   final SupabaseClient _client;
   final LocalCacheService _cache;
+
+  /// Nota y comentario del docente pendientes de confirmar en el servidor,
+  /// por tarea — mismo patrón que AttendanceService: escritura optimista en
+  /// Hive, se reintenta cada vez que se vuelve a pedir la lista. Antes esto
+  /// era un RPC-y-listo sin caché: si fallaba (sin conexión a mitad de
+  /// clase, el caso normal de un profesor con el celular), la nota se
+  /// perdía y había que volver a escribirla.
+  Box? _progressPendingBox;
+  static const _progressPendingBoxName = 'task_progress_pending_box';
+
+  Future<void> init() async {
+    _progressPendingBox = await openHiveBoxSafelyUntyped(
+      _progressPendingBoxName,
+      cipher: EncryptionService.cipher,
+    );
+  }
 
   // ── Helpers de usuario ──────────────────────────────────────
 
@@ -627,51 +646,187 @@ class SupabaseDbService {
   /// marcó realizada/enviada y quién no. El RPC en el servidor exige haber
   /// creado la tarea — si no, lanza y no llega ninguna fila; no hay una
   /// política RLS nueva que exponga `task_progress` de otros usuarios.
+  ///
+  /// Antes de pedir la lista fresca, reintenta la nota/comentario que hayan
+  /// quedado pendientes de sincronizar (ver [setTaskFeedback]) y, si alguna
+  /// sigue sin poder confirmarse, la deja marcada `pending: true` encima del
+  /// valor del servidor en vez de perderla.
   Future<List<Map<String, dynamic>>> getTaskSubmissionStatus(
     String taskId,
   ) async {
-    final rows = await _client.rpc(
-      'get_task_submission_status',
-      params: {'p_task_id': taskId},
-    );
-    return List<Map<String, dynamic>>.from(rows as List);
+    final stillPending = await _flushPendingFeedback(taskId);
+
+    try {
+      final rows = await _client.rpc(
+        'get_task_submission_status',
+        params: {'p_task_id': taskId},
+      );
+      final list = (rows as List)
+          .map(
+            (r) => <String, dynamic>{
+              ...Map<String, dynamic>.from(r as Map),
+              'pending': false,
+            },
+          )
+          .toList();
+
+      for (final entry in stillPending.entries) {
+        final idx = list.indexWhere(
+          (r) => r['user_id'].toString() == entry.key,
+        );
+        if (idx >= 0) {
+          list[idx] = {
+            ...list[idx],
+            'teacher_comment': entry.value['teacher_comment'],
+            'grade': entry.value['grade'],
+            'pending': true,
+          };
+        }
+      }
+
+      await _progressPendingBox?.put(taskId, {'rows': list});
+      return list;
+    } catch (e) {
+      final cached = _readCachedFeedbackRows(taskId);
+      if (cached != null) {
+        Logger.warning(
+          'Sin conexión, usando progreso guardado',
+          tag: 'SupabaseDbService',
+        );
+        return cached;
+      }
+      rethrow;
+    }
   }
 
-  /// Deja (o borra, con texto vacío) el comentario del docente para un
-  /// alumno puntual en una tarea. Igual que arriba, el RPC exige ser quien
-  /// creó la tarea — no hay caché local porque es un dato de otra persona,
-  /// no del usuario actual.
-  Future<void> setTaskTeacherComment(
+  /// Nota y comentario del docente para un alumno en una tarea, guardados
+  /// juntos — la UI siempre los edita a la vez. Si no hay conexión, quedan
+  /// guardados localmente y se reintentan solos la próxima vez que se pida
+  /// [getTaskSubmissionStatus] para esta tarea; antes se perdían sin más si
+  /// el RPC fallaba a mitad.
+  ///
+  /// Devuelve true si quedó confirmado en el servidor, false si quedó
+  /// pendiente de sincronizar.
+  Future<bool> setTaskFeedback(
     String taskId,
-    String studentUserId,
-    String comment,
-  ) async {
-    await _client.rpc(
-      'set_task_teacher_comment',
-      params: {
-        'p_task_id': taskId,
-        'p_user_id': studentUserId,
-        'p_comment': comment,
-      },
+    String studentUserId, {
+    required String comment,
+    required String grade,
+  }) async {
+    await _setPendingFeedbackRow(
+      taskId,
+      studentUserId,
+      comment: comment,
+      grade: grade,
+      pending: true,
     );
+    try {
+      await _client.rpc(
+        'set_task_teacher_comment',
+        params: {
+          'p_task_id': taskId,
+          'p_user_id': studentUserId,
+          'p_comment': comment,
+        },
+      );
+      await _client.rpc(
+        'set_task_grade',
+        params: {
+          'p_task_id': taskId,
+          'p_user_id': studentUserId,
+          'p_grade': grade,
+        },
+      );
+      await _setPendingFeedbackRow(
+        taskId,
+        studentUserId,
+        comment: comment,
+        grade: grade,
+        pending: false,
+      );
+      return true;
+    } catch (e) {
+      Logger.warning(
+        'Sin conexión al guardar nota/comentario, queda pendiente de sincronizar',
+        error: e,
+        tag: 'SupabaseDbService',
+      );
+      return false;
+    }
   }
 
-  /// Nota libre (docente, sin escala fija) para un alumno en una tarea.
-  /// Mismo RPC-y-listo que [setTaskTeacherComment]: exige ser quien creó la
-  /// tarea, sin política RLS nueva sobre task_progress.
-  Future<void> setTaskGrade(
+  /// Reintenta las filas marcadas `pending` para esta tarea. Devuelve las
+  /// que siguen sin poder confirmarse (por ejemplo, si seguimos sin red).
+  Future<Map<String, Map<String, String?>>> _flushPendingFeedback(
     String taskId,
-    String studentUserId,
-    String grade,
   ) async {
-    await _client.rpc(
-      'set_task_grade',
-      params: {
-        'p_task_id': taskId,
-        'p_user_id': studentUserId,
-        'p_grade': grade,
-      },
-    );
+    final cached = _progressPendingBox?.get(taskId) as Map?;
+    if (cached == null) return {};
+
+    final rows = List<Map>.from((cached['rows'] as List?) ?? []);
+    final stillPending = <String, Map<String, String?>>{};
+
+    for (final row in rows) {
+      if (row['pending'] != true) continue;
+      final uid = row['user_id'].toString();
+      final comment = row['teacher_comment'] as String?;
+      final grade = row['grade'] as String?;
+      try {
+        await _client.rpc(
+          'set_task_teacher_comment',
+          params: {
+            'p_task_id': taskId,
+            'p_user_id': uid,
+            'p_comment': comment ?? '',
+          },
+        );
+        await _client.rpc(
+          'set_task_grade',
+          params: {
+            'p_task_id': taskId,
+            'p_user_id': uid,
+            'p_grade': grade ?? '',
+          },
+        );
+      } catch (_) {
+        stillPending[uid] = {'teacher_comment': comment, 'grade': grade};
+      }
+    }
+    return stillPending;
+  }
+
+  List<Map<String, dynamic>>? _readCachedFeedbackRows(String taskId) {
+    final cached = _progressPendingBox?.get(taskId) as Map?;
+    if (cached == null) return null;
+    final rows = cached['rows'] as List?;
+    if (rows == null) return null;
+    return rows.map((r) => Map<String, dynamic>.from(r as Map)).toList();
+  }
+
+  Future<void> _setPendingFeedbackRow(
+    String taskId,
+    String userId, {
+    required String comment,
+    required String grade,
+    required bool pending,
+  }) async {
+    final cached = _progressPendingBox?.get(taskId) as Map?;
+    final rows = cached != null
+        ? List<Map>.from(cached['rows'] as List? ?? [])
+        : <Map>[];
+    final idx = rows.indexWhere((r) => r['user_id'].toString() == userId);
+    final updated = {
+      'user_id': userId,
+      'teacher_comment': comment,
+      'grade': grade,
+      'pending': pending,
+    };
+    if (idx >= 0) {
+      rows[idx] = {...rows[idx], ...updated};
+    } else {
+      rows.add(updated);
+    }
+    await _progressPendingBox?.put(taskId, {'rows': rows});
   }
 
   /// Riesgo por alumno en la carrera: tareas oficiales vencidas sin entregar

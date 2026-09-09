@@ -53,6 +53,7 @@ class AppState extends ChangeNotifier {
         // ahí desde siempre.
         _sharedTaskSnapshot = null;
         _gradeSnapshot = null;
+        _submissionSnapshot = null;
         notifyListeners();
       }
     });
@@ -137,6 +138,7 @@ class AppState extends ChangeNotifier {
       _clearError();
       _notifySharedTaskChanges(_tasks);
       _notifyGradeChanges(_tasks);
+      unawaited(_notifySubmissionChanges(_tasks));
       NotificationService().syncAllTaskReminders(_tasks);
     } catch (e) {
       _setError('Error cargando tareas: $e');
@@ -237,6 +239,66 @@ class AppState extends ChangeNotifier {
         );
       }
     }
+  }
+
+  /// Última foto de qué alumnos ya habían entregado cada tarea oficial mía:
+  /// taskId -> user_ids con is_submitted. Null hasta la primera pasada,
+  /// mismo motivo que los snapshots de arriba.
+  Map<String, Set<String>>? _submissionSnapshot;
+
+  /// Avisa al docente de entregas nuevas en sus tareas oficiales.
+  ///
+  /// A diferencia de los demás _notify*, esto no viene gratis con la lista
+  /// de tareas: no hay push, así que la única forma de enterarse es pedir
+  /// get_task_submission_status por cada tarea oficial propia — una llamada
+  /// de red extra por tarea, cada vez que se recarga. Por eso se llama sin
+  /// esperarlo desde loadTasks() (no atrasa la pantalla) y cada tarea se
+  /// consulta por separado, para que una que falle no tumbe a las demás.
+  Future<void> _notifySubmissionChanges(List<Task> tasks) async {
+    final miId = Supabase.instance.client.auth.currentUser?.id;
+    if (miId == null) return;
+
+    final propias = tasks.where(
+      (t) => t.id != null && t.isShared && t.isOfficial && t.userId == miId,
+    );
+
+    final previo = _submissionSnapshot;
+    final nuevoSnapshot = <String, Set<String>>{};
+
+    for (final t in propias) {
+      try {
+        final rows = await _supabase.getTaskSubmissionStatus(t.id!);
+        final entregados = rows
+            .where((r) => r['is_submitted'] == true)
+            .map((r) => r['user_id'].toString())
+            .toSet();
+        nuevoSnapshot[t.id!] = entregados;
+
+        if (previo != null) {
+          final antes = previo[t.id!] ?? <String>{};
+          for (final uid in entregados.difference(antes)) {
+            final row = rows.firstWhere((r) => r['user_id'].toString() == uid);
+            final displayName = (row['display_name'] as String?)?.trim();
+            final nombre = (displayName != null && displayName.isNotEmpty)
+                ? displayName
+                : (row['email'] as String? ?? 'Un alumno');
+            await NotificationService().notifySubmission(
+              studentName: nombre,
+              taskTitle: t.title,
+            );
+          }
+        }
+      } catch (_) {
+        // Sin red o RPC rechazado: se conserva lo que ya se sabía de esta
+        // tarea (si no, la próxima vez que ande de nuevo se verían todas
+        // las entregas existentes como "nuevas") y se reintenta solo en la
+        // próxima carga.
+        final anterior = previo?[t.id!];
+        if (anterior != null) nuevoSnapshot[t.id!] = anterior;
+      }
+    }
+
+    _submissionSnapshot = nuevoSnapshot;
   }
 
   /// Huella del contenido visible de una tarea. Los campos de progreso

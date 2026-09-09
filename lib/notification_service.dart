@@ -439,6 +439,25 @@ class NotificationService {
     return anticipacion.inDays == 1 ? '1 día' : '${anticipacion.inDays} días';
   }
 
+  /// Aviso al docente de que un alumno entregó una tarea oficial suya. Mismo
+  /// límite que el resto de este archivo: solo mientras la app está
+  /// abierta, nace de volver a pedir el progreso (ver
+  /// AppState._notifySubmissionChanges), no de un push del servidor.
+  Future<void> notifySubmission({
+    required String studentName,
+    required String taskTitle,
+  }) async {
+    if (!await isEnabled) return;
+
+    await _showNow(
+      id:
+          _instantIdBase +
+          DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      title: '✅ Entrega nueva',
+      body: '$studentName entregó "$taskTitle"',
+    );
+  }
+
   // ============ CAMBIOS EN TAREAS COMPARTIDAS ============
 
   /// Avisa de que otra persona creó o editó una tarea compartida.

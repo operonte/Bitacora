@@ -20,12 +20,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   DateTime _classDate = DateTime.now();
   List<Map<String, dynamic>>? _roster;
   String? _error;
+  bool _bulkMarking = false;
 
-  List<String> get _subjects => widget.career.predefinedSubjects
-      .map((s) => s.name)
-      .toSet()
-      .toList()
-    ..sort();
+  List<String> get _subjects =>
+      widget.career.predefinedSubjects.map((s) => s.name).toSet().toList()
+        ..sort();
 
   @override
   void initState() {
@@ -41,7 +40,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       _roster = null;
     });
     try {
-      final roster = await _service.getRoster(widget.career.id, _subject!, _classDate);
+      final roster = await _service.getRoster(
+        widget.career.id,
+        _subject!,
+        _classDate,
+      );
       if (mounted) setState(() => _roster = roster);
     } catch (e) {
       if (mounted) {
@@ -119,9 +122,62 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     // sincroniza solo la próxima vez que se abra esta clase con señal.
     if (!confirmed) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sin conexión — guardado en el teléfono, se sincroniza solo')),
+        const SnackBar(
+          content: Text(
+            'Sin conexión — guardado en el teléfono, se sincroniza solo',
+          ),
+        ),
       );
     }
+  }
+
+  /// Marca "presente" solo a quien sigue sin marcar — no pisa lo que el
+  /// docente ya haya tocado a mano (tarde/ausente/justificado). Es lo que
+  /// ahorra tiempo de verdad: en un curso de 30, la mayoría llega y ya está,
+  /// y solo hace falta tocar a los que faltan o llegan tarde.
+  ///
+  /// Una fila a la vez, no en paralelo: [AttendanceService.setStatus] lee y
+  /// reescribe la misma entrada de Hive por clase, y dos escrituras a la vez
+  /// se pisarían entre sí.
+  Future<void> _markRestPresent() async {
+    final pendientes =
+        _roster
+            ?.where(
+              (r) => (r['status'] as String? ?? 'sin_marcar') == 'sin_marcar',
+            )
+            .toList() ??
+        [];
+    if (pendientes.isEmpty || _bulkMarking) return;
+
+    setState(() => _bulkMarking = true);
+    var sinConexion = false;
+    for (final row in pendientes) {
+      setState(() {
+        row['status'] = 'presente';
+        row['pending'] = true;
+      });
+      final confirmed = await _service.setStatus(
+        widget.career.id,
+        _subject!,
+        _classDate,
+        row['user_id'].toString(),
+        'presente',
+      );
+      if (!mounted) return;
+      setState(() => row['pending'] = !confirmed);
+      if (!confirmed) sinConexion = true;
+    }
+    if (!mounted) return;
+    setState(() => _bulkMarking = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          sinConexion
+              ? '${pendientes.length} marcados presentes — algunos sin conexión, se sincronizan solos'
+              : '${pendientes.length} marcados presentes',
+        ),
+      ),
+    );
   }
 
   @override
@@ -130,7 +186,29 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       appBar: AppBar(
         title: Text('Asistencia — ${widget.career.name}'),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _load, tooltip: 'Actualizar'),
+          if (_bulkMarking)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else if (_roster?.any(
+                (r) => (r['status'] as String? ?? 'sin_marcar') == 'sin_marcar',
+              ) ??
+              false)
+            IconButton(
+              icon: const Icon(Icons.done_all),
+              onPressed: _markRestPresent,
+              tooltip: 'Marcar el resto presente',
+            ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _load,
+            tooltip: 'Actualizar',
+          ),
         ],
       ),
       body: Column(
@@ -148,7 +226,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       border: OutlineInputBorder(),
                     ),
                     items: _subjects
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis)))
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s,
+                            child: Text(s, overflow: TextOverflow.ellipsis),
+                          ),
+                        )
                         .toList(),
                     onChanged: (v) {
                       setState(() => _subject = v);
@@ -191,7 +274,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
-          child: Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.error)),
+          child: Text(
+            _error!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.error),
+          ),
         ),
       );
     }
@@ -219,7 +306,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   ),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.groups_outlined, size: 40, color: AppColors.primary),
+                child: const Icon(
+                  Icons.groups_outlined,
+                  size: 40,
+                  color: AppColors.primary,
+                ),
               ),
               const SizedBox(height: 14),
               const Text(
@@ -267,7 +358,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       height: 52,
                       decoration: BoxDecoration(
                         color: color,
-                        borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+                        borderRadius: const BorderRadius.horizontal(
+                          left: Radius.circular(16),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -276,12 +369,22 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       backgroundColor: color.withValues(alpha: 0.15),
                       child: Text(
                         name.characters.first.toUpperCase(),
-                        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13),
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13.5,
+                        ),
+                      ),
                     ),
                     Padding(
                       padding: const EdgeInsets.only(right: 12),
@@ -294,7 +397,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           ],
                           Text(
                             _statusLabel(status),
-                            style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12.5),
+                            style: TextStyle(
+                              color: color,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12.5,
+                            ),
                           ),
                         ],
                       ),

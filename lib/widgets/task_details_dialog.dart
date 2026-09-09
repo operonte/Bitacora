@@ -287,6 +287,7 @@ class TaskDetailsDialog {
         (comment?.isNotEmpty ?? false) || (grade?.isNotEmpty ?? false);
     final attachedName = (row['attached_file_name'] as String?)?.trim();
     final hasFile = attachedName != null && attachedName.isNotEmpty;
+    final pendingSync = row['pending'] == true;
 
     late final IconData icon;
     late final Color color;
@@ -318,11 +319,21 @@ class TaskDetailsDialog {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            subtitleParts.join(' · '),
-            style: hasFeedback
-                ? const TextStyle(fontStyle: FontStyle.italic)
-                : null,
+          Row(
+            children: [
+              if (pendingSync) ...[
+                const Icon(Icons.sync, size: 12, color: Colors.blueGrey),
+                const SizedBox(width: 4),
+              ],
+              Expanded(
+                child: Text(
+                  subtitleParts.join(' · '),
+                  style: hasFeedback
+                      ? const TextStyle(fontStyle: FontStyle.italic)
+                      : null,
+                ),
+              ),
+            ],
           ),
           if (hasFile)
             InkWell(
@@ -541,27 +552,30 @@ class TaskDetailsDialog {
             ),
             FilledButton(
               onPressed: () async {
-                try {
-                  final service = SupabaseDbService();
-                  await service.setTaskTeacherComment(
-                    taskId,
-                    studentUserId,
-                    controller.text,
+                // Se guarda local antes de intentar la red: si no hay
+                // conexión, la edición queda pendiente y se reintenta sola
+                // la próxima vez que se abra "Ver progreso del grupo" — ya
+                // no se pierde por cerrar el diálogo.
+                final confirmed = await SupabaseDbService().setTaskFeedback(
+                  taskId,
+                  studentUserId,
+                  comment: controller.text,
+                  grade: gradeController.text,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        confirmed
+                            ? 'Guardado'
+                            : 'Sin conexión: se guardó en el celular y se '
+                                  'sincroniza solo cuando vuelva la señal.',
+                      ),
+                    ),
                   );
-                  await service.setTaskGrade(
-                    taskId,
-                    studentUserId,
-                    gradeController.text,
-                  );
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  onSaved();
-                } catch (e) {
-                  if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(content: Text('No se pudo guardar: $e')),
-                    );
-                  }
                 }
+                onSaved();
               },
               child: const Text('Guardar'),
             ),
