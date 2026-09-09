@@ -43,7 +43,8 @@ hace falta compilar nada.
 
 | Versión | Commit | Fecha | Qué cambió |
 |---|---|---|---|
-| **2.18.0** | `3648b97` | 2026-09-08 | Pantalla "Hoy" (panel de inicio por rol, docente ve sus herramientas de entrada). Cambio estructural, no solo funcional — investigado contra el rediseño de Google Classroom de julio 2026. **Sin probar en la app corriendo** — solo compilación y tests. |
+| **2.19.0** | `771068e` | 2026-09-08 | Vista de semana y calendario mensual para tareas pendientes (mismo tratamiento que reuniones). **Sin probar en la app corriendo** — solo compilación y tests. |
+| 2.18.0 | `3648b97` | 2026-09-08 | Pantalla "Hoy" (panel de inicio por rol, docente ve sus herramientas de entrada). Cambio estructural, no solo funcional — investigado contra el rediseño de Google Classroom de julio 2026. **Sin probar en la app corriendo** — solo compilación y tests. |
 | 2.17.0 | `a1827f8` | 2026-09-08 | Recordatorio configurable por tarea, búsqueda global (tareas+reuniones+archivos). **Sin probar en la app corriendo** — solo compilación y tests. |
 | 2.16.0 | `821c545` | 2026-09-08 | Adjuntar archivos a tareas, vista mensual de reuniones, avisos de anuncios/tareas oficiales/notas arreglados. **Sin probar en la app corriendo** — solo compilación y tests. |
 | 2.15.0 | `4697ee8` | 2026-09-08 | Agregar reuniones al calendario nativo del teléfono (add_2_calendar, solo Android/iOS). **Sin probar en la app corriendo** — solo compilación (incl. `flutter build web`) y tests. |
