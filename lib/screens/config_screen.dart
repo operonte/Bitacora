@@ -18,6 +18,8 @@ import 'attendance_screen.dart';
 import 'announcements_screen.dart';
 import 'teacher_panel_screen.dart';
 import 'teacher_subjects_screen.dart';
+import 'my_grades_screen.dart';
+import 'my_attendance_screen.dart';
 
 class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
@@ -26,7 +28,8 @@ class ConfigScreen extends StatefulWidget {
   State<ConfigScreen> createState() => _ConfigScreenState();
 }
 
-class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver {
+class _ConfigScreenState extends State<ConfigScreen>
+    with WidgetsBindingObserver {
   final CareerService _careerService = CareerService();
   final NotificationService _notifService = NotificationService();
   final AuthService _authService = AuthService();
@@ -126,7 +129,10 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                   const ListTile(
                     title: Text(
                       'Modo de Tema',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                   ...AppThemeMode.values.map((mode) {
@@ -160,7 +166,10 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                   const ListTile(
                     title: Text(
                       'Paleta de Colores',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                   ListTile(
@@ -170,7 +179,10 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                     ),
                     title: const Text('Por defecto'),
                     trailing: themeProvider.palette == AppColorPalette.teal
-                        ? Icon(Icons.check_circle, color: themeProvider.primaryColor)
+                        ? Icon(
+                            Icons.check_circle,
+                            color: themeProvider.primaryColor,
+                          )
                         : null,
                     onTap: () => themeProvider.setPalette(AppColorPalette.teal),
                   ),
@@ -181,9 +193,13 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                     ),
                     title: const Text('Verde'),
                     trailing: themeProvider.palette == AppColorPalette.emerald
-                        ? Icon(Icons.check_circle, color: themeProvider.primaryColor)
+                        ? Icon(
+                            Icons.check_circle,
+                            color: themeProvider.primaryColor,
+                          )
                         : null,
-                    onTap: () => themeProvider.setPalette(AppColorPalette.emerald),
+                    onTap: () =>
+                        themeProvider.setPalette(AppColorPalette.emerald),
                   ),
                   ListTile(
                     leading: const CircleAvatar(
@@ -192,9 +208,13 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                     ),
                     title: const Text('Rosa'),
                     trailing: themeProvider.palette == AppColorPalette.feminine
-                        ? Icon(Icons.check_circle, color: themeProvider.primaryColor)
+                        ? Icon(
+                            Icons.check_circle,
+                            color: themeProvider.primaryColor,
+                          )
                         : null,
-                    onTap: () => themeProvider.setPalette(AppColorPalette.feminine),
+                    onTap: () =>
+                        themeProvider.setPalette(AppColorPalette.feminine),
                   ),
                 ],
               ),
@@ -218,15 +238,18 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                 ...MeetingsViewMode.values.map((mode) {
                   final icons = {
                     MeetingsViewMode.list: Icons.view_list_outlined,
-                    MeetingsViewMode.schedule: Icons.calendar_view_week_outlined,
+                    MeetingsViewMode.schedule:
+                        Icons.calendar_view_week_outlined,
                   };
                   final labels = {
                     MeetingsViewMode.list: 'Lista',
                     MeetingsViewMode.schedule: 'Horario semanal',
                   };
                   final subtitles = {
-                    MeetingsViewMode.list: 'Orden cronológico, la más próxima primero',
-                    MeetingsViewMode.schedule: 'Grilla de día y hora, como un horario de clases',
+                    MeetingsViewMode.list:
+                        'Orden cronológico, la más próxima primero',
+                    MeetingsViewMode.schedule:
+                        'Grilla de día y hora, como un horario de clases',
                   };
                   final selected = themeProvider.meetingsViewMode == mode;
                   return ListTile(
@@ -259,16 +282,65 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
             const SizedBox(height: 8),
             Card(
               child: ListTile(
-                leading: const Icon(Icons.campaign_outlined, color: AppColors.primary),
+                leading: const Icon(
+                  Icons.campaign_outlined,
+                  color: AppColors.primary,
+                ),
                 title: const Text('Anuncios'),
                 subtitle: Text('Avisos de ${_selectedCareer!.name}'),
                 trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => AnnouncementsScreen(career: _selectedCareer!),
+                    builder: (_) =>
+                        AnnouncementsScreen(career: _selectedCareer!),
                   ),
                 ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // ── Mi progreso ─────────────────────────────────────
+            // Espejo de solo lectura de lo que el docente fue dejando: la
+            // nota ya se veía suelta tarea por tarea, y la asistencia no se
+            // podía consultar de ninguna forma.
+            _sectionHeader(context, 'Mi progreso', Icons.school_outlined),
+            const SizedBox(height: 8),
+            Card(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(
+                      Icons.grade_outlined,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text('Mis notas'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            MyGradesScreen(career: _selectedCareer!),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.checklist_rtl,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text('Mi asistencia'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            MyAttendanceScreen(career: _selectedCareer!),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 24),
@@ -285,40 +357,56 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
               child: Column(
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.checklist_rtl, color: AppColors.primary),
+                    leading: const Icon(
+                      Icons.checklist_rtl,
+                      color: AppColors.primary,
+                    ),
                     title: const Text('Asistencia'),
-                    subtitle: Text('Marcar asistencia de ${_selectedCareer!.name}'),
+                    subtitle: Text(
+                      'Marcar asistencia de ${_selectedCareer!.name}',
+                    ),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => AttendanceScreen(career: _selectedCareer!),
+                        builder: (_) =>
+                            AttendanceScreen(career: _selectedCareer!),
                       ),
                     ),
                   ),
                   const Divider(height: 1),
                   ListTile(
-                    leading: const Icon(Icons.warning_amber_rounded, color: AppColors.warning),
+                    leading: const Icon(
+                      Icons.warning_amber_rounded,
+                      color: AppColors.warning,
+                    ),
                     title: const Text('Panel de riesgo'),
                     subtitle: const Text('Quién se está quedando atrás'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => TeacherPanelScreen(career: _selectedCareer!),
+                        builder: (_) =>
+                            TeacherPanelScreen(career: _selectedCareer!),
                       ),
                     ),
                   ),
                   const Divider(height: 1),
                   ListTile(
-                    leading: const Icon(Icons.menu_book_outlined, color: AppColors.primary),
+                    leading: const Icon(
+                      Icons.menu_book_outlined,
+                      color: AppColors.primary,
+                    ),
                     title: const Text('Mis asignaturas'),
-                    subtitle: const Text('Qué materias impartís, para cruzar con el semestre del alumno'),
+                    subtitle: const Text(
+                      'Qué materias impartís, para cruzar con el semestre del alumno',
+                    ),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => TeacherSubjectsScreen(career: _selectedCareer!),
+                        builder: (_) =>
+                            TeacherSubjectsScreen(career: _selectedCareer!),
                       ),
                     ),
                   ),
@@ -332,14 +420,22 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
           // Para cualquier miembro: es lo que decide qué material y qué
           // asistencia de su carrera le corresponde ver.
           if (_selectedCareer != null) ...[
-            _sectionHeader(context, 'Mi semestre', Icons.calendar_view_month_outlined),
+            _sectionHeader(
+              context,
+              'Mi semestre',
+              Icons.calendar_view_month_outlined,
+            ),
             const SizedBox(height: 8),
             _buildSemesterPicker(_selectedCareer!),
             const SizedBox(height: 24),
           ],
 
           // ── Estudias dos o más carreras ───────────────────────
-          _sectionHeader(context, 'Estudias dos o más carreras', Icons.school_outlined),
+          _sectionHeader(
+            context,
+            'Estudias dos o más carreras',
+            Icons.school_outlined,
+          ),
           const SizedBox(height: 8),
           Card(
             child: Column(
@@ -347,8 +443,10 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                 ..._careers.map(_careerTile),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.add_circle_outline,
-                      color: AppColors.primary),
+                  leading: const Icon(
+                    Icons.add_circle_outline,
+                    color: AppColors.primary,
+                  ),
                   title: const Text('Unirse a otra carrera'),
                   subtitle: const Text('Ingresar una clave de acceso'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
@@ -379,8 +477,9 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                     activeThumbColor: AppColors.primary,
                     secondary: const Icon(Icons.notifications_active_outlined),
                     title: const Text('Activar notificaciones'),
-                    subtitle:
-                        const Text('Un solo interruptor para todos los avisos'),
+                    subtitle: const Text(
+                      'Un solo interruptor para todos los avisos',
+                    ),
                     onChanged: (v) async {
                       // Las tareas se leen antes del await: después de uno,
                       // usar el context de un widget que pudo desmontarse es
@@ -398,7 +497,9 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                     title: Text(
                       'Qué avisa',
                       style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.bold),
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     subtitle: Text(
                       '• Resumen del día a las 8:00\n'
@@ -421,7 +522,10 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
           const SizedBox(height: 8),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.play_circle_outline, color: AppColors.primary),
+              leading: const Icon(
+                Icons.play_circle_outline,
+                color: AppColors.primary,
+              ),
               title: const Text('Ver tutorial de inicio'),
               subtitle: const Text('Repasar las pantallas iniciales de la app'),
               trailing: const Icon(Icons.arrow_forward_ios, size: 16),
@@ -449,14 +553,20 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                 _accountTile(),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.school_outlined, color: AppColors.warning),
+                  leading: const Icon(
+                    Icons.school_outlined,
+                    color: AppColors.warning,
+                  ),
                   title: const Text('Salir de todas las carreras'),
                   subtitle: const Text('Volver a la selección de carrera'),
                   onTap: _logout,
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.exit_to_app, color: AppColors.error),
+                  leading: const Icon(
+                    Icons.exit_to_app,
+                    color: AppColors.error,
+                  ),
                   title: const Text('Cerrar sesión de la cuenta'),
                   subtitle: const Text('Cerrar Sesión'),
                   onTap: _signOutAccount,
@@ -539,11 +649,15 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
     return ListTile(
       leading: CircleAvatar(
         backgroundColor: Theme.of(context).primaryColor,
-        foregroundImage:
-            (photoUrl != null && photoUrl.isNotEmpty) ? NetworkImage(photoUrl) : null,
+        foregroundImage: (photoUrl != null && photoUrl.isNotEmpty)
+            ? NetworkImage(photoUrl)
+            : null,
         child: Text(
           initial,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
       title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -557,8 +671,12 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
     final user = _authService.currentUser;
     if (user == null) return;
 
-    final nameController = TextEditingController(text: _authService.userDisplayName ?? '');
-    final photoController = TextEditingController(text: _authService.userPhotoURL ?? '');
+    final nameController = TextEditingController(
+      text: _authService.userDisplayName ?? '',
+    );
+    final photoController = TextEditingController(
+      text: _authService.userPhotoURL ?? '',
+    );
 
     await showDialog(
       context: context,
@@ -599,7 +717,8 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
           ElevatedButton(
             onPressed: () async {
               final photoUrl = photoController.text.trim();
-              if (photoUrl.isNotEmpty && !InputSanitizer.isSafeExternalUrl(photoUrl)) {
+              if (photoUrl.isNotEmpty &&
+                  !InputSanitizer.isSafeExternalUrl(photoUrl)) {
                 _showSnack(
                   'La URL de la foto debe empezar con http:// o https://',
                   AppColors.error,
@@ -610,7 +729,9 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                 await Supabase.instance.client.auth.updateUser(
                   UserAttributes(
                     data: {
-                      'full_name': InputSanitizer.sanitizeText(nameController.text),
+                      'full_name': InputSanitizer.sanitizeText(
+                        nameController.text,
+                      ),
                       'avatar_url': photoUrl,
                     },
                   ),
@@ -631,12 +752,13 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
 
   /// Semestres cargados en el catálogo de [career] — los mismos valores que
   /// ya etiquetan cada materia, para no inventar una lista aparte.
-  List<String> _semestresDe(Career career) => career.predefinedSubjects
-      .map((s) => s.semester?.trim() ?? '')
-      .where((s) => s.isNotEmpty)
-      .toSet()
-      .toList()
-    ..sort();
+  List<String> _semestresDe(Career career) =>
+      career.predefinedSubjects
+          .map((s) => s.semester?.trim() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
 
   Widget _buildSemesterPicker(Career career) {
     final opciones = _semestresDe(career);
@@ -646,7 +768,10 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
           padding: const EdgeInsets.all(16),
           child: Text(
             '${career.name} todavía no tiene sus materias organizadas por semestre.',
-            style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: AppColors.textSecondary,
+            ),
           ),
         ),
       );
@@ -662,8 +787,13 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
             border: InputBorder.none,
           ),
           items: [
-            const DropdownMenuItem<String?>(value: null, child: Text('Sin elegir')),
-            ...opciones.map((s) => DropdownMenuItem<String?>(value: s, child: Text(s))),
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('Sin elegir'),
+            ),
+            ...opciones.map(
+              (s) => DropdownMenuItem<String?>(value: s, child: Text(s)),
+            ),
           ],
           onChanged: (value) async {
             if (value == null) return;
@@ -761,9 +891,11 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
                   // avisa con esta excepción puntual; el resto de errores del
                   // servidor se tratan como falta de conexión.
                   final message = e is PostgrestException ? e.message : '';
-                  setLocal(() => errorText = message.contains('Demasiados intentos')
-                      ? message
-                      : 'Sin conexión para validar la clave');
+                  setLocal(
+                    () => errorText = message.contains('Demasiados intentos')
+                        ? message
+                        : 'Sin conexión para validar la clave',
+                  );
                   return;
                 }
                 if (career == null) {
@@ -806,7 +938,10 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Salir', style: TextStyle(color: AppColors.error)),
+            child: const Text(
+              'Salir',
+              style: TextStyle(color: AppColors.error),
+            ),
           ),
         ],
       ),
@@ -852,7 +987,10 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
             granted ? Icons.check_circle : Icons.error_outline,
             color: granted ? AppColors.success : AppColors.error,
           ),
-          title: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          title: Text(
+            title,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
           subtitle: Text(
             granted ? okSubtitle : badSubtitle,
             style: const TextStyle(fontSize: 12),
@@ -899,8 +1037,10 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
           _reminderChannelBlocked ? Icons.error_outline : Icons.check_circle,
           color: _reminderChannelBlocked ? AppColors.error : AppColors.success,
         ),
-        title: const Text('Aviso de recordatorios',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        title: const Text(
+          'Aviso de recordatorios',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
         subtitle: Text(
           _reminderChannelBlocked
               ? 'Silenciado — los avisos de tareas nunca sonarán'
@@ -919,8 +1059,12 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
       ),
     );
 
-    final allGranted = [_notifPermStatus, _alarmPermStatus, _batteryPermStatus]
-            .every((s) => s?.isGranted ?? false) &&
+    final allGranted =
+        [
+          _notifPermStatus,
+          _alarmPermStatus,
+          _batteryPermStatus,
+        ].every((s) => s?.isGranted ?? false) &&
         !_reminderChannelBlocked;
 
     return Card(
@@ -930,7 +1074,9 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
           ListTile(
             dense: true,
             leading: Icon(
-              allGranted ? Icons.verified_outlined : Icons.warning_amber_rounded,
+              allGranted
+                  ? Icons.verified_outlined
+                  : Icons.warning_amber_rounded,
               color: allGranted ? AppColors.success : AppColors.error,
             ),
             title: Text(
@@ -1088,7 +1234,9 @@ class _ConfigScreenState extends State<ConfigScreen> with WidgetsBindingObserver
               const SizedBox(height: 8),
               const Text('• Gestión de tareas por materia y carrera'),
               const Text('• Reuniones y material compartidos por carrera'),
-              const Text('• Resumen diario y recordatorio 2 h antes del vencimiento'),
+              const Text(
+                '• Resumen diario y recordatorio 2 h antes del vencimiento',
+              ),
               const Text('• Funciona sin conexión a internet'),
               const Text('• Sincronización automática en la nube'),
               const Text('• Modo oscuro'),

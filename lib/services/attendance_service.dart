@@ -32,7 +32,10 @@ class AttendanceService {
   static const _boxName = 'attendance_box';
 
   Future<void> init() async {
-    _box = await openHiveBoxSafelyUntyped(_boxName, cipher: EncryptionService.cipher);
+    _box = await openHiveBoxSafelyUntyped(
+      _boxName,
+      cipher: EncryptionService.cipher,
+    );
   }
 
   String _dateOnly(DateTime d) =>
@@ -53,21 +56,28 @@ class AttendanceService {
     final stillPending = await _flushPending(careerId, subject, classDate);
 
     try {
-      final rows = await _client.rpc('get_attendance_roster', params: {
-        'p_career_id': careerId,
-        'p_subject': subject,
-        'p_class_date': _dateOnly(classDate),
-      });
+      final rows = await _client.rpc(
+        'get_attendance_roster',
+        params: {
+          'p_career_id': careerId,
+          'p_subject': subject,
+          'p_class_date': _dateOnly(classDate),
+        },
+      );
 
       final list = (rows as List)
-          .map((r) => <String, dynamic>{
-                ...Map<String, dynamic>.from(r as Map),
-                'pending': false,
-              })
+          .map(
+            (r) => <String, dynamic>{
+              ...Map<String, dynamic>.from(r as Map),
+              'pending': false,
+            },
+          )
           .toList();
 
       for (final entry in stillPending.entries) {
-        final idx = list.indexWhere((r) => r['user_id'].toString() == entry.key);
+        final idx = list.indexWhere(
+          (r) => r['user_id'].toString() == entry.key,
+        );
         if (idx >= 0) {
           list[idx] = {...list[idx], 'status': entry.value, 'pending': true};
         }
@@ -78,7 +88,10 @@ class AttendanceService {
     } catch (e) {
       final cached = _readCache(cacheKey);
       if (cached != null) {
-        Logger.warning('Sin conexión, usando asistencia guardada', tag: 'AttendanceService');
+        Logger.warning(
+          'Sin conexión, usando asistencia guardada',
+          tag: 'AttendanceService',
+        );
         return cached;
       }
       rethrow;
@@ -97,13 +110,16 @@ class AttendanceService {
     final cacheKey = _cacheKey(careerId, subject, classDate);
     await _setCacheRowStatus(cacheKey, userId, status, pending: true);
     try {
-      await _client.rpc('set_attendance', params: {
-        'p_career_id': careerId,
-        'p_subject': subject,
-        'p_class_date': _dateOnly(classDate),
-        'p_user_id': userId,
-        'p_status': status,
-      });
+      await _client.rpc(
+        'set_attendance',
+        params: {
+          'p_career_id': careerId,
+          'p_subject': subject,
+          'p_class_date': _dateOnly(classDate),
+          'p_user_id': userId,
+          'p_status': status,
+        },
+      );
       await _setCacheRowStatus(cacheKey, userId, status, pending: false);
       return true;
     } catch (e) {
@@ -113,6 +129,35 @@ class AttendanceService {
         tag: 'AttendanceService',
       );
       return false;
+    }
+  }
+
+  /// Mi propia asistencia en [careerId], todas las asignaturas juntas, más
+  /// reciente primero. A diferencia del roster (que el docente marca), acá
+  /// no hay nada que escribir offline — solo se cachea la última lectura
+  /// para poder mostrar algo sin conexión.
+  Future<List<Map<String, dynamic>>> getMyAttendance(String careerId) async {
+    final cacheKey = 'mine|$careerId';
+    try {
+      final rows = await _client.rpc(
+        'get_my_attendance',
+        params: {'p_career_id': careerId},
+      );
+      final list = (rows as List)
+          .map((r) => Map<String, dynamic>.from(r as Map))
+          .toList();
+      await _box?.put(cacheKey, {'rows': list});
+      return list;
+    } catch (e) {
+      final cached = _readCache(cacheKey);
+      if (cached != null) {
+        Logger.warning(
+          'Sin conexión, usando asistencia guardada',
+          tag: 'AttendanceService',
+        );
+        return cached;
+      }
+      rethrow;
     }
   }
 
@@ -135,13 +180,16 @@ class AttendanceService {
       final uid = row['user_id'].toString();
       final status = row['status'].toString();
       try {
-        await _client.rpc('set_attendance', params: {
-          'p_career_id': careerId,
-          'p_subject': subject,
-          'p_class_date': _dateOnly(classDate),
-          'p_user_id': uid,
-          'p_status': status,
-        });
+        await _client.rpc(
+          'set_attendance',
+          params: {
+            'p_career_id': careerId,
+            'p_subject': subject,
+            'p_class_date': _dateOnly(classDate),
+            'p_user_id': uid,
+            'p_status': status,
+          },
+        );
       } catch (_) {
         stillPending[uid] = status;
       }
@@ -164,7 +212,9 @@ class AttendanceService {
     required bool pending,
   }) async {
     final cached = _box?.get(cacheKey) as Map?;
-    final rows = cached != null ? List<Map>.from(cached['rows'] as List? ?? []) : <Map>[];
+    final rows = cached != null
+        ? List<Map>.from(cached['rows'] as List? ?? [])
+        : <Map>[];
     final idx = rows.indexWhere((r) => r['user_id'].toString() == userId);
     final updated = {'user_id': userId, 'status': status, 'pending': pending};
     if (idx >= 0) {
