@@ -7,6 +7,8 @@ import '../widgets/staggered_entrance.dart';
 import '../widgets/task_search_dialog.dart';
 import '../widgets/task_details_dialog.dart';
 import '../widgets/mascot_widget.dart';
+import '../widgets/subject_filter_chips.dart';
+import '../widgets/completion_rate_banner.dart';
 import '../providers/theme_provider.dart';
 import 'add_task_screen.dart';
 import '../colors.dart';
@@ -22,28 +24,22 @@ class PendingTasksScreen extends StatefulWidget {
 }
 
 class _PendingTasksScreenState extends State<PendingTasksScreen> {
-  String _selectedSubject = 'Todos';
+  String _selectedSubject = SubjectFilterChips.all;
   String _searchQuery = '';
-
-  void _filterTasks(String subject) {
-    setState(() {
-      _selectedSubject = subject;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
     final career = CareerService().getSelectedCareer();
     final careerName = career?.name ?? '';
-    
+
     final appState = context.watch<AppState>();
     final allPendingTasks = appState.pendingTasks;
-    
+
     // Filtrar tareas por materia y búsqueda
-    final filteredTasks = allPendingTasks.where((task) {
-      final matchesSubject = _selectedSubject == 'Todos' || task.subject == _selectedSubject;
-      return matchesSubject && TaskSearchDialog.matches(task, _searchQuery);
-    }).toList();
+    final filteredTasks = allPendingTasks
+        .where((task) => SubjectFilterChips.matches(task, _selectedSubject))
+        .where((task) => TaskSearchDialog.matches(task, _searchQuery))
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -66,7 +62,9 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
           IconButton(
             icon: Icon(
               Icons.search,
-              color: _searchQuery.isNotEmpty ? Theme.of(context).primaryColor : null,
+              color: _searchQuery.isNotEmpty
+                  ? Theme.of(context).primaryColor
+                  : null,
             ),
             onPressed: _showSearchDialog,
             tooltip: 'Buscar',
@@ -84,7 +82,15 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
       ),
       body: Column(
         children: [
-          _buildSubjectFilter(allPendingTasks),
+          CompletionRateBanner(
+            delivered: appState.deliveredTasks.length,
+            overdue: appState.overdueTasks.length,
+          ),
+          SubjectFilterChips(
+            tasks: allPendingTasks,
+            selected: _selectedSubject,
+            onSelected: (subject) => setState(() => _selectedSubject = subject),
+          ),
           Expanded(
             child: appState.isLoading && allPendingTasks.isEmpty
                 ? ListView.builder(
@@ -92,34 +98,34 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
                     itemBuilder: (context, index) => const SkeletonTaskCard(),
                   )
                 : filteredTasks.isEmpty
-                    ? _buildEmptyState()
-                    : RefreshIndicator(
-                        onRefresh: () => appState.forceSync(),
-                        child: ListView.builder(
-                          itemCount: filteredTasks.length,
-                          itemBuilder: (context, index) {
-                            final task = filteredTasks[index];
-                            return StaggeredEntrance(
-                              index: index,
-                              child: TaskCard(
-                                task: task,
-                                onTap: () => TaskDetailsDialog.show(
-                                  context,
-                                  task: task,
-                                  appState: appState,
-                                  isDeliveredView: false,
-                                ),
-                                onEdit: () => _editTask(task),
-                                onDelete: () => TaskDetailsDialog.confirmDelete(
-                                  context,
-                                  task: task,
-                                  appState: appState,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
+                ? _buildEmptyState()
+                : RefreshIndicator(
+                    onRefresh: () => appState.forceSync(),
+                    child: ListView.builder(
+                      itemCount: filteredTasks.length,
+                      itemBuilder: (context, index) {
+                        final task = filteredTasks[index];
+                        return StaggeredEntrance(
+                          index: index,
+                          child: TaskCard(
+                            task: task,
+                            onTap: () => TaskDetailsDialog.show(
+                              context,
+                              task: task,
+                              appState: appState,
+                              isDeliveredView: false,
+                            ),
+                            onEdit: () => _editTask(task),
+                            onDelete: () => TaskDetailsDialog.confirmDelete(
+                              context,
+                              task: task,
+                              appState: appState,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -143,12 +149,18 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (MascotWidget.isEnabled(mascot))
-              MascotWidget(option: mascot, state: MascotState.content, size: 120)
+              MascotWidget(
+                option: mascot,
+                state: MascotState.content,
+                size: 120,
+              )
             else
               Container(
                 padding: const EdgeInsets.all(28),
                 decoration: BoxDecoration(
-                  color: primaryIconColor.withValues(alpha: context.isDark ? 0.15 : 0.08),
+                  color: primaryIconColor.withValues(
+                    alpha: context.isDark ? 0.15 : 0.08,
+                  ),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -168,7 +180,7 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
             ),
             const SizedBox(height: 10),
             Text(
-              _searchQuery.isNotEmpty 
+              _searchQuery.isNotEmpty
                   ? 'No se encontraron tareas para tu búsqueda.'
                   : 'No tienes tareas pendientes.\nAgrega una nueva para empezar.',
               textAlign: TextAlign.center,
@@ -186,8 +198,13 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
                 label: const Text('Limpiar búsqueda'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryIconColor,
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 28,
+                    vertical: 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
               )
             else
@@ -197,62 +214,17 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
                 label: const Text('Nueva tarea'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryIconColor,
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 28,
+                    vertical: 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
               ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildSubjectFilter(List<Task> pendingTasks) {
-    // Obtener materias únicas de las tareas pendientes
-    final subjectNames = pendingTasks.map((task) => task.subject).toSet().toList();
-    subjectNames.sort();
-    subjectNames.insert(0, 'Todos');
-
-    if (subjectNames.length <= 1) return const SizedBox.shrink();
-
-    return Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: subjectNames.length,
-        itemBuilder: (context, index) {
-          final subject = subjectNames[index];
-          final isSelected = subject == _selectedSubject;
-          final primaryColor = Theme.of(context).primaryColor;
-
-          return Container(
-            margin: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              label: Text(
-                subject,
-                style: TextStyle(
-                  color: isSelected
-                      ? Colors.white
-                      : Theme.of(context).colorScheme.onSurface,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-              selected: isSelected,
-              onSelected: (_) => _filterTasks(subject),
-              backgroundColor: Theme.of(context).brightness == Brightness.dark ? AppColors.darkSurface : Colors.grey[200],
-              selectedColor: primaryColor,
-              checkmarkColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-                side: BorderSide(
-                  color: isSelected ? primaryColor : AppColors.borderLight,
-                ),
-              ),
-            ),
-          );
-        },
       ),
     );
   }
@@ -276,5 +248,4 @@ class _PendingTasksScreenState extends State<PendingTasksScreen> {
       MaterialPageRoute(builder: (context) => AddTaskScreen(task: task)),
     );
   }
-
 }

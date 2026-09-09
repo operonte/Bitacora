@@ -6,6 +6,7 @@ import '../widgets/task_card.dart';
 import '../widgets/staggered_entrance.dart';
 import '../widgets/task_search_dialog.dart';
 import '../widgets/task_details_dialog.dart';
+import '../widgets/subject_filter_chips.dart';
 import 'add_task_screen.dart';
 import '../services/career_service.dart';
 import '../services/sync_service.dart';
@@ -20,6 +21,7 @@ class DeliveredTasksScreen extends StatefulWidget {
 }
 
 class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
+  String _selectedSubject = SubjectFilterChips.all;
   String _searchQuery = '';
 
   Future<void> _showSearchDialog() async {
@@ -37,6 +39,7 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
     final allDeliveredTasks = appState.deliveredTasks;
 
     final deliveredTasks = allDeliveredTasks
+        .where((task) => SubjectFilterChips.matches(task, _selectedSubject))
         .where((task) => TaskSearchDialog.matches(task, _searchQuery))
         .toList();
 
@@ -52,7 +55,10 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
                 if (deliveredTasks.isNotEmpty) ...[
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.green.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(12),
@@ -85,7 +91,9 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
             icon: Icon(
               Icons.search,
               color: _searchQuery.isNotEmpty
-                  ? (context.isDark ? AppColors.primaryLight : AppColors.primary)
+                  ? (context.isDark
+                        ? AppColors.primaryLight
+                        : AppColors.primary)
                   : null,
             ),
             onPressed: _showSearchDialog,
@@ -102,69 +110,80 @@ class _DeliveredTasksScreenState extends State<DeliveredTasksScreen> {
           ),
         ],
       ),
-      body: appState.isLoading && deliveredTasks.isEmpty
-          ? ListView.builder(
-              itemCount: 3,
-              itemBuilder: (context, index) => const SkeletonTaskCard(),
-            )
-          : deliveredTasks.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.check_circle_outline,
-                        size: 64,
-                        color: context.textSecondaryColor,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No hay tareas entregadas',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: context.textColor,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Las tareas aparecerán aquí cuando\nestén realizadas y enviadas',
-                        style: TextStyle(
-                          fontSize: 14,
+      body: Column(
+        children: [
+          SubjectFilterChips(
+            tasks: allDeliveredTasks,
+            selected: _selectedSubject,
+            onSelected: (subject) => setState(() => _selectedSubject = subject),
+          ),
+          Expanded(
+            child: appState.isLoading && deliveredTasks.isEmpty
+                ? ListView.builder(
+                    itemCount: 3,
+                    itemBuilder: (context, index) => const SkeletonTaskCard(),
+                  )
+                : deliveredTasks.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.check_circle_outline,
+                          size: 64,
                           color: context.textSecondaryColor,
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: () => appState.forceSync(),
-                  child: ListView.builder(
-                    itemCount: deliveredTasks.length,
-                    itemBuilder: (context, index) {
-                      final task = deliveredTasks[index];
-                      return StaggeredEntrance(
-                        index: index,
-                        child: TaskCard(
-                          task: task,
-                          onTap: () => TaskDetailsDialog.show(
-                            context,
-                            task: task,
-                            appState: appState,
-                            isDeliveredView: true,
-                          ),
-                          onEdit: () => _editTask(task),
-                          onDelete: () => TaskDetailsDialog.confirmDelete(
-                            context,
-                            task: task,
-                            appState: appState,
+                        const SizedBox(height: 16),
+                        Text(
+                          'No hay tareas entregadas',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: context.textColor,
                           ),
                         ),
-                      );
-                    },
+                        const SizedBox(height: 8),
+                        Text(
+                          'Las tareas aparecerán aquí cuando\nestén realizadas y enviadas',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: context.textSecondaryColor,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: () => appState.forceSync(),
+                    child: ListView.builder(
+                      itemCount: deliveredTasks.length,
+                      itemBuilder: (context, index) {
+                        final task = deliveredTasks[index];
+                        return StaggeredEntrance(
+                          index: index,
+                          child: TaskCard(
+                            task: task,
+                            onTap: () => TaskDetailsDialog.show(
+                              context,
+                              task: task,
+                              appState: appState,
+                              isDeliveredView: true,
+                            ),
+                            onEdit: () => _editTask(task),
+                            onDelete: () => TaskDetailsDialog.confirmDelete(
+                              context,
+                              task: task,
+                              appState: appState,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
+          ),
+        ],
+      ),
     );
   }
 

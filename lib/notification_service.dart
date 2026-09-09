@@ -139,7 +139,10 @@ class NotificationService {
     try {
       final deviceTimezone = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(deviceTimezone.identifier));
-      Logger.info('Zona horaria detectada: ${deviceTimezone.identifier}', tag: 'Notif');
+      Logger.info(
+        'Zona horaria detectada: ${deviceTimezone.identifier}',
+        tag: 'Notif',
+      );
     } catch (e) {
       Logger.error(
         'No se pudo detectar la zona horaria del dispositivo, los recordatorios podrían programarse a la hora incorrecta',
@@ -258,7 +261,10 @@ class NotificationService {
         }
       }
       await _rescheduleDailyDigests();
-      Logger.info('Avisos sincronizados para ${tasks.length} tareas', tag: 'Notif');
+      Logger.info(
+        'Avisos sincronizados para ${tasks.length} tareas',
+        tag: 'Notif',
+      );
     } catch (e) {
       Logger.error('Error sincronizando avisos de tareas: $e', tag: 'Notif');
     }
@@ -288,7 +294,10 @@ class NotificationService {
         await _scheduleMeetingReminder(meeting);
       }
       await _rescheduleDailyDigests();
-      Logger.info('Avisos sincronizados para ${meetings.length} reuniones', tag: 'Notif');
+      Logger.info(
+        'Avisos sincronizados para ${meetings.length} reuniones',
+        tag: 'Notif',
+      );
     } catch (e) {
       Logger.error('Error sincronizando avisos de reuniones: $e', tag: 'Notif');
     }
@@ -297,7 +306,11 @@ class NotificationService {
   Future<void> _scheduleMeetingReminder(Meeting meeting) async {
     final id = meetingIdToNotificationId(meeting.id!);
     final ocurrencia = meeting.effectiveDate;
-    final cuando = ocurrencia.subtract(meetingLeadTime);
+    // Cada reunión puede elegir su propia anticipación; sin eso, el default.
+    final anticipacion = Duration(
+      minutes: meeting.reminderMinutes ?? meetingLeadTime.inMinutes,
+    );
+    final cuando = ocurrencia.subtract(anticipacion);
 
     if (cuando.isBefore(DateTime.now())) {
       await _cancelId(id);
@@ -309,7 +322,7 @@ class NotificationService {
     // sin depender de que alguien las reprograme.
     await _scheduleIfChanged(
       id: id,
-      title: '📹 Reunión en 5 minutos',
+      title: '📹 Reunión en ${_lapso(anticipacion)}',
       body: '${meeting.title} — ${meeting.subject} a las ${_hhmm(ocurrencia)}',
       scheduledTime: cuando,
       repeatWeekly: meeting.isRecurrent,
@@ -362,18 +375,20 @@ class NotificationService {
       partes.add(reuniones == 1 ? '1 reunión' : '$reuniones reuniones');
     }
     if (tareas > 0) {
-      partes.add(tareas == 1
-          ? '1 tarea con fecha límite'
-          : '$tareas tareas con fecha límite');
+      partes.add(
+        tareas == 1
+            ? '1 tarea con fecha límite'
+            : '$tareas tareas con fecha límite',
+      );
     }
     if (partes.isEmpty) return 'Hoy no tienes nada agendado';
     return 'Hoy tienes ${partes.join(' y ')}';
   }
 
   int _tasksDueOn(DateTime dia) => _tasks.where((t) {
-        if (t.isCompleted && t.isSubmitted) return false;
-        return _sameDay(t.dueDate, dia);
-      }).length;
+    if (t.isCompleted && t.isSubmitted) return false;
+    return _sameDay(t.dueDate, dia);
+  }).length;
 
   int _meetingsOn(DateTime dia) =>
       _meetings.where((m) => occurrenceOn(m, dia) != null).length;
@@ -392,8 +407,13 @@ class NotificationService {
     }
 
     if (origen.weekday != dia.weekday) return null;
-    final ocurrencia =
-        DateTime(dia.year, dia.month, dia.day, origen.hour, origen.minute);
+    final ocurrencia = DateTime(
+      dia.year,
+      dia.month,
+      dia.day,
+      origen.hour,
+      origen.minute,
+    );
     return ocurrencia.isBefore(origen) ? null : ocurrencia;
   }
 
@@ -402,6 +422,19 @@ class NotificationService {
 
   static String _hhmm(DateTime date) =>
       '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+
+  /// Texto legible para el título del aviso ("5 minutos", "1 hora", "1 día").
+  static String _lapso(Duration anticipacion) {
+    if (anticipacion.inMinutes < 60) {
+      return '${anticipacion.inMinutes} minutos';
+    }
+    if (anticipacion.inHours < 24) {
+      return anticipacion.inHours == 1
+          ? '1 hora'
+          : '${anticipacion.inHours} horas';
+    }
+    return anticipacion.inDays == 1 ? '1 día' : '${anticipacion.inDays} días';
+  }
 
   // ============ CAMBIOS EN TAREAS COMPARTIDAS ============
 
@@ -424,8 +457,12 @@ class NotificationService {
         : author.trim();
 
     await _showNow(
-      id: _instantIdBase + DateTime.now().millisecondsSinceEpoch.remainder(100000),
-      title: isNew ? '📌 Nueva tarea compartida' : '✏️ Tarea compartida editada',
+      id:
+          _instantIdBase +
+          DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      title: isNew
+          ? '📌 Nueva tarea compartida'
+          : '✏️ Tarea compartida editada',
       body: '$quien ${isNew ? 'agregó' : 'editó'} "$title" — $subject',
     );
   }
@@ -443,8 +480,11 @@ class NotificationService {
     if (!await isEnabled) return;
 
     await _showNow(
-      id: _instantIdBase + DateTime.now().millisecondsSinceEpoch.remainder(100000),
-      title: '📣 ${subject != null && subject.isNotEmpty ? subject : 'Anuncio'}',
+      id:
+          _instantIdBase +
+          DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      title:
+          '📣 ${subject != null && subject.isNotEmpty ? subject : 'Anuncio'}',
       body: '$author: $title',
     );
   }
@@ -508,7 +548,10 @@ class NotificationService {
     try {
       await _notifications.show(id, title, body, _detalles);
     } catch (e) {
-      Logger.warning('No se pudo mostrar la notificación "$title": $e', tag: 'Notif');
+      Logger.warning(
+        'No se pudo mostrar la notificación "$title": $e',
+        tag: 'Notif',
+      );
     }
   }
 
@@ -543,7 +586,9 @@ class NotificationService {
         ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexact;
 
-    final repeticion = repeatWeekly ? DateTimeComponents.dayOfWeekAndTime : null;
+    final repeticion = repeatWeekly
+        ? DateTimeComponents.dayOfWeekAndTime
+        : null;
 
     try {
       await _notifications.zonedSchedule(
@@ -557,8 +602,10 @@ class NotificationService {
             UILocalNotificationDateInterpretation.absoluteTime,
         matchDateTimeComponents: repeticion,
       );
-      Logger.info('Aviso programado ($mode): $title a las $scheduledTime',
-          tag: 'Notif');
+      Logger.info(
+        'Aviso programado ($mode): $title a las $scheduledTime',
+        tag: 'Notif',
+      );
     } catch (e) {
       Logger.error('Error al programar aviso', error: e, tag: 'Notif');
       if (mode == AndroidScheduleMode.inexact) return;
@@ -597,8 +644,10 @@ class NotificationService {
   /// canal todavía no fue creado (nunca se programó nada), no hay nada que
   /// revisar todavía.
   Future<bool> isTaskReminderChannelBlocked() async {
-    final androidPlugin = _notifications.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (androidPlugin == null) return false;
     final channels = await androidPlugin.getNotificationChannels();
     if (channels == null) return false;
@@ -638,9 +687,13 @@ class NotificationService {
   }
 
   Future<void> showImmediateNotification(
-      String title, String description) async {
+    String title,
+    String description,
+  ) async {
     await _showNow(
-      id: _instantIdBase + DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      id:
+          _instantIdBase +
+          DateTime.now().millisecondsSinceEpoch.remainder(100000),
       title: title,
       body: description,
     );

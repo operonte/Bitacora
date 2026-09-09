@@ -26,7 +26,9 @@ class TaskCard extends StatelessWidget {
     final cardBg = isDark
         ? (theme.cardTheme.color ?? theme.colorScheme.surface)
         : AppColors.surface;
-    final titleColor = isDark ? theme.colorScheme.onSurface : AppColors.onSurface;
+    final titleColor = isDark
+        ? theme.colorScheme.onSurface
+        : AppColors.onSurface;
     final subtextColor = isDark
         ? theme.colorScheme.onSurface.withValues(alpha: 0.7)
         : AppColors.textSecondary;
@@ -35,7 +37,12 @@ class TaskCard extends StatelessWidget {
     final color = TaskColorHelper.getUrgencyColor(urgency);
     final bgColor = TaskColorHelper.getUrgencyBg(urgency);
     final icon = TaskColorHelper.getUrgencyIcon(urgency);
-    final label = TaskColorHelper.getUrgencyText(urgency);
+    // Cerca del vencimiento, "Urgente" no dice cuánto falta y hay que abrir
+    // la tarea para saberlo. La cuenta regresiva reemplaza esa etiqueta
+    // justo en las urgencias donde el margen real importa.
+    final label =
+        _countdown(task.dueDate, urgency) ??
+        TaskColorHelper.getUrgencyText(urgency);
     final isOverdue = urgency == TaskUrgency.overdue;
     final careerName = CareerService().careerNameFor(task.careerId);
 
@@ -60,12 +67,16 @@ class TaskCard extends StatelessWidget {
               border: Border.all(
                 color: isOverdue
                     ? color.withValues(alpha: 0.35)
-                    : (isDark ? theme.dividerColor.withValues(alpha: 0.15) : Colors.transparent),
+                    : (isDark
+                          ? theme.dividerColor.withValues(alpha: 0.15)
+                          : Colors.transparent),
                 width: 1.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: isDark ? Colors.black.withValues(alpha: 0.3) : Colors.black.withValues(alpha: 0.05),
+                  color: isDark
+                      ? Colors.black.withValues(alpha: 0.3)
+                      : Colors.black.withValues(alpha: 0.05),
                   blurRadius: 20,
                   offset: const Offset(0, 6),
                 ),
@@ -144,12 +155,17 @@ class TaskCard extends StatelessWidget {
                             // Materia + tipo
                             Row(
                               children: [
-                                Icon(
-                                  Icons.book_outlined,
-                                  size: 13,
-                                  color: subtextColor,
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: SubjectColorHelper.colorFor(
+                                      task.subject,
+                                    ),
+                                  ),
                                 ),
-                                const SizedBox(width: 4),
+                                const SizedBox(width: 5),
                                 Expanded(
                                   child: Text(
                                     task.subject,
@@ -418,9 +434,13 @@ class TaskCard extends StatelessWidget {
                                   ),
                                 ] else
                                   const Tooltip(
-                                    message: 'Tarea oficial: solo quien la creó puede tocarla',
-                                    child: Icon(Icons.lock_outline,
-                                        size: 16, color: AppColors.textSecondary),
+                                    message:
+                                        'Tarea oficial: solo quien la creó puede tocarla',
+                                    child: Icon(
+                                      Icons.lock_outline,
+                                      size: 16,
+                                      color: AppColors.textSecondary,
+                                    ),
                                   ),
                               ],
                             ),
@@ -466,9 +486,14 @@ class TaskCard extends StatelessWidget {
                               const SizedBox(height: 8),
                               Container(
                                 width: double.infinity,
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: AppColors.accentTeal.withValues(alpha: 0.08),
+                                  color: AppColors.accentTeal.withValues(
+                                    alpha: 0.08,
+                                  ),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Column(
@@ -477,7 +502,11 @@ class TaskCard extends StatelessWidget {
                                     if (task.grade?.isNotEmpty ?? false)
                                       Row(
                                         children: [
-                                          const Icon(Icons.grade_outlined, size: 14, color: AppColors.accentTeal),
+                                          const Icon(
+                                            Icons.grade_outlined,
+                                            size: 14,
+                                            color: AppColors.accentTeal,
+                                          ),
                                           const SizedBox(width: 4),
                                           Text(
                                             'Nota: ${task.grade}',
@@ -489,11 +518,16 @@ class TaskCard extends StatelessWidget {
                                           ),
                                         ],
                                       ),
-                                    if (task.teacherComment?.isNotEmpty ?? false) ...[
-                                      if (task.grade?.isNotEmpty ?? false) const SizedBox(height: 4),
+                                    if (task.teacherComment?.isNotEmpty ??
+                                        false) ...[
+                                      if (task.grade?.isNotEmpty ?? false)
+                                        const SizedBox(height: 4),
                                       Text(
                                         '"${task.teacherComment}"',
-                                        style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                        ),
                                       ),
                                     ],
                                   ],
@@ -512,6 +546,32 @@ class TaskCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Cuánto falta o cuánto pasó ("Vence en 3 h", "Vencida hace 2 d"). Solo
+  /// para las urgencias donde importa saber el margen exacto de un vistazo
+  /// — en las demás la etiqueta genérica ya alcanza y no vale la pena el
+  /// ruido de mostrar una cifra que cambia cada minuto.
+  static String? _countdown(DateTime dueDate, TaskUrgency urgency) {
+    if (urgency != TaskUrgency.high &&
+        urgency != TaskUrgency.urgent &&
+        urgency != TaskUrgency.overdue) {
+      return null;
+    }
+    final diff = urgency == TaskUrgency.overdue
+        ? DateTime.now().difference(dueDate)
+        : dueDate.difference(DateTime.now());
+    final String unidad;
+    if (diff.inMinutes < 60) {
+      unidad = '${diff.inMinutes} min';
+    } else if (diff.inHours < 24) {
+      unidad = '${diff.inHours} h';
+    } else {
+      unidad = '${diff.inDays} d';
+    }
+    return urgency == TaskUrgency.overdue
+        ? 'Vencida hace $unidad'
+        : 'Vence en $unidad';
   }
 
   /// Fecha de la última edición en formato corto. Relativa mientras sea
@@ -631,7 +691,9 @@ class _SkeletonTaskCardState extends State<SkeletonTaskCard>
           opacity: _animation.value,
           child: Card(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(

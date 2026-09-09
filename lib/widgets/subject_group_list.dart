@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../colors.dart';
 
 /// Lista de tarjetas plegables agrupadas por materia, con encabezado
 /// "Materia · N <algo>" (ej. "Hebreo · 5 archivos"). Se usa en "Mis archivos"
@@ -66,8 +67,9 @@ class _SubjectGroupListState<T> extends State<SubjectGroupList<T>> {
   Map<String, List<T>> _grouped(List<T> items) {
     final map = <String, List<T>>{};
     for (final item in items) {
-      final subject =
-          widget.subjectOf(item).isNotEmpty ? widget.subjectOf(item) : 'General';
+      final subject = widget.subjectOf(item).isNotEmpty
+          ? widget.subjectOf(item)
+          : 'General';
       map.putIfAbsent(subject, () => []).add(item);
     }
     final sortedKeys = map.keys.toList();
@@ -83,9 +85,11 @@ class _SubjectGroupListState<T> extends State<SubjectGroupList<T>> {
             : dates.reduce((a, b) => a.isBefore(b) ? a : b);
       }
 
-      sortedKeys.sort((a, b) => widget.dateDescending
-          ? representativeOf(b).compareTo(representativeOf(a))
-          : representativeOf(a).compareTo(representativeOf(b)));
+      sortedKeys.sort(
+        (a, b) => widget.dateDescending
+            ? representativeOf(b).compareTo(representativeOf(a))
+            : representativeOf(a).compareTo(representativeOf(b)),
+      );
 
       for (final list in map.values) {
         list.sort((a, b) {
@@ -132,7 +136,9 @@ class _SubjectGroupListState<T> extends State<SubjectGroupList<T>> {
           return Padding(
             padding: const EdgeInsets.only(top: 32),
             child: Text(
-              searching ? 'Sin resultados para "$_query"' : 'Nada por acá todavía',
+              searching
+                  ? 'Sin resultados para "$_query"'
+                  : 'Nada por acá todavía',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -147,7 +153,9 @@ class _SubjectGroupListState<T> extends State<SubjectGroupList<T>> {
         return Card(
           margin: const EdgeInsets.only(bottom: 10),
           clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: ExpansionTile(
             // La key incluye el estado abierto para que ExpansionTile se
             // reconstruya cuando cambia por búsqueda y no por un toque.
@@ -163,7 +171,12 @@ class _SubjectGroupListState<T> extends State<SubjectGroupList<T>> {
                 }
               });
             },
-            leading: const Icon(Icons.folder_outlined),
+            leading: Icon(
+              Icons.folder_outlined,
+              color: entry.key == 'General'
+                  ? null
+                  : SubjectColorHelper.colorFor(entry.key),
+            ),
             title: Text(
               '${entry.key} · ${widget.countLabelOf(entry.value.length)}',
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
@@ -185,9 +198,7 @@ class _SubjectGroupListState<T> extends State<SubjectGroupList<T>> {
           hintText: widget.searchHint,
           prefixIcon: const Icon(Icons.search_rounded, size: 20),
           isDense: true,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
     );

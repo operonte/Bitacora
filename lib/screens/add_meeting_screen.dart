@@ -43,6 +43,12 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
   DateTime _meetingDate = DateTime.now().add(const Duration(hours: 2));
   TimeOfDay _meetingTime = const TimeOfDay(hour: 14, minute: 0);
 
+  /// `null` = usar el default de la app (5 minutos). Las opciones son minutos
+  /// de anticipación; se guardan aparte del resto de duraciones porque acá
+  /// tiene que aparecer también la opción "usar el default".
+  int? _reminderMinutes;
+  static const List<int?> _reminderOptions = [null, 5, 15, 30, 60, 120, 1440];
+
   bool _isLoading = false;
   List<Subject> _subjects = [];
 
@@ -78,9 +84,12 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
     if (text.contains('zoom.us') || text.contains('zoom.com')) {
       if (_selectedType != 'Zoom') setState(() => _selectedType = 'Zoom');
     } else if (text.contains('meet.google.com')) {
-      if (_selectedType != 'Google Meet') setState(() => _selectedType = 'Google Meet');
-    } else if (text.contains('teams.microsoft.com') || text.contains('teams.live.com')) {
-      if (_selectedType != 'Microsoft Teams') setState(() => _selectedType = 'Microsoft Teams');
+      if (_selectedType != 'Google Meet')
+        setState(() => _selectedType = 'Google Meet');
+    } else if (text.contains('teams.microsoft.com') ||
+        text.contains('teams.live.com')) {
+      if (_selectedType != 'Microsoft Teams')
+        setState(() => _selectedType = 'Microsoft Teams');
     }
   }
 
@@ -103,6 +112,7 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
       _professorController.text = m.professor;
       _selectedType = m.type;
       _isRecurrent = m.isRecurrent;
+      _reminderMinutes = m.reminderMinutes;
       _linkController.text = m.meetingLink ?? '';
       _meetingDate = m.meetingDate;
       _meetingTime = TimeOfDay.fromDateTime(m.meetingDate);
@@ -111,7 +121,9 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
       // items y Flutter lanza.
       final saved = m.careerId;
       final known = CareerService().careerIds;
-      _selectedCareerId = (saved != null && known.contains(saved)) ? saved : null;
+      _selectedCareerId = (saved != null && known.contains(saved))
+          ? saved
+          : null;
       // Si se perdió la carrera, compartirla dejaría de tener sentido.
       _isPrivate = m.isPrivate || _selectedCareerId == null;
     } else {
@@ -123,7 +135,8 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
     // propone la activa para que la reunión quede clasificada al guardarla.
     if (!CareerService().careerIds.contains(_selectedCareerId)) {
       final careers = CareerService().getCareers();
-      _selectedCareerId = CareerService().getSelectedCareer()?.id ??
+      _selectedCareerId =
+          CareerService().getSelectedCareer()?.id ??
           (careers.isNotEmpty ? careers.first.id : null);
     }
   }
@@ -191,7 +204,9 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
         child: SwitchListTile(
           value: !_isPrivate,
           onChanged: (v) => setState(() => _isPrivate = !v),
-          secondary: Icon(_isPrivate ? Icons.lock_outline : Icons.groups_outlined),
+          secondary: Icon(
+            _isPrivate ? Icons.lock_outline : Icons.groups_outlined,
+          ),
           title: Text(_isPrivate ? 'Reunión privada' : 'Reunión compartida'),
           subtitle: Text(
             _isPrivate
@@ -239,18 +254,21 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
       for (final s in career.predefinedSubjects) {
         // Inactiva (semestre anterior) y no es la ya elegida: no se ofrece.
         // Sigue disponible igual en Archivos/Material docente.
-        if (!s.isActive && s.name.toLowerCase() != _selectedSubject.toLowerCase()) {
+        if (!s.isActive &&
+            s.name.toLowerCase() != _selectedSubject.toLowerCase()) {
           continue;
         }
-        predefined.add(Subject(
-          id: 'pred_${counter++}',
-          name: s.name,
-          professor: s.professor,
-          userId: uId,
-          userName: uName,
-          createdAt: DateTime.now(),
-          isActive: s.isActive,
-        ));
+        predefined.add(
+          Subject(
+            id: 'pred_${counter++}',
+            name: s.name,
+            professor: s.professor,
+            userId: uId,
+            userName: uName,
+            createdAt: DateTime.now(),
+            isActive: s.isActive,
+          ),
+        );
       }
     }
 
@@ -295,13 +313,25 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
     }
   }
 
+  String _reminderLabel(int? minutes) {
+    if (minutes == null) return '5 minutos antes (por defecto)';
+    if (minutes < 60) return '$minutes minutos antes';
+    if (minutes < 1440) {
+      final horas = minutes ~/ 60;
+      return horas == 1 ? '1 hora antes' : '$horas horas antes';
+    }
+    return '1 día antes';
+  }
+
   Future<void> _saveMeeting() async {
     if (!_formKey.currentState!.validate()) return;
 
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debes estar autenticado para guardar reuniones')),
+        const SnackBar(
+          content: Text('Debes estar autenticado para guardar reuniones'),
+        ),
       );
       return;
     }
@@ -322,16 +352,21 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
         title: InputSanitizer.sanitizeText(_titleController.text),
         description: InputSanitizer.sanitizeText(_descriptionController.text),
         subject: _selectedSubject,
-        professor: _professorController.text.trim().isEmpty ? 'Profesor' : _professorController.text.trim(),
+        professor: _professorController.text.trim().isEmpty
+            ? 'Profesor'
+            : _professorController.text.trim(),
         meetingDate: dt,
         type: _selectedType,
         isRecurrent: _isRecurrent,
-        meetingLink: _linkController.text.trim().isEmpty ? null : _linkController.text.trim(),
+        meetingLink: _linkController.text.trim().isEmpty
+            ? null
+            : _linkController.text.trim(),
         careerId: _selectedCareerId,
         userId: user.id,
         // Sin carrera no hay grupo destinatario: la restricción
         // meetings_shared_needs_career_chk lo rechazaría en la base.
         isPrivate: _selectedCareerId == null ? true : _isPrivate,
+        reminderMinutes: _reminderMinutes,
       );
 
       await MeetingService().saveMeeting(meeting);
@@ -342,7 +377,10 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al guardar reunión: $e'), backgroundColor: AppColors.error),
+          SnackBar(
+            content: Text('Error al guardar reunión: $e'),
+            backgroundColor: AppColors.error,
+          ),
         );
       }
     } finally {
@@ -354,7 +392,9 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.meeting == null ? 'Nueva Reunión' : 'Editar Reunión'),
+        title: Text(
+          widget.meeting == null ? 'Nueva Reunión' : 'Editar Reunión',
+        ),
         actions: [
           if (widget.meeting != null)
             IconButton(
@@ -364,7 +404,9 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
                   context: context,
                   builder: (context) => AlertDialog(
                     title: const Text('Eliminar reunión'),
-                    content: const Text('¿Estás seguro de eliminar esta reunión?'),
+                    content: const Text(
+                      '¿Estás seguro de eliminar esta reunión?',
+                    ),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context, false),
@@ -372,7 +414,10 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
                       ),
                       TextButton(
                         onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Eliminar', style: TextStyle(color: AppColors.error)),
+                        child: const Text(
+                          'Eliminar',
+                          style: TextStyle(color: AppColors.error),
+                        ),
                       ),
                     ],
                   ),
@@ -385,7 +430,10 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
                 } catch (e) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error al eliminar reunión: $e'), backgroundColor: AppColors.error),
+                      SnackBar(
+                        content: Text('Error al eliminar reunión: $e'),
+                        backgroundColor: AppColors.error,
+                      ),
                     );
                   }
                 }
@@ -404,7 +452,8 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
                 labelText: 'Título de la reunión *',
                 prefixIcon: Icon(Icons.meeting_room),
               ),
-              validator: (v) => Validators.requiredWithMinLength(v, 3, 'El título'),
+              validator: (v) =>
+                  Validators.requiredWithMinLength(v, 3, 'El título'),
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -414,7 +463,8 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
                 prefixIcon: Icon(Icons.description),
               ),
               maxLines: 2,
-              validator: (v) => Validators.requiredWithMinLength(v, 3, 'La descripción'),
+              validator: (v) =>
+                  Validators.requiredWithMinLength(v, 3, 'La descripción'),
             ),
             const SizedBox(height: 16),
             // Desplegable y obligatoria, no texto libre.
@@ -437,10 +487,12 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
                     : null,
               ),
               items: _subjects
-                  .map((s) => DropdownMenuItem<String>(
-                        value: s.name,
-                        child: Text(s.name, overflow: TextOverflow.ellipsis),
-                      ))
+                  .map(
+                    (s) => DropdownMenuItem<String>(
+                      value: s.name,
+                      child: Text(s.name, overflow: TextOverflow.ellipsis),
+                    ),
+                  )
                   .toList(),
               validator: (v) =>
                   (v == null || v.isEmpty) ? 'Elige una asignatura' : null,
@@ -450,8 +502,7 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
                   _selectedSubject = value;
                   // El profesor de la materia, si lo tiene: ahorra escribirlo
                   // y evita que cada reunión lo escriba distinto.
-                  final materia =
-                      _subjects.firstWhere((s) => s.name == value);
+                  final materia = _subjects.firstWhere((s) => s.name == value);
                   if (materia.professor.isNotEmpty) {
                     _professorController.text = materia.professor;
                   }
@@ -500,7 +551,9 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
                         labelText: 'Fecha *',
                         prefixIcon: Icon(Icons.calendar_today),
                       ),
-                      child: Text(DateFormat('dd/MM/yyyy').format(_meetingDate)),
+                      child: Text(
+                        DateFormat('dd/MM/yyyy').format(_meetingDate),
+                      ),
                     ),
                   ),
                 ),
@@ -526,6 +579,23 @@ class _AddMeetingScreenState extends State<AddMeetingScreen> {
               value: _isRecurrent,
               activeThumbColor: Theme.of(context).primaryColor,
               onChanged: (v) => setState(() => _isRecurrent = v),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<int?>(
+              initialValue: _reminderMinutes,
+              decoration: const InputDecoration(
+                labelText: 'Avisar con anticipación',
+                prefixIcon: Icon(Icons.notifications_outlined),
+              ),
+              items: _reminderOptions
+                  .map(
+                    (minutes) => DropdownMenuItem(
+                      value: minutes,
+                      child: Text(_reminderLabel(minutes)),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) => setState(() => _reminderMinutes = v),
             ),
             const SizedBox(height: 24),
             ElevatedButton(

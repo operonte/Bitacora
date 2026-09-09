@@ -5,25 +5,27 @@ enum AppColorPalette { teal, emerald, feminine }
 
 class AppColors {
   // ── Paleta: Por defecto (Teal Académico) ───────────────────
-  static const Color primaryTeal = Color(0xFF0D9488);      // Teal 600
+  static const Color primaryTeal = Color(0xFF0D9488); // Teal 600
   static const Color primaryTealLight = Color(0xFF2DD4BF); // Teal 400
-  static const Color primaryTealDark = Color(0xFF115E59);  // Teal 800
-  static const Color accentTeal = Color(0xFFEA580C);       // Naranjo 600 (CTA)
-  static const Color containerTeal = Color(0xFFF0FDFA);    // Tinte suave teal
+  static const Color primaryTealDark = Color(0xFF115E59); // Teal 800
+  static const Color accentTeal = Color(0xFFEA580C); // Naranjo 600 (CTA)
+  static const Color containerTeal = Color(0xFFF0FDFA); // Tinte suave teal
 
   // ── Paleta: Verde (Emerald Bio Pro) ───────────────────────
-  static const Color primaryEmerald = Color(0xFF059669);     // Esmeralda 600
+  static const Color primaryEmerald = Color(0xFF059669); // Esmeralda 600
   static const Color primaryEmeraldLight = Color(0xFF34D399); // Esmeralda 400
-  static const Color primaryEmeraldDark = Color(0xFF047857);  // Esmeralda 800
-  static const Color accentEmerald = Color(0xFF10B981);      // Menta 500
-  static const Color containerEmerald = Color(0xFFECFDF5);   // Tinte suave esmeralda
+  static const Color primaryEmeraldDark = Color(0xFF047857); // Esmeralda 800
+  static const Color accentEmerald = Color(0xFF10B981); // Menta 500
+  static const Color containerEmerald = Color(
+    0xFFECFDF5,
+  ); // Tinte suave esmeralda
 
   // ── Paleta: Rosa (Malva Glam Pro) ─────────────────────────
-  static const Color primaryFeminine = Color(0xFFDB2777);    // Rosa / Malva 600
-  static const Color primaryFeminineLight = Color(0xFFF472B6);// Rosa 400
+  static const Color primaryFeminine = Color(0xFFDB2777); // Rosa / Malva 600
+  static const Color primaryFeminineLight = Color(0xFFF472B6); // Rosa 400
   static const Color primaryFeminineDark = Color(0xFFBE185D); // Rosa 800
-  static const Color accentFeminine = Color(0xFFF43F5E);     // Malva/Coral 500
-  static const Color containerFeminine = Color(0xFFFDF2F8);  // Tinte suave rosa
+  static const Color accentFeminine = Color(0xFFF43F5E); // Malva/Coral 500
+  static const Color containerFeminine = Color(0xFFFDF2F8); // Tinte suave rosa
 
   // Getters dinámicos por paleta
   static Color getPrimary(AppColorPalette palette) {
@@ -129,12 +131,42 @@ class AppColors {
   static const Color gris = Color(0xFF94A3B8);
 }
 
+/// Color estable por materia, para reconocerla de un vistazo en tareas,
+/// reuniones y archivos sin tener que leer el nombre cada vez. No es una
+/// preferencia guardada: se deriva del nombre (mismo criterio que usa Google
+/// Calendar para "colorear" categorías sin pedirle nada al usuario), así que
+/// la misma materia siempre cae en el mismo color en todas las pantallas sin
+/// necesitar una columna nueva en la base de datos.
+class SubjectColorHelper {
+  static const List<Color> _palette = [
+    Color(0xFF38BDF8), // celeste
+    Color(0xFFA78BFA), // violeta
+    Color(0xFFFB923C), // naranjo
+    Color(0xFF34D399), // verde
+    Color(0xFFF472B6), // rosa
+    Color(0xFFFBBF24), // ámbar
+    Color(0xFF60A5FA), // azul
+    Color(0xFF4ADE80), // lima
+    Color(0xFFF87171), // rojo suave
+    Color(0xFF2DD4BF), // teal
+  ];
+
+  static Color colorFor(String subjectName) {
+    final key = subjectName.trim().toLowerCase();
+    if (key.isEmpty) return AppColors.gris;
+    return _palette[key.hashCode.abs() % _palette.length];
+  }
+}
+
 extension ThemeContextExtension on BuildContext {
   bool get isDark => Theme.of(this).brightness == Brightness.dark;
   Color get textColor => isDark ? AppColors.darkOnSurface : AppColors.onSurface;
-  Color get textSecondaryColor => isDark ? AppColors.darkTextSecondary : AppColors.textSecondary;
-  Color get textHintColor => isDark ? AppColors.darkTextHint : AppColors.textHint;
-  Color get borderColor => isDark ? AppColors.darkBorder : AppColors.borderLight;
+  Color get textSecondaryColor =>
+      isDark ? AppColors.darkTextSecondary : AppColors.textSecondary;
+  Color get textHintColor =>
+      isDark ? AppColors.darkTextHint : AppColors.textHint;
+  Color get borderColor =>
+      isDark ? AppColors.darkBorder : AppColors.borderLight;
 }
 
 class TaskColorHelper {

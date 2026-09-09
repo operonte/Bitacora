@@ -21,6 +21,11 @@ class Meeting {
   final bool isPrivate;
   final DateTime createdAt;
 
+  /// Minutos de anticipación del aviso. `null` significa "usar el default de
+  /// la app" ([NotificationService.meetingLeadTime], hoy 5 minutos) — así una
+  /// reunión ya creada no cambia de comportamiento por esto.
+  final int? reminderMinutes;
+
   Meeting({
     this.id,
     required this.title,
@@ -36,6 +41,7 @@ class Meeting {
     this.isCompleted = false,
     this.isPrivate = true,
     DateTime? createdAt,
+    this.reminderMinutes,
   }) : createdAt = createdAt ?? DateTime.now();
 
   /// Hora a la que una reunión recurrente deja de contar como "la de hoy" y
@@ -53,9 +59,32 @@ class Meeting {
     var next = meetingDate;
     final now = DateTime.now();
     while (!_stillCurrent(next, now)) {
-      next = next.add(const Duration(days: 7));
+      next = _nextWeek(next);
     }
     return next;
+  }
+
+  /// Avanza una ocurrencia 7 días de calendario conservando la hora de pared
+  /// (19:00 sigue siendo 19:00) aunque de por medio haya un cambio de huso
+  /// horario. Sumar Duration(days: 7) directo sobre el instante absoluto
+  /// arrastraba el delta del cambio de hora a la hora mostrada — el día de
+  /// calendario se calcula anclado en UTC (sin DST) y la hora de pared
+  /// original se vuelve a aplicar recién en el día de destino, para que el
+  /// sistema resuelva el offset vigente ese día.
+  static DateTime _nextWeek(DateTime occurrence) {
+    final dia = DateTime.utc(
+      occurrence.year,
+      occurrence.month,
+      occurrence.day,
+    ).add(const Duration(days: 7));
+    return DateTime(
+      dia.year,
+      dia.month,
+      dia.day,
+      occurrence.hour,
+      occurrence.minute,
+      occurrence.second,
+    );
   }
 
   /// Una ocurrencia sigue siendo la vigente hasta [rolloverHour] de su propio
@@ -74,9 +103,12 @@ class Meeting {
   String get effectiveType {
     if (meetingLink != null && meetingLink!.isNotEmpty) {
       final lower = meetingLink!.toLowerCase();
-      if (lower.contains('zoom.us') || lower.contains('zoom.com')) return 'Zoom';
+      if (lower.contains('zoom.us') || lower.contains('zoom.com'))
+        return 'Zoom';
       if (lower.contains('meet.google.com')) return 'Google Meet';
-      if (lower.contains('teams.microsoft.com') || lower.contains('teams.live.com')) return 'Microsoft Teams';
+      if (lower.contains('teams.microsoft.com') ||
+          lower.contains('teams.live.com'))
+        return 'Microsoft Teams';
     }
     return type;
   }
@@ -98,6 +130,7 @@ class Meeting {
       'is_completed': isCompleted,
       'is_private': isPrivate,
       'created_at': createdAt.toUtc().toIso8601String(),
+      'reminder_minutes': reminderMinutes,
     };
 
     if (meetingLink != null && meetingLink!.isNotEmpty) {
@@ -137,6 +170,7 @@ class Meeting {
       createdAt: map['created_at'] != null
           ? DateTime.parse(map['created_at']).toLocal()
           : DateTime.now(),
+      reminderMinutes: (map['reminder_minutes'] as num?)?.toInt(),
     );
   }
 
@@ -155,6 +189,7 @@ class Meeting {
     bool? isCompleted,
     bool? isPrivate,
     DateTime? createdAt,
+    int? reminderMinutes,
   }) {
     return Meeting(
       id: id ?? this.id,
@@ -171,6 +206,7 @@ class Meeting {
       isCompleted: isCompleted ?? this.isCompleted,
       isPrivate: isPrivate ?? this.isPrivate,
       createdAt: createdAt ?? this.createdAt,
+      reminderMinutes: reminderMinutes ?? this.reminderMinutes,
     );
   }
 

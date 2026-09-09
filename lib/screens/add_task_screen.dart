@@ -147,11 +147,23 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   /// Las inactivas (de un semestre anterior) no se ofrecen, salvo que sea la
   /// ya elegida — para no vaciar en silencio el campo al editar una tarea
   /// vieja. Siguen disponibles igual en Archivos/Material docente.
+  ///
+  /// Igual filtro por semestre: mostrar las materias de toda la carrera
+  /// obligaba a buscar la propia entre las de otros años. Si el alumno
+  /// todavía no eligió semestre en Configuración, o la materia no tiene
+  /// semestre etiquetado, se sigue mostrando — filtrar sin ese dato sería
+  /// adivinar y podría esconder la materia correcta.
   List<Subject> _predefinedSubjectsFor(Career? career) {
     if (career == null) return [];
+    final semestreActual = _careerService.semesterFor(career.id);
     var idx = 0;
     return career.predefinedSubjects
         .where((s) => s.isActive || s.name == _selectedSubject)
+        .where((s) =>
+            semestreActual == null ||
+            (s.semester?.isEmpty ?? true) ||
+            s.semester == semestreActual ||
+            s.name == _selectedSubject)
         .map((subject) {
       final index = idx++;
       return Subject(

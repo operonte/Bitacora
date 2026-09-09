@@ -28,8 +28,10 @@ class Subject {
 
   /// Etiqueta libre ("Segundo Año · Sem. IV") para que el admin ubique de un
   /// vistazo a qué semestre pertenece una materia predefinida, sin tener que
-  /// adivinar por el nombre. Solo se muestra en el panel de administración;
-  /// no afecta selectores ni validación del servidor.
+  /// adivinar por el nombre. También filtra el selector de materias al crear
+  /// una tarea, cruzada contra el semestre que el alumno eligió en
+  /// Configuración — ver `_predefinedSubjectsFor` en add_task_screen.dart. No
+  /// afecta validación del servidor: es solo para no mostrar de más.
   String? semester;
 
   Subject({

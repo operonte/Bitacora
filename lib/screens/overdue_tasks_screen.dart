@@ -7,6 +7,7 @@ import '../widgets/task_card.dart';
 import '../widgets/staggered_entrance.dart';
 import '../widgets/task_search_dialog.dart';
 import '../widgets/task_details_dialog.dart';
+import '../widgets/subject_filter_chips.dart';
 import 'add_task_screen.dart';
 import '../colors.dart';
 import '../utils/error_handler.dart';
@@ -22,6 +23,7 @@ class OverdueTasksScreen extends StatefulWidget {
 }
 
 class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
+  String _selectedSubject = SubjectFilterChips.all;
   String _searchQuery = '';
 
   Future<void> _showSearchDialog() async {
@@ -36,10 +38,11 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
     final careerName = career?.name ?? '';
 
     final appState = context.watch<AppState>();
+    final allOverdueTasks = appState.overdueTasks;
     // Vencidas es justo donde se acumulan las tareas de todo el semestre, así
-    // que es la pantalla que más necesitaba buscador y la única que no lo
-    // tenía.
-    final overdueTasks = appState.overdueTasks
+    // que es la pantalla que más necesitaba buscador y filtro por materia.
+    final overdueTasks = allOverdueTasks
+        .where((task) => SubjectFilterChips.matches(task, _selectedSubject))
         .where((task) => TaskSearchDialog.matches(task, _searchQuery))
         .toList();
 
@@ -55,9 +58,14 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
                 if (overdueTasks.isNotEmpty) ...[
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
@@ -141,98 +149,113 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
           ),
         ],
       ),
-      body: appState.isLoading && overdueTasks.isEmpty
-          ? ListView.builder(
-              itemCount: 3,
-              itemBuilder: (context, index) => const SkeletonTaskCard(),
-            )
-          : overdueTasks.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _searchQuery.isEmpty
-                            ? 'No hay tareas vencidas'
-                            : 'Sin resultados para tu búsqueda',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: context.textSecondaryColor,
-                        ),
-                      ),
-                      if (_searchQuery.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        TextButton.icon(
-                          onPressed: () => setState(() => _searchQuery = ''),
-                          icon: const Icon(Icons.clear_rounded, size: 20),
-                          label: const Text('Limpiar búsqueda'),
-                        ),
-                      ],
-                    ],
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: () => appState.forceSync(),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        margin: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.rojo.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: AppColors.rojo.withValues(alpha: 0.3),
+      body: Column(
+        children: [
+          SubjectFilterChips(
+            tasks: allOverdueTasks,
+            selected: _selectedSubject,
+            onSelected: (subject) => setState(() => _selectedSubject = subject),
+          ),
+          Expanded(
+            child: appState.isLoading && overdueTasks.isEmpty
+                ? ListView.builder(
+                    itemCount: 3,
+                    itemBuilder: (context, index) => const SkeletonTaskCard(),
+                  )
+                : overdueTasks.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _searchQuery.isEmpty
+                              ? 'No hay tareas vencidas'
+                              : 'Sin resultados para tu búsqueda',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: context.textSecondaryColor,
                           ),
                         ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.warning_amber_rounded, color: AppColors.rojo),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Tienes ${overdueTasks.length} tarea(s) con fecha límite vencida. Completa o entrega para organizarlas.',
-                                style: const TextStyle(
-                                  color: AppColors.rojo,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
+                        if (_searchQuery.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          TextButton.icon(
+                            onPressed: () => setState(() => _searchQuery = ''),
+                            icon: const Icon(Icons.clear_rounded, size: 20),
+                            label: const Text('Limpiar búsqueda'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: () => appState.forceSync(),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          margin: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.rojo.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.rojo.withValues(alpha: 0.3),
                             ),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: overdueTasks.length,
-                          itemBuilder: (context, index) {
-                            final task = overdueTasks[index];
-                            return StaggeredEntrance(
-                              index: index,
-                              child: TaskCard(
-                                task: task,
-                                onTap: () => TaskDetailsDialog.show(
-                                  context,
-                                  task: task,
-                                  appState: appState,
-                                  isDeliveredView: false,
-                                ),
-                                onEdit: () => _editTask(task),
-                                onDelete: () => TaskDetailsDialog.confirmDelete(
-                                  context,
-                                  task: task,
-                                  appState: appState,
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.warning_amber_rounded,
+                                color: AppColors.rojo,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Tienes ${overdueTasks.length} tarea(s) con fecha límite vencida. Completa o entrega para organizarlas.',
+                                  style: const TextStyle(
+                                    color: AppColors.rojo,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                               ),
-                            );
-                          },
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: overdueTasks.length,
+                            itemBuilder: (context, index) {
+                              final task = overdueTasks[index];
+                              return StaggeredEntrance(
+                                index: index,
+                                child: TaskCard(
+                                  task: task,
+                                  onTap: () => TaskDetailsDialog.show(
+                                    context,
+                                    task: task,
+                                    appState: appState,
+                                    isDeliveredView: false,
+                                  ),
+                                  onEdit: () => _editTask(task),
+                                  onDelete: () =>
+                                      TaskDetailsDialog.confirmDelete(
+                                        context,
+                                        task: task,
+                                        appState: appState,
+                                      ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -293,7 +316,11 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
               try {
                 for (final task in overdueTasks) {
                   if (!task.isCompleted) {
-                    await appState.updateTaskStatus(task.id!, true, task.isSubmitted);
+                    await appState.updateTaskStatus(
+                      task.id!,
+                      true,
+                      task.isSubmitted,
+                    );
                   }
                 }
                 if (!context.mounted) return;
@@ -317,7 +344,9 @@ class _OverdueTasksScreenState extends State<OverdueTasksScreen> {
   }
 
   void _deleteCompletedTasks(List<Task> overdueTasks, AppState appState) {
-    final completedTasks = overdueTasks.where((task) => task.isCompleted).toList();
+    final completedTasks = overdueTasks
+        .where((task) => task.isCompleted)
+        .toList();
 
     if (completedTasks.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
