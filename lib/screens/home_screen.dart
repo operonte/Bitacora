@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../colors.dart';
 import '../models/meeting_model.dart';
 import '../models/task_model.dart';
@@ -12,6 +13,7 @@ import '../services/career_service.dart';
 import '../services/meeting_service.dart';
 import '../services/supabase_db_service.dart';
 import '../services/sync_service.dart';
+import '../utils/meeting_link_launcher.dart';
 import '../widgets/completion_rate_banner.dart';
 import '../widgets/mascot_widget.dart';
 import '../widgets/task_card.dart';
@@ -453,6 +455,12 @@ class _MeetingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasLink =
+        meeting.meetingLink != null && meeting.meetingLink!.isNotEmpty;
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    final isOwn =
+        uid == null || meeting.userId.isEmpty || meeting.userId == uid;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -462,10 +470,30 @@ class _MeetingTile extends StatelessWidget {
         subtitle: Text(
           '${meeting.subject} · ${DateFormat('HH:mm').format(meeting.effectiveDate)}',
         ),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => AddMeetingScreen(meeting: meeting)),
-        ),
+        trailing: hasLink
+            ? Icon(Icons.video_call_rounded, color: Theme.of(context).primaryColor)
+            : null,
+        onTap: () {
+          // Tocar una reunión es para participar, no para editarla — la
+          // edición se hace desde Reuniones. Si todavía no tiene enlace,
+          // solo la dueña puede entrar a completarlo.
+          if (hasLink) {
+            MeetingLinkLauncher.open(context, meeting.meetingLink!);
+          } else if (isOwn) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AddMeetingScreen(meeting: meeting),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Esta reunión todavía no tiene enlace.'),
+              ),
+            );
+          }
+        },
       ),
     );
   }

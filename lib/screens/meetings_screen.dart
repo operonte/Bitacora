@@ -3,11 +3,10 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:add_2_calendar/add_2_calendar.dart';
 import '../models/meeting_model.dart';
 import '../providers/theme_provider.dart';
-import '../utils/input_sanitizer.dart';
+import '../utils/meeting_link_launcher.dart';
 import '../services/meeting_service.dart';
 import '../widgets/subject_group_list.dart';
 import '../widgets/month_calendar_grid.dart';
@@ -86,45 +85,8 @@ class _MeetingsScreenState extends State<MeetingsScreen> {
     );
   }
 
-  Future<void> _launchMeetingUrl(String url) async {
-    // Desde que las reuniones se comparten, este enlace puede haberlo escrito
-    // otro miembro de la carrera: se comprueba el esquema antes de abrirlo.
-    // El prefijo https:// cubre el caso normal de pegar "meet.google.com/...".
-    final normalized = url.startsWith('http') ? url : 'https://$url';
-    if (!InputSanitizer.isSafeExternalUrl(normalized)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('El enlace de la reunión no es válido.'),
-          ),
-        );
-      }
-      return;
-    }
-
-    final uri = Uri.parse(normalized);
-    try {
-      if (!await canLaunchUrl(uri)) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No se puede abrir el enlace de la reunión.'),
-            ),
-          );
-        }
-        return;
-      }
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error al abrir el enlace de la reunión.'),
-          ),
-        );
-      }
-    }
-  }
+  Future<void> _launchMeetingUrl(String url) =>
+      MeetingLinkLauncher.open(context, url);
 
   /// Solo Android/iOS: el paquete no cubre Linux ni Web, y Bitácora corre en
   /// las cuatro.
