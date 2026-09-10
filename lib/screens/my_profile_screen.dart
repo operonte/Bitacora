@@ -16,6 +16,7 @@ import 'attendance_screen.dart';
 import 'career_attendance_screen.dart';
 import 'career_grades_screen.dart';
 import 'career_members_directory_screen.dart';
+import 'cover_photo_positioner_screen.dart';
 import 'my_attendance_screen.dart';
 import 'my_grades_screen.dart';
 import 'public_profile_screen.dart';
@@ -47,8 +48,23 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   final _nameController = TextEditingController();
   final _bioController = TextEditingController();
   final _ageController = TextEditingController();
-  final _genderController = TextEditingController();
-  final _relationshipController = TextEditingController();
+  /// Lista cerrada, no texto libre — pero si el perfil ya tenía algo
+  /// escrito a mano de antes que no calce con las opciones, se agrega para
+  /// no perderlo en silencio al abrir el desplegable.
+  static const _generoOpciones = ['Masculino', 'Femenino'];
+  String? _gender;
+
+  static const _situacionSentimentalOpciones = [
+    'Soltero/a',
+    'En una relación',
+    'Comprometido/a',
+    'Casado/a',
+    'En convivencia',
+    'Es complicado',
+    'Separado/a',
+    'Viudo/a',
+  ];
+  String? _relationshipStatus;
   final _religionController = TextEditingController();
   final _phoneController = TextEditingController();
   final _socialMediaController = TextEditingController();
@@ -111,8 +127,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     _nameController.dispose();
     _bioController.dispose();
     _ageController.dispose();
-    _genderController.dispose();
-    _relationshipController.dispose();
     _religionController.dispose();
     _phoneController.dispose();
     _socialMediaController.dispose();
@@ -135,9 +149,16 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         _nameController.text = (profile?['display_name'] as String?) ?? '';
         _bioController.text = (profile?['bio'] as String?) ?? '';
         _ageController.text = profile?['age']?.toString() ?? '';
-        _genderController.text = (profile?['gender'] as String?) ?? '';
-        _relationshipController.text =
-            (profile?['relationship_status'] as String?) ?? '';
+        final generoGuardado = (profile?['gender'] as String?)?.trim();
+        _gender = (generoGuardado == null || generoGuardado.isEmpty)
+            ? null
+            : generoGuardado;
+        final situacionGuardada = (profile?['relationship_status'] as String?)
+            ?.trim();
+        _relationshipStatus =
+            (situacionGuardada == null || situacionGuardada.isEmpty)
+            ? null
+            : situacionGuardada;
         _religionController.text = (profile?['religion'] as String?) ?? '';
         _phoneController.text = (profile?['phone'] as String?) ?? '';
         _socialMediaController.text =
@@ -171,10 +192,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       await _service.updateMyProfile(
         bio: InputSanitizer.sanitizeText(_bioController.text),
         age: ageText.isEmpty ? null : int.tryParse(ageText),
-        gender: InputSanitizer.sanitizeText(_genderController.text),
-        relationshipStatus: InputSanitizer.sanitizeText(
-          _relationshipController.text,
-        ),
+        gender: _gender ?? '',
+        relationshipStatus: _relationshipStatus ?? '',
         religion: InputSanitizer.sanitizeText(_religionController.text),
         phone: InputSanitizer.sanitizeText(_phoneController.text),
         socialMedia: InputSanitizer.sanitizeText(_socialMediaController.text),
@@ -252,6 +271,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           await _service.addExtraPhoto(url);
       }
       await _load();
+      // Antes de "fijarla": recién subida es cuando tiene sentido dejarla
+      // acomodada, no como un paso aparte que hay que acordarse de volver
+      // a hacer después.
+      if (target == _PhotoTarget.cover && mounted) {
+        await _openCoverPositioner(url);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -260,6 +285,70 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       }
     } finally {
       if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
+
+  /// Con portada ya puesta, tocarla ofrece elegir entre acomodarla o
+  /// cambiarla — sin esto, cada toque volvía a abrir el selector de
+  /// archivos y perdía de vista la opción de solo reacomodar.
+  Future<void> _onCoverTap(String? coverUrl) async {
+    if (coverUrl == null || coverUrl.isEmpty) {
+      await _pickAndUpload(target: _PhotoTarget.cover);
+      return;
+    }
+    final accion = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.open_with),
+              title: const Text('Acomodar'),
+              onTap: () => Navigator.pop(ctx, 'acomodar'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Cambiar foto'),
+              onTap: () => Navigator.pop(ctx, 'cambiar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || accion == null) return;
+    if (accion == 'acomodar') {
+      await _openCoverPositioner(coverUrl);
+    } else if (accion == 'cambiar') {
+      await _pickAndUpload(target: _PhotoTarget.cover);
+    }
+  }
+
+  Future<void> _openCoverPositioner(String url) async {
+    final actual =
+        (_profile?['cover_photo_offset'] as num?)?.toDouble() ?? 0.0;
+    final nuevo = await Navigator.push<double>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CoverPhotoPositionerScreen(
+          imageUrl: url,
+          initialOffset: actual,
+        ),
+      ),
+    );
+    if (nuevo == null || !mounted) return;
+    try {
+      await _service.setCoverPhotoOffset(nuevo);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlyError(e))));
+      }
     }
   }
 
@@ -419,20 +508,52 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          TextField(
-                            controller: _genderController,
+                          DropdownButtonFormField<String?>(
+                            initialValue: _gender,
                             decoration: const InputDecoration(
                               labelText: 'Género (opcional)',
                               border: OutlineInputBorder(),
                             ),
+                            items: [
+                              const DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text('Sin especificar'),
+                              ),
+                              for (final opcion in {
+                                ..._generoOpciones,
+                                if (_gender != null) _gender!,
+                              })
+                                DropdownMenuItem<String?>(
+                                  value: opcion,
+                                  child: Text(opcion),
+                                ),
+                            ],
+                            onChanged: (v) => setState(() => _gender = v),
                           ),
                           const SizedBox(height: 12),
-                          TextField(
-                            controller: _relationshipController,
+                          DropdownButtonFormField<String?>(
+                            initialValue: _relationshipStatus,
                             decoration: const InputDecoration(
                               labelText: 'Situación sentimental (opcional)',
                               border: OutlineInputBorder(),
                             ),
+                            items: [
+                              const DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text('Sin especificar'),
+                              ),
+                              for (final opcion in {
+                                ..._situacionSentimentalOpciones,
+                                if (_relationshipStatus != null)
+                                  _relationshipStatus!,
+                              })
+                                DropdownMenuItem<String?>(
+                                  value: opcion,
+                                  child: Text(opcion),
+                                ),
+                            ],
+                            onChanged: (v) =>
+                                setState(() => _relationshipStatus = v),
                           ),
                           const SizedBox(height: 12),
                           TextField(
@@ -472,7 +593,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                           TextField(
                             controller: _previousCareerController,
                             decoration: const InputDecoration(
-                              labelText: 'Carrera anterior u ocupación (opcional)',
+                              labelText: 'Estudios (opcional)',
                               border: OutlineInputBorder(),
                             ),
                           ),
@@ -1164,14 +1285,15 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   Widget _banner() {
     final photoUrl = _profile?['photo_url'] as String?;
     final coverUrl = _profile?['cover_photo_url'] as String?;
+    final coverOffset = (_profile?['cover_photo_offset'] as num?)
+            ?.toDouble() ??
+        0.0;
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.topCenter,
       children: [
         GestureDetector(
-          onTap: _uploadingPhoto
-              ? null
-              : () => _pickAndUpload(target: _PhotoTarget.cover),
+          onTap: _uploadingPhoto ? null : () => _onCoverTap(coverUrl),
           child: Container(
             height: 120,
             decoration: BoxDecoration(
@@ -1186,6 +1308,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                   ? DecorationImage(
                       image: NetworkImage(coverUrl),
                       fit: BoxFit.cover,
+                      alignment: Alignment(0, coverOffset),
                     )
                   : null,
             ),

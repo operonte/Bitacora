@@ -157,6 +157,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
         ? _profile!['display_name'] as String
         : widget.fallbackName;
     final photoUrl = _profile?['photo_url'] as String?;
+    final coverUrl = _profile?['cover_photo_url'] as String?;
+    final coverOffset =
+        (_profile?['cover_photo_offset'] as num?)?.toDouble() ?? 0.0;
     final bio = (_profile?['bio'] as String?)?.trim();
     final extraPhotos = List<String>.from(
       (_profile?['extra_photo_urls'] as List?) ?? [],
@@ -195,7 +198,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       ),
       (
         Icons.history_edu_outlined,
-        'Carrera anterior / ocupación',
+        'Estudios',
         _profile?['previous_career'] as String?,
         null,
       ),
@@ -224,7 +227,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
           : ListView(
               padding: const EdgeInsets.only(bottom: 40),
               children: [
-                _banner(photoUrl, name),
+                _banner(photoUrl, name, coverUrl, coverOffset),
                 const SizedBox(height: 56),
                 Text(
                   name,
@@ -344,7 +347,12 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     );
   }
 
-  Widget _banner(String? photoUrl, String name) {
+  Widget _banner(
+    String? photoUrl,
+    String name,
+    String? coverUrl,
+    double coverOffset,
+  ) {
     final historia = _story;
     final avatar = Container(
       padding: const EdgeInsets.all(4),
@@ -372,12 +380,21 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       children: [
         Container(
           height: 120,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [AppColors.primary, AppColors.primaryLight],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+          decoration: BoxDecoration(
+            gradient: (coverUrl == null || coverUrl.isEmpty)
+                ? const LinearGradient(
+                    colors: [AppColors.primary, AppColors.primaryLight],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
+            image: (coverUrl != null && coverUrl.isNotEmpty)
+                ? DecorationImage(
+                    image: NetworkImage(coverUrl),
+                    fit: BoxFit.cover,
+                    alignment: Alignment(0, coverOffset),
+                  )
+                : null,
           ),
         ),
         Positioned(

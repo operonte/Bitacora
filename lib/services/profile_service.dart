@@ -154,9 +154,23 @@ class ProfileService {
   Future<void> setCoverPhoto(String url) async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) throw Exception('Usuario no autenticado');
+    // Una foto nueva empieza centrada — la posición de la anterior no
+    // tiene por qué servir para una imagen distinta.
     await _client
         .from('profiles')
-        .update({'cover_photo_url': url})
+        .update({'cover_photo_url': url, 'cover_photo_offset': 0})
+        .eq('id', uid);
+  }
+
+  /// Dónde mostrar la foto de portada dentro del marco (como Facebook: no
+  /// recorta el archivo, solo recuerda el punto vertical). Mismo rango que
+  /// `Alignment` de Flutter: -1 arriba del todo, 0 centro, 1 abajo del todo.
+  Future<void> setCoverPhotoOffset(double offset) async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) throw Exception('Usuario no autenticado');
+    await _client
+        .from('profiles')
+        .update({'cover_photo_offset': offset})
         .eq('id', uid);
   }
 

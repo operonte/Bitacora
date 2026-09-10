@@ -110,16 +110,16 @@ class _CareerAttendanceScreenState extends State<CareerAttendanceScreen> {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
-            headingRowHeight: 36,
-            dataRowMinHeight: 34,
-            dataRowMaxHeight: 34,
-            columnSpacing: 20,
-            horizontalMargin: 12,
+            headingRowHeight: 30,
+            dataRowMinHeight: 28,
+            dataRowMaxHeight: 28,
+            columnSpacing: 14,
+            horizontalMargin: 8,
             headingTextStyle: const TextStyle(
-              fontSize: 12.5,
+              fontSize: 11.5,
               fontWeight: FontWeight.bold,
             ),
-            dataTextStyle: const TextStyle(fontSize: 12.5),
+            dataTextStyle: const TextStyle(fontSize: 11.5),
             columns: const [
               DataColumn(label: Text('Alumno')),
               DataColumn(label: Text('Asignatura')),
@@ -131,8 +131,24 @@ class _CareerAttendanceScreenState extends State<CareerAttendanceScreen> {
               final marked = (r['marked'] as num?)?.toInt() ?? 0;
               return DataRow(
                 cells: [
-                  DataCell(Text(_nameOf(r))),
-                  DataCell(Text((r['subject'] as String?) ?? '')),
+                  DataCell(
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 130),
+                      child: Text(
+                        _nameOf(r),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 140),
+                      child: Text(
+                        (r['subject'] as String?) ?? '',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
                   DataCell(
                     Text(
                       rate == null ? '—' : '${rate.toStringAsFixed(0)}%',

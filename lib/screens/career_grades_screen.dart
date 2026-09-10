@@ -102,6 +102,16 @@ class _CareerGradesScreenState extends State<CareerGradesScreen> {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
+            headingRowHeight: 30,
+            dataRowMinHeight: 28,
+            dataRowMaxHeight: 28,
+            columnSpacing: 14,
+            horizontalMargin: 8,
+            headingTextStyle: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.bold,
+            ),
+            dataTextStyle: const TextStyle(fontSize: 11.5),
             columns: const [
               DataColumn(label: Text('Alumno')),
               DataColumn(label: Text('Asignatura')),
@@ -112,9 +122,33 @@ class _CareerGradesScreenState extends State<CareerGradesScreen> {
                 .map(
                   (r) => DataRow(
                     cells: [
-                      DataCell(Text(_nameOf(r))),
-                      DataCell(Text((r['subject'] as String?) ?? '')),
-                      DataCell(Text((r['task_title'] as String?) ?? '')),
+                      DataCell(
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 120),
+                          child: Text(
+                            _nameOf(r),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 130),
+                          child: Text(
+                            (r['subject'] as String?) ?? '',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 140),
+                          child: Text(
+                            (r['task_title'] as String?) ?? '',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
                       DataCell(
                         Text(
                           (r['grade'] as String?) ?? '',
