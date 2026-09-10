@@ -9,9 +9,16 @@ import 'supabase_service.dart';
 ///
 /// El archivo en sí vive en el Drive de quien lo sube (igual que el resto
 /// de los archivos de la app, ver GoogleDriveService), compartido por link.
-/// La limpieza de las vencidas no depende de ningún proceso en segundo
-/// plano — no hay cron en este proyecto —, se hace perezosamente dentro de
-/// get_active_story cada vez que alguien consulta a esa persona.
+///
+/// La limpieza de la fila no depende de ningún proceso en segundo plano —no
+/// hay cron en este proyecto—, se hace perezosamente dentro de
+/// get_active_story cada vez que alguien consulta a esa persona. Pero borrar
+/// el archivo de Drive solo se puede hacer con el token del propio dueño (acá,
+/// en el cliente) — por eso el archivo se borra de verdad cuando el dueño la
+/// reemplaza o la borra a mano ([uploadStory]/[deleteMyStory]), pero una
+/// historia que se vence sin que nadie la toque (nadie la reemplaza, el
+/// dueño no vuelve a abrir su perfil) deja el archivo en su Drive, todavía
+/// compartido por link, hasta que sí lo haga.
 class StoryService {
   static SupabaseClient get _client => SupabaseService.client;
 
@@ -28,9 +35,9 @@ class StoryService {
   }
 
   /// Sube [bytes]/[filePath] como la nueva historia, reemplazando la que
-  /// hubiera: borra la fila anterior y revoca su link de Drive antes de
-  /// insertar la nueva, para no dejar el archivo viejo accesible sin que
-  /// nadie lo vea desde la app.
+  /// hubiera: borra la fila y el archivo de Drive de la anterior antes de
+  /// insertar la nueva — no alcanza con dejar de mostrarla, "se borra" tiene
+  /// que ser de verdad.
   static Future<void> uploadStory({
     required String fileName,
     required int sizeBytes,
@@ -86,10 +93,10 @@ class StoryService {
     final oldFileId = story['drive_file_id'] as String?;
     if (oldFileId != null && oldFileId.isNotEmpty) {
       try {
-        await GoogleDriveService().revokeLinkViewable(oldFileId);
+        await GoogleDriveService().deleteFile(oldFileId);
       } catch (_) {
         // No bloquea el reemplazo por esto: en el peor caso el archivo
-        // viejo queda con el link abierto, pero ya no aparece en la app.
+        // viejo queda en Drive sin que la app lo muestre más.
       }
     }
   }

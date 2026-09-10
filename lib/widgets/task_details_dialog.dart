@@ -69,13 +69,13 @@ class TaskDetailsDialog {
     var localCompleted = task.isCompleted;
     var localSubmitted = task.isSubmitted;
 
-    // Un docente no "debe" una tarea compartida con la carrera — a menos que
-    // en esta carrera puntual también sea alumno (puede pasar: es docente de
-    // una asignatura y alumno de otra, el rol es por carrera, no global). Una
-    // tarea personal (no compartida) sigue siendo suya para marcar, incluso
-    // si es docente: nadie más la debe, es su propio pendiente.
-    final esTareaDeDocente =
-        task.isShared && CareerService().isDocente(task.careerId);
+    // Un docente no marca "Realizada"/"Enviada" nunca en su carrera de
+    // docente — ni en una compartida (no es él quien la debe) ni en una
+    // privada vieja (son de antes de separar las herramientas de docente;
+    // desde que existe "Asignar tarea" no se pueden crear más así). Si en
+    // esta carrera puntual también es alumno (rol por carrera, no global,
+    // puede pasar), esto no aplica — ahí sí es su propio pendiente.
+    final esTareaDeDocente = CareerService().isDocente(task.careerId);
     // Antes solo quien creó la tarea podía ver el progreso; ahora también
     // vale ser docente de esa asignatura — a veces el docente no crea la
     // tarea oficial él mismo, y si un alumno la sube igual debería poder
@@ -133,7 +133,9 @@ class TaskDetailsDialog {
         title: Text(task.title),
         content: StatefulBuilder(
           builder: (context, setDialogState) {
-            return Column(
+            return SizedBox(
+              width: double.maxFinite,
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -228,6 +230,7 @@ class TaskDetailsDialog {
                     ),
                 ],
               ],
+              ),
             );
           },
         ),
@@ -311,36 +314,109 @@ class TaskDetailsDialog {
       label = 'Pendiente';
     }
 
-    final subtitleParts = [
-      label,
-      if (grade?.isNotEmpty ?? false) 'Nota: $grade',
-      if (comment?.isNotEmpty ?? false) '"$comment"',
-    ];
-
-    return ListTile(
-      dense: true,
-      leading: Icon(icon, color: color),
-      title: Text(name),
-      subtitle: Column(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (pendingSync) ...[
-                const Icon(Icons.sync, size: 12, color: Colors.blueGrey),
-                const SizedBox(width: 4),
-              ],
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  subtitleParts.join(' · '),
-                  style: hasFeedback
-                      ? const TextStyle(fontStyle: FontStyle.italic)
-                      : null,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        if (pendingSync) ...[
+                          const Icon(
+                            Icons.sync,
+                            size: 12,
+                            color: Colors.blueGrey,
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(
+                          label,
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (hasFile)
+                IconButton(
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  tooltip: 'Guardar copia en mis archivos',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _saveSubmissionCopy(context, task, row),
+                ),
+              const SizedBox(width: 12),
+              IconButton(
+                icon: Icon(
+                  hasFeedback ? Icons.comment : Icons.comment_outlined,
+                  size: 18,
+                ),
+                tooltip: 'Nota y comentario',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _editCommentDialog(
+                  context,
+                  taskId: taskId,
+                  studentUserId: studentUserId,
+                  studentName: name,
+                  initialComment: comment ?? '',
+                  initialGrade: grade ?? '',
+                  onSaved: onCommentSaved,
                 ),
               ),
             ],
           ),
-          if (hasFile)
+          if (grade?.isNotEmpty ?? false) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Nota: $grade',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (comment?.isNotEmpty ?? false) ...[
+            const SizedBox(height: 2),
+            Text(
+              '"$comment"',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+          if (hasFile) ...[
+            const SizedBox(height: 6),
             InkWell(
               onTap: () => _openSubmissionFile(context, row),
               child: Row(
@@ -351,7 +427,7 @@ class TaskDetailsDialog {
                     size: 14,
                     color: Colors.blueGrey,
                   ),
-                  const SizedBox(width: 2),
+                  const SizedBox(width: 3),
                   Flexible(
                     child: Text(
                       attachedName,
@@ -365,33 +441,7 @@ class TaskDetailsDialog {
                 ],
               ),
             ),
-        ],
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (hasFile)
-            IconButton(
-              icon: const Icon(Icons.download_outlined, size: 18),
-              tooltip: 'Guardar copia en mis archivos',
-              onPressed: () => _saveSubmissionCopy(context, task, row),
-            ),
-          IconButton(
-            icon: Icon(
-              hasFeedback ? Icons.comment : Icons.comment_outlined,
-              size: 18,
-            ),
-            tooltip: 'Nota y comentario',
-            onPressed: () => _editCommentDialog(
-              context,
-              taskId: taskId,
-              studentUserId: studentUserId,
-              studentName: name,
-              initialComment: comment ?? '',
-              initialGrade: grade ?? '',
-              onSaved: onCommentSaved,
-            ),
-          ),
+          ],
         ],
       ),
     );

@@ -236,7 +236,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               const SizedBox(height: 12),
             ],
-            if (nadaUrgente)
+            // Para el docente esto ya lo dice la mascota de la franja de
+            // arriba ("Nadie en riesgo por ahora") — repetirlo acá con un
+            // segundo dibujo es redundante, representar el estado es
+            // trabajo de la mascota, no de dos imágenes distintas.
+            if (nadaUrgente && !isDocente)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 40),
                 child: Column(
@@ -347,8 +351,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           // La mascota elegida en Configuración también es del docente: sin
           // esto, solo se veía cuando había riesgo, así que en la práctica
-          // nunca aparecía. Ahora tiene un lugar fijo acá — sad si hay
-          // alumnos en riesgo, content si no, bored mientras se calcula.
+          // nunca aparecía. Ahora tiene un lugar fijo acá, y habla en
+          // primera persona — no solo la cara, también el motivo, mismo
+          // criterio que el compañero flotante del alumno. angry a partir
+          // de 5 en riesgo es la misma idea de "regla simple" que ya usa
+          // el panel de riesgo, no un umbral fino.
           if (MascotWidget.isEnabled(mascot)) ...[
             const SizedBox(height: 10),
             InkWell(
@@ -369,21 +376,30 @@ class _HomeScreenState extends State<HomeScreen> {
                     option: mascot,
                     state: _riskCount == null
                         ? MascotState.bored
-                        : (_riskCount! > 0
-                              ? MascotState.sad
-                              : MascotState.content),
+                        : (_riskCount! >= 5
+                              ? MascotState.angry
+                              : (_riskCount! > 0
+                                    ? MascotState.sad
+                                    : MascotState.content)),
                     size: 36,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       _riskCount == null
-                          ? 'Revisando cómo viene tu curso…'
-                          : (_riskCount! > 0
-                                ? '$_riskCount alumno${_riskCount == 1 ? '' : 's'} '
-                                      'en riesgo — toca para ver el panel'
-                                : 'Nadie en riesgo por ahora — toca para ver el '
-                                      'panel'),
+                          ? 'Estoy revisando cómo viene tu curso…'
+                          : (_riskCount! >= 5
+                                ? 'Estoy preocupado de verdad: $_riskCount '
+                                      'alumnos en riesgo — toca para ver el '
+                                      'panel'
+                                : (_riskCount! > 0
+                                      ? 'Me preocupa que $_riskCount '
+                                            'alumno${_riskCount == 1 ? '' : 's'} '
+                                            '${_riskCount == 1 ? 'esté' : 'estén'} '
+                                            'en riesgo — toca para ver el panel'
+                                      : 'Estoy contento, nadie está en '
+                                            'riesgo por ahora — toca para '
+                                            'ver el panel')),
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,

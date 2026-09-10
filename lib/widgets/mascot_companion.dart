@@ -8,10 +8,13 @@ import '../services/career_service.dart';
 import 'mascot_widget.dart';
 
 /// Compañero flotante en la pantalla principal.
-/// - `sad` si hay tareas vencidas ahora mismo (se puede tocar para ver un
-///   consejo puntual, calculado con los datos reales, no genérico).
 /// - `content` unos segundos cada vez que entregas una tarea más.
+/// - `sad` con 1 tarea atrasada, `angry` con 2 o más — mismo umbral que ya
+///   usa [_tipFor] para diferenciar el consejo, no un número nuevo inventado.
 /// - `bored` en cualquier otro momento (estado por defecto).
+///
+/// Siempre se puede tocar: cuenta, en primera persona, por qué está así —
+/// no solo la cara, también el motivo, mientras haya lugar en la pantalla.
 class MascotCompanion extends StatefulWidget {
   const MascotCompanion({super.key});
 
@@ -41,21 +44,37 @@ class _MascotCompanionState extends State<MascotCompanion> {
     _lastDeliveredCount = count;
   }
 
-  /// Consejo de una línea, con datos reales — no genérico ni de IA, misma
-  /// filosofía que el panel de riesgo del docente ("regla simple").
-  String _tipFor(List<Task> overdue) {
-    if (overdue.length == 1) {
-      return 'Tienes 1 tarea atrasada: "${overdue.first.title}". '
-          'Organiza un rato hoy para ponerte al día.';
+  /// Por qué está así, en primera persona, con datos reales — no genérico
+  /// ni de IA, misma filosofía que el panel de riesgo del docente ("regla
+  /// simple"). Un texto por estado, así el gesto de tocarla siempre cuenta
+  /// algo, no solo cuando hay algo atrasado.
+  String _fraseFor(MascotState state, List<Task> overdue) {
+    switch (state) {
+      case MascotState.content:
+        return 'Estoy contento — acabas de entregar una tarea más.';
+      case MascotState.angry:
+        final oldest = overdue.reduce(
+          (a, b) => a.dueDate.isBefore(b.dueDate) ? a : b,
+        );
+        return 'Estoy enojado: llevas ${overdue.length} tareas atrasadas. '
+            'Empieza por "${oldest.title}", es la más antigua.';
+      case MascotState.sad:
+        return 'Me da pena que te atrases: tienes 1 tarea atrasada — '
+            '"${overdue.first.title}". Organiza un rato hoy para ponerte '
+            'al día.';
+      case MascotState.bored:
+      case MascotState.surprised:
+        return 'Estoy tranquilo — no tienes tareas atrasadas por ahora.';
     }
-    final oldest = overdue.reduce(
-      (a, b) => a.dueDate.isBefore(b.dueDate) ? a : b,
-    );
-    return 'Tienes ${overdue.length} tareas atrasadas. Empieza por '
-        '"${oldest.title}", es la más antigua.';
   }
 
-  void _showTip(BuildContext context, List<Task> overdue) {
+  void _showTip(BuildContext context, MascotState state, List<Task> overdue) {
+    final (icon, color) = switch (state) {
+      MascotState.content => (Icons.sentiment_satisfied_alt, Colors.green),
+      MascotState.angry => (Icons.sentiment_very_dissatisfied, Colors.red),
+      MascotState.sad => (Icons.sentiment_dissatisfied, Colors.orange),
+      _ => (Icons.sentiment_neutral, Colors.blueGrey),
+    };
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -63,22 +82,17 @@ class _MascotCompanionState extends State<MascotCompanion> {
       ),
       builder: (ctx) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
-              children: [
-                Icon(Icons.lightbulb_outline, color: Colors.amber),
-                SizedBox(width: 8),
-                Text(
-                  'Un consejo',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ],
+            Icon(icon, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _fraseFor(state, overdue),
+                style: const TextStyle(fontSize: 14),
+              ),
             ),
-            const SizedBox(height: 12),
-            Text(_tipFor(overdue), style: const TextStyle(fontSize: 14)),
           ],
         ),
       ),
@@ -107,14 +121,14 @@ class _MascotCompanionState extends State<MascotCompanion> {
 
     final state = _celebrating
         ? MascotState.content
-        : (hasOverdue ? MascotState.sad : MascotState.bored);
+        : (overdue.length >= 2
+              ? MascotState.angry
+              : (hasOverdue ? MascotState.sad : MascotState.bored));
 
     final mascotWidget = MascotWidget(option: mascot, state: state, size: 64);
 
-    if (!hasOverdue) return IgnorePointer(child: mascotWidget);
-
     return GestureDetector(
-      onTap: () => _showTip(context, overdue),
+      onTap: () => _showTip(context, state, overdue),
       child: mascotWidget,
     );
   }

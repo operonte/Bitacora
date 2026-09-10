@@ -1409,9 +1409,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
 
       final esVideo = categoria == 'Video';
       // No hay forma de medir la duración real sin sumar un paquete nuevo
-      // de video a la app — este tope de tamaño es solo una referencia
-      // razonable para "unos 30 segundos", no una medición exacta.
-      const videoSizeCapMb = 20;
+      // de video a la app (se evaluó video_trimmer/ffmpeg_kit_flutter y no
+      // se pudo: ver StoryService) — este tope de tamaño es solo una
+      // referencia razonable para "unos 30 segundos", no una medición
+      // exacta. 20MB quedaba corto para un video real de teléfono: 29
+      // segundos en 1080p ronda los 30-60MB según la calidad.
+      const videoSizeCapMb = 80;
       if (esVideo && file.size > videoSizeCapMb * 1024 * 1024) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
