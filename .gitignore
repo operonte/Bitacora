@@ -59,6 +59,7 @@ app.*.map.json
 *.keystore
 *.jks
 key.properties
+keystore-backup.txt
 
 # Supabase CLI: estado local del proyecto vinculado. supabase/.temp/pooler-url
 # guarda la cadena de conexión a la base de producción, así que nunca se
