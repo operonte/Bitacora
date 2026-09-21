@@ -1,0 +1,86 @@
+{
+  "project_info": {
+    "project_number": "TU_PROJECT_NUMBER",
+    "project_id": "TU_PROJECT_ID",
+    "storage_bucket": "TU_STORAGE_BUCKET"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "TU_MOBILESDK_APP_ID",
+        "android_client_info": {
+          "package_name": "com.operonte.bitacora"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "TU_CLIENT_ID",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.operonte.bitacora",
+            "certificate_hash": "bdcf3bd37560c029d30370977fac2f68ceb39d4e"
+          }
+        },
+        {
+          "client_id": "TU_CLIENT_ID",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.operonte.bitacora",
+            "certificate_hash": "9eb2a54fcc67af29aece16c140d3b9097d6be237"
+          }
+        },
+        {
+          "client_id": "TU_CLIENT_ID",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.operonte.bitacora",
+            "certificate_hash": "e041a45194f0674ce02a5a8201ee311d1b8b710c"
+          }
+        },
+        {
+          "client_id": "TU_CLIENT_ID",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.operonte.bitacora",
+            "certificate_hash": "bc401ed0950441cc9a313df1868f3e5c9c4110e7"
+          }
+        },
+        {
+          "client_id": "TU_CLIENT_ID",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.operonte.bitacora",
+            "certificate_hash": "2c79a3fabefe3b8145a3e9a03c00afe78bbb7d3f"
+          }
+        },
+        {
+          "client_id": "TU_CLIENT_ID",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "TU_API_KEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "TU_CLIENT_ID",
+              "client_type": 3
+            },
+            {
+              "client_id": "TU_CLIENT_ID",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.bitacora"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
