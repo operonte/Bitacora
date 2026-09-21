@@ -41,3 +41,18 @@
 # Conservar los campos de clases serializadas con GSON (TypeToken genérico).
 -keep,allowobfuscation,allowshrinking class com.google.gson.reflect.TypeToken
 -keep,allowobfuscation,allowshrinking class * extends com.google.gson.reflect.TypeToken
+
+# 6. Google Play Services / Google Sign-In
+# Buena práctica general para que R8 no rompa reflection interna del SDK.
+# El login roto en release v2.27.1 NO era esto: era que android/app/google-services.json
+# (versionado) había quedado desactualizado desde v2.4.2 y le faltaba el oauth_client
+# para el SHA-1 del keystore de subida — Firebase ya tenía el SHA-1 registrado,
+# pero el JSON commiteado no. Si vuelve a fallar el login en release, comparar
+# el SHA-1 de android/upload-keystore.jks contra los certificate_hash de este
+# archivo antes de sospechar de R8.
+-keep class com.google.android.gms.** { *; }
+-keep interface com.google.android.gms.** { *; }
+-dontwarn com.google.android.gms.**
+-keep class io.flutter.plugins.googlesignin.** { *; }
+-keep class com.google.android.libraries.identity.googleid.** { *; }
+-dontwarn com.google.android.libraries.identity.googleid.**
